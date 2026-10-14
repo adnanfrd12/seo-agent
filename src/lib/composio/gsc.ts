@@ -44,8 +44,15 @@ export interface GscQuery {
   siteUrl: string;
   range: DateRange;
   dimensions: ("date" | "query" | "page" | "device" | "country")[];
-  searchType?: "web" | "image" | "video" | "news" | "discover" | "googleNews";
+  searchType?: GscSearchType;
+  /** "all" includes fresh, not-yet-final days (re-fetched by later syncs); "final" lags 2-3 days. */
+  dataState?: "final" | "all";
+  /** Hard stop on total rows across pages. */
+  maxRows?: number;
 }
+
+export const GSC_SEARCH_TYPES = ["web", "image", "video", "news", "discover", "googleNews"] as const;
+export type GscSearchType = (typeof GSC_SEARCH_TYPES)[number];
 
 /** Paginates with start_row until a short page is returned. */
 export async function queryGsc(ctx: AdapterContext, q: GscQuery): Promise<GscRow[]> {
@@ -58,13 +65,14 @@ export async function queryGsc(ctx: AdapterContext, q: GscQuery): Promise<GscRow
         end_date: q.range.end,
         dimensions: q.dimensions,
         search_type: q.searchType ?? "web",
-        data_state: "final",
+        data_state: q.dataState ?? "all",
         row_limit: ROW_LIMIT,
         start_row: start,
       }),
     );
     rows.push(...res.rows);
     if (res.rows.length < ROW_LIMIT) break;
+    if (q.maxRows && rows.length >= q.maxRows) break;
   }
   return rows;
 }

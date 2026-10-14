@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import { AlertTriangle, CheckCircle2, CircleSlash, Loader2, RefreshCw } from "lucide-react";
 import { PROVIDER_META, type ProviderId } from "@/lib/integrations/providers";
@@ -43,7 +43,18 @@ export function IntegrationCard({
     new Set(status.resources.filter((r) => r.is_selected).map((r) => r.id)),
   );
 
+  // synchronous guard: state updates are async, so a fast double click could otherwise send two requests
+  const inFlight = useRef(false);
+  useEffect(() => {
+    // Back from Google can restore this page from the bfcache with the lock still held
+    const reset = () => { inFlight.current = false; setBusy(null); };
+    window.addEventListener("pageshow", reset);
+    return () => window.removeEventListener("pageshow", reset);
+  }, []);
+
   async function call(action: string, body?: unknown) {
+    if (inFlight.current) return null;
+    inFlight.current = true;
     setBusy(action);
     setMessage(null);
     try {
@@ -60,12 +71,15 @@ export function IntegrationCard({
       return null;
     } finally {
       setBusy(null);
+      // keep the lock after a successful connect: we are about to navigate to Google
+      if (action !== "connect") inFlight.current = false;
     }
   }
 
   async function connect() {
     const json = await call("connect");
     if (json?.redirectUrl) window.location.href = json.redirectUrl;
+    else inFlight.current = false;
   }
   async function save() {
     const json = await call("select", { resourceIds: [...picked] });
@@ -183,7 +197,7 @@ export function IntegrationCard({
           <div className="mt-auto flex flex-wrap gap-2">
             {state === "connected" ? (
               <>
-                <button className={btn} onClick={sync} disabled={!canEdit || busy !== null || status.syncing || selected.length === 0}>
+                <button className={btn} onClick={sync} disabled={!canEdit || busy !== null || selected.length === 0}>
                   {busy === "sync" ? <Loader2 className="size-4 animate-spin" /> : <RefreshCw className="size-4" />} Sync Now
                 </button>
                 <button className={btn} onClick={disconnect} disabled={!canEdit || busy !== null}>Disconnect</button>

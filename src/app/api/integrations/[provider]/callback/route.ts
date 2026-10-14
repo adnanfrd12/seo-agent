@@ -2,6 +2,8 @@ import { NextResponse, type NextRequest } from "next/server";
 import { parseProvider, requireAdmin } from "@/lib/integrations/http";
 import { completeConnect } from "@/lib/integrations/service";
 
+export const maxDuration = 60;
+
 type Ctx = { params: Promise<{ provider: string }> };
 
 /** Composio redirects here after Google OAuth. Result is shown on /integrations. */
@@ -14,8 +16,9 @@ export async function GET(request: NextRequest, { params }: Ctx) {
     }
     const { client } = await requireAdmin();
     const result = await completeConnect(client.id, provider);
-    return result.ok
-      ? back(`connected=${provider}`)
+    if (result.ok) return back(`connected=${provider}`);
+    return result.soft
+      ? back(`notice=${encodeURIComponent(result.reason)}&provider=${provider}`)
       : back(`error=${encodeURIComponent(result.reason)}&provider=${provider}`);
   } catch {
     return back("error=" + encodeURIComponent("Could not complete the connection"));

@@ -2,7 +2,7 @@
 
 A multi-tenant dashboard that collects, stores and analyzes **Google Analytics 4**, **Google Search Console** and **Google Business Profile** data. Google data is fetched server-side through [Composio](https://composio.dev), stored in Supabase Postgres, and read by the UI exclusively through authorized Supabase RPCs.
 
-> **Status: in progress.** Database, auth, app shell and the Composio connect flow are built. The sync worker, data pages and Business Profile adapter are not. See [Project status](#project-status) for an honest breakdown. No page shows mock data: pages that aren't built show an empty state.
+> **Status: in progress.** Database, auth, app shell, the Composio connect flow, the **GA4 sync worker and GA4 page** are built and verified against real data. The Search Console and Business Profile syncs, their pages, and the overview/reports/history/settings pages are not. See [Project status](#project-status) for an honest breakdown. No page shows mock data: pages that aren't built show an empty state.
 
 ## Contents
 
@@ -40,7 +40,8 @@ Browser ──► Next.js pages (server components) ──► Supabase RPCs (as 
    └──► /api/integrations/* ──► Composio (OAuth + tool execution)   [server-side only, API key never in browser]
                           └──► Supabase (service role, trusted writes)
 
-Sync worker (planned) ──► claim_next_sync_job() ──► Composio / direct GBP adapter ──► upserts into metric tables
+Sync worker ──► claim_next_sync_job() ──► Composio (GA4 ✔ / GSC ✘) / direct GBP adapter (✘) ──► upserts into metric tables
+   ▲ started in the background (after the response) by Sync Now / saving a selection, and by /api/cron/sync
 ```
 
 Principles:
@@ -101,7 +102,7 @@ Copy `.env.example` to `.env.local`. **Secrets are server-only. Never prefix the
 | `COMPOSIO_TOOLKIT_VERSION_GOOGLE_ANALYTICS` | recommended | Pin the toolkit version. If unset, calls skip Composio's version check |
 | `COMPOSIO_TOOLKIT_VERSION_GOOGLE_SEARCH_CONSOLE` | recommended | Same, for Search Console |
 | `NEXT_PUBLIC_APP_URL` | yes | Public base URL; used to build the OAuth callback URL |
-| `CRON_SECRET` | yes (16+ chars) | Shared secret for the daily-sync endpoint (planned) |
+| `CRON_SECRET` | yes (16+ chars) | Bearer secret for `GET/POST /api/cron/sync` |
 | `GOOGLE_GBP_CLIENT_ID` / `GOOGLE_GBP_CLIENT_SECRET` | later | Direct Business Profile adapter (planned) |
 | `TOKEN_ENCRYPTION_KEY` | later | 32-byte base64 key to encrypt stored GBP refresh tokens (planned) |
 
@@ -167,6 +168,13 @@ Verified against Composio's docs and the installed SDK (`@composio/core` 0.23):
 
 Add `http://localhost:3000/api/integrations/ga4/callback` and `…/gsc/callback` (and your production equivalents) as allowed redirect URLs in your Composio auth configs.
 
+## Sync worker
+
+- **Queue:** `analytics_sync_jobs`. One active (queued/running) job per resource, enforced by a unique index.
+- **Triggers:** Sync Now and saving a selection enqueue a job and return immediately; the worker then runs after the response via Next's `after()`. `GET/POST /api/cron/sync` (Bearer `CRON_SECRET`) enqueues daily jobs for every connected resource and drains the queue. Point any scheduler (e.g. Vercel Cron) at it once a day.
+- **Ranges:** initial = 90 days, daily = last 7 days, manual = last 14 days, ending today in the GA4 property's time zone. Writes are idempotent upserts, so re-fetching recent days picks up late-arriving data.
+- **Failure handling:** each GA4 report runs independently (a failing one gives a `partial` job). Transient and rate-limit errors retry with exponential backoff (60s × 2ⁿ, up to 4 attempts); auth errors mark the connection `error` so the UI shows **Reconnect**. Jobs stuck `running` for 15 minutes are re-queued.
+
 ## Project structure
 
 ```
@@ -183,6 +191,7 @@ src/
     integrations/         integration card
   lib/
     composio/             client (typed errors, timeouts), GA4 + GSC adapters
+    sync/                 job worker and the GA4 importer
     integrations/         providers, service (connect/select/sync/disconnect), http helpers
     supabase/             browser, server, and admin (service role) clients
     validation/           Zod schemas for GA4 and GSC responses
@@ -220,27 +229,46 @@ The Supabase advisor still lists four `SECURITY DEFINER` functions callable by s
 - Auth (login, route guard), dashboard shell with sidebar and mobile drawer, and all 8 routes.
 - Composio connect flow and Integrations page. Typecheck, lint and production build pass. The dev server starts and `/login` renders.
 
-**Built but not yet tested against real services**
+**Verified against real services**
 
-- Composio connect/callback/discovery, and the GA4 and Search Console adapters. No Composio keys were available, so the exact shape of Composio's response `data` is unconfirmed (the adapters tolerate a `response_data` wrapper).
+- Composio connect, callback and property discovery for GA4.
+- GA4 sync worker: a real 90-day import wrote daily, traffic-source, page, landing-page, device and country rows. Composio returns the GA4 report directly as `data` (dates as `YYYYMMDD`, days without data omitted).
+- GA4 RPCs against that data as the signed-in user under RLS.
+
+**Built but not yet verified**
+
+- The GA4 page UI was typechecked and linted but not viewed in a browser by the author.
+- Search Console connect/discovery and the GSC adapter code (a connection can show `INITIALIZING` if the callback runs before Google consent finishes; reconnect to fix).
 - The connected account's email may not be available, so the card can show "email not provided".
 
 **Not built yet**
 
-- Sync worker (initial 90-day import, daily sync, retry/backoff, cron endpoint). Queued jobs are not processed yet.
-- Overview, GA4, Search Console and Business Profile pages, charts, tables, CSV export.
+- Search Console and Business Profile **sync** (their queued jobs fail with "not implemented yet").
+- Overview, Search Console and Business Profile pages.
 - Monthly Reports (print / PDF), Historical Performance, and Settings.
 - Header date-range selector and Refresh button.
 - Google Business Profile integration. Composio has no toolkit for it, so this needs a direct Google adapter and approval of the Business Profile APIs for your Google Cloud project. That approval is outside this codebase.
+
+## Deploying to Vercel
+
+The Vercel project is linked to GitHub (`adnanfrd12/seo-agent`, branch `main`): every push to `main` deploys to production.
+
+1. **Set the environment variables first.** Vercel → Project → Settings → Environment Variables. Add every variable from the table above for **Production** (and Preview if you use it). Tip: the page accepts a pasted `.env` file. Without them the app now answers `503 Server is not configured. Missing environment variables: …` instead of a blank 500.
+2. Set `NEXT_PUBLIC_APP_URL` to the production URL (e.g. `https://seo-agent-brown.vercel.app`). It builds the OAuth callback URL.
+3. In each Composio auth config, allow `<NEXT_PUBLIC_APP_URL>/api/integrations/ga4/callback` and `…/gsc/callback`.
+4. **Redeploy** after changing variables (Deployments → ⋯ → Redeploy). Variables are read at runtime start, not retroactively.
+5. **Daily sync:** `vercel.json` schedules `/api/cron/sync` once a day (06:00 UTC). Vercel Cron sends `Authorization: Bearer $CRON_SECRET` automatically when `CRON_SECRET` is set, which is what the endpoint checks.
 
 ## Troubleshooting
 
 | Symptom | Likely cause |
 |---|---|
 | `Missing or invalid environment variables: …` (HTTP 503 from an integration route) | Fill in the named variables in `.env.local` and restart `npm run dev` |
+| Production shows `Internal Server Error` / `503 Server is not configured` | Environment variables are missing on Vercel; see [Deploying to Vercel](#deploying-to-vercel) |
 | Redirected to `/login` on every page | Not signed in, or the Supabase URL / publishable key is wrong |
 | "Create your client" screen after sign-in | Expected on first login; this creates your client |
 | Connect redirects back with an error | Callback URL not allowed in the Composio auth config, or Google consent was cancelled |
 | Sync Now is disabled | No resource selected yet, or a sync is already queued or running |
-| Jobs stay `queued` | The sync worker isn't built yet |
+| Jobs stay `queued` | Click **Sync Now** (starts the worker), or call the cron endpoint: `curl -H "Authorization: Bearer $CRON_SECRET" http://localhost:3000/api/cron/sync` |
+| GSC/GBP job fails "not implemented yet" | Only GA4 import is built so far |
 | Production build fails with "uncached or runtime data during prerendering" | Cache Components were turned back on in `next.config.ts` |

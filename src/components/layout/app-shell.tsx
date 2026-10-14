@@ -4,6 +4,7 @@ import { useState } from "react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { Menu, PanelLeftClose, PanelLeftOpen, X } from "lucide-react";
+import { BrandLockup } from "@/components/brand/brand-mark";
 import { NAV } from "@/lib/analytics/nav";
 import { cn } from "@/lib/utils";
 
@@ -59,7 +60,7 @@ export function AppShell({ header, children }: { header: React.ReactNode; childr
         )}
       >
         <div className="flex h-14 items-center justify-between border-b border-border px-4">
-          {!collapsed && <span className="font-semibold">SEO Analytics</span>}
+          {!collapsed && <BrandLockup size="sm" tagline="" />}
           <button
             onClick={() => setCollapsed((v) => !v)}
             aria-label={collapsed ? "Expand sidebar" : "Collapse sidebar"}
@@ -77,7 +78,7 @@ export function AppShell({ header, children }: { header: React.ReactNode; childr
           <div className="absolute inset-0 bg-black/40" onClick={() => setDrawer(false)} />
           <aside className="absolute inset-y-0 left-0 w-72 overflow-y-auto bg-surface shadow-xl">
             <div className="flex h-14 items-center justify-between border-b border-border px-4">
-              <span className="font-semibold">SEO Analytics</span>
+              <BrandLockup size="sm" tagline="" />
               <button onClick={() => setDrawer(false)} aria-label="Close menu" className="rounded-md p-1.5 hover:bg-surface-muted">
                 <X className="size-4" />
               </button>

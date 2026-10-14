@@ -13,7 +13,7 @@ const geistMono = Geist_Mono({
 });
 
 export const metadata: Metadata = {
-  title: "SEO Analytics",
+  title: "SEO Insights",
   description: "SEO analytics and performance dashboard",
 };
 

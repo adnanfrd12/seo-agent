@@ -38,6 +38,20 @@ export function errorResponse(err: unknown) {
   if (msg.startsWith("Missing or invalid environment variables")) {
     return NextResponse.json({ error: msg }, { status: 503 });
   }
-  console.error("integration route error:", msg); // message only; never request bodies or tokens
+  if (/Invalid API key|APIKey_InvalidAPIKey/i.test(msg)) {
+    console.error("integration route error: Composio rejected COMPOSIO_API_KEY");
+    return NextResponse.json(
+      { error: "Composio rejected the API key. Check COMPOSIO_API_KEY in .env, then restart the server." },
+      { status: 502 },
+    );
+  }
+  if (/auth.?config|AuthConfig/i.test(msg) && /not.?found|404/i.test(msg)) {
+    console.error("integration route error: Composio auth config not found");
+    return NextResponse.json(
+      { error: "Composio could not find that auth config. Check COMPOSIO_AUTH_CONFIG_* belongs to the same project as the API key." },
+      { status: 502 },
+    );
+  }
+  console.error("integration route error:", msg.slice(0, 500)); // message only; never request bodies or tokens
   return NextResponse.json({ error: "Request failed" }, { status: 500 });
 }

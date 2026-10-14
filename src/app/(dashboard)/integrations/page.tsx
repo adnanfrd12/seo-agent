@@ -9,7 +9,7 @@ const EMPTY: ProviderStatus = { connection: null, resources: [], last_job: null,
 
 export default async function IntegrationsPage({
   searchParams,
-}: { searchParams: Promise<{ connected?: string; error?: string; provider?: string }> }) {
+}: { searchParams: Promise<{ connected?: string; error?: string; notice?: string; provider?: string }> }) {
   const { client } = await getSession();
   const sp = await searchParams;
   if (!client) return null;
@@ -25,6 +25,11 @@ export default async function IntegrationsPage({
       {sp.connected && sp.connected in PROVIDER_META && (
         <p role="status" className="mb-4 rounded-lg bg-surface p-3 text-sm text-positive ring-1 ring-border">
           {PROVIDER_META[sp.connected as ProviderId].label} connected. Choose what to track below.
+        </p>
+      )}
+      {sp.notice && (
+        <p role="status" className="mb-4 rounded-lg bg-surface p-3 text-sm text-foreground ring-1 ring-border">
+          {sp.notice.slice(0, 300)}
         </p>
       )}
       {sp.error && (

@@ -2,8 +2,20 @@ import { createServerClient } from "@supabase/ssr";
 import { NextResponse, type NextRequest } from "next/server";
 
 const PUBLIC_PREFIXES = ["/login", "/auth", "/api/cron"];
+const REQUIRED = ["NEXT_PUBLIC_SUPABASE_URL", "NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY"] as const;
 
 export async function proxy(request: NextRequest) {
+  // A missing variable used to crash every request with an opaque 500. Say exactly what is wrong
+  // (names only, never values) so a fresh deployment is easy to fix.
+  const missing = REQUIRED.filter((k) => !process.env[k]);
+  if (missing.length > 0) {
+    return new NextResponse(
+      `Server is not configured. Missing environment variables: ${missing.join(", ")}. ` +
+        "Add them in your hosting provider's project settings and redeploy.",
+      { status: 503, headers: { "content-type": "text/plain; charset=utf-8", "cache-control": "no-store" } },
+    );
+  }
+
   let response = NextResponse.next({ request });
 
   const supabase = createServerClient(
@@ -34,5 +46,5 @@ export async function proxy(request: NextRequest) {
 }
 
 export const config = {
-  matcher: ["/((?!_next/static|_next/image|favicon.ico|.*\.(?:svg|png|jpg|jpeg|gif|webp)$).*)"],
+  matcher: ["/((?!_next/static|_next/image|favicon.ico|.*\\.(?:svg|png|jpg|jpeg|gif|webp)$).*)"],
 };

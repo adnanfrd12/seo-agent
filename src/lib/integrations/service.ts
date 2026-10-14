@@ -16,8 +16,21 @@ function authConfigId(provider: ProviderId): string {
   throw new HttpError(501, `${PROVIDER_META[provider].label} is not available through Composio`);
 }
 
+/** Composio toolkit slugs (as reported by connected accounts). */
+const TOOLKIT_SLUG = { ga4: "google_analytics", gsc: "google_search_console" } as const;
+
 /** Composio "user id" for a client. One entity per client keeps tenants separated. */
 const entityId = (clientId: string) => `client:${clientId}`;
+
+/** All of this client's Composio accounts for a toolkit, newest first. */
+async function listAccounts(clientId: string, provider: "ga4" | "gsc") {
+  const res = await composio().connectedAccounts.list({
+    userIds: [entityId(clientId)],
+    toolkitSlugs: [TOOLKIT_SLUG[provider]],
+    limit: 50,
+  });
+  return [...res.items].sort((a, b) => b.createdAt.localeCompare(a.createdAt));
+}
 
 /** Step 1-2: backend starts the Composio OAuth flow and records a pending connection. */
 export async function startConnect(clientId: string, provider: ProviderId): Promise<string> {
@@ -44,47 +57,79 @@ export async function startConnect(clientId: string, provider: ProviderId): Prom
   return request.redirectUrl;
 }
 
-export type CompleteResult = { ok: true } | { ok: false; reason: string };
+/**
+ * `soft` means "not an error": authorization simply hasn't finished (yet). The UI shows a neutral
+ * notice and the card stays on Connect instead of flipping to Error / Reconnect.
+ */
+export type CompleteResult = { ok: true } | { ok: false; reason: string; soft?: boolean };
 
 /**
- * Steps 3-5 (after the user returns from Google): verify the account with Composio, then
- * discover selectable properties/sites. We never trust the callback's query string: the
- * connected-account id comes from the pending row we wrote in startConnect.
+ * Steps 3-5 (after the user returns from Google): find the account that is actually ACTIVE, then
+ * discover selectable properties/sites.
+ *
+ * We do NOT trust the connected-account id stored by startConnect: every click on Connect creates a
+ * new link, so a double click (or a retry) leaves the stored id pointing at an unused link while the
+ * account the user really authorized is a different one. Instead we list this client's accounts for
+ * the toolkit and use the newest ACTIVE one.
  */
 export async function completeConnect(clientId: string, provider: ProviderId): Promise<CompleteResult> {
+  if (provider === "gbp") return { ok: false, reason: "Business Profile is not available through Composio" };
   const admin = createAdminClient();
+  const entity = entityId(clientId);
+
   const { data: conn } = await admin
     .from("integration_connections")
-    .select("id, composio_connected_account_id, composio_entity_id")
+    .select("id")
     .eq("client_id", clientId)
     .eq("provider", provider)
     .maybeSingle();
-  if (!conn?.composio_connected_account_id || !conn.composio_entity_id) {
-    return { ok: false, reason: "No pending connection found" };
+  if (!conn) return { ok: false, reason: "No connection in progress. Click Connect Account to start." };
+
+  let accounts = await listAccounts(clientId, provider);
+  let active = accounts.find((a) => a.status === "ACTIVE");
+
+  if (!active) {
+    // The redirect can beat Composio's own status update; give an in-flight authorization a moment.
+    const inflight = accounts.find((a) => a.status === "INITIALIZING" || a.status === "INITIATED");
+    if (inflight) {
+      try {
+        await composio().connectedAccounts.waitForConnection(inflight.id, 20_000);
+      } catch {
+        // still not active; handled below
+      }
+      accounts = await listAccounts(clientId, provider);
+      active = accounts.find((a) => a.status === "ACTIVE");
+    }
   }
 
-  const account = await composio().connectedAccounts.get(conn.composio_connected_account_id);
-  if (account.status !== "ACTIVE") {
-    const reason = `Connection not active (${account.status})`;
-    await admin
-      .from("integration_connections")
-      .update({ status: "error", last_error: account.statusReason ?? reason })
-      .eq("id", conn.id);
+  if (!active) {
+    const stillGoing = accounts.some((a) => a.status === "INITIALIZING" || a.status === "INITIATED");
+    if (stillGoing) {
+      await admin.from("integration_connections").update({ status: "pending", last_error: null }).eq("id", conn.id);
+      return {
+        ok: false,
+        soft: true,
+        reason: "Google authorization is still in progress. Finish the Google consent screen, then click Connect Account again.",
+      };
+    }
+    const reason = "Google authorization wasn't completed or has expired. Click Reconnect and finish the Google consent screen.";
+    await admin.from("integration_connections").update({ status: "error", last_error: reason }).eq("id", conn.id);
     return { ok: false, reason };
   }
 
   let found: DiscoveredResource[];
   try {
     const adapter = provider === "ga4" ? ga4Adapter : gscAdapter;
-    found = await adapter.listResources({
-      userId: conn.composio_entity_id,
-      connectedAccountId: conn.composio_connected_account_id,
-    });
+    found = await adapter.listResources({ userId: entity, connectedAccountId: active.id });
   } catch (e) {
     const reason = "Connected, but listing resources failed";
     await admin
       .from("integration_connections")
-      .update({ status: "error", last_error: `${reason}: ${(e instanceof Error ? e.message : "").slice(0, 300)}` })
+      .update({
+        composio_connected_account_id: active.id,
+        status: "error",
+        last_error: `${reason}: ${(e instanceof Error ? e.message : "").slice(0, 300)}`,
+      })
       .eq("id", conn.id);
     return { ok: false, reason };
   }
@@ -108,8 +153,18 @@ export async function completeConnect(clientId: string, provider: ProviderId): P
 
   await admin
     .from("integration_connections")
-    .update({ status: "connected", last_error: null })
+    .update({
+      composio_connected_account_id: active.id,
+      composio_entity_id: entity,
+      status: "connected",
+      last_error: null,
+    })
     .eq("id", conn.id);
+
+  // Revoke superseded/expired duplicates so no unused live OAuth grants are left behind.
+  await Promise.allSettled(
+    accounts.filter((a) => a.id !== active.id).map((a) => composio().connectedAccounts.delete(a.id)),
+  );
   return { ok: true };
 }
 
@@ -165,17 +220,19 @@ export async function disconnect(clientId: string, provider: ProviderId) {
   const admin = createAdminClient();
   const { data: conn } = await admin
     .from("integration_connections")
-    .select("id, composio_connected_account_id")
+    .select("id")
     .eq("client_id", clientId)
     .eq("provider", provider)
     .maybeSingle();
   if (!conn) return;
 
-  if (conn.composio_connected_account_id) {
+  // Revoke every Composio account for this client+toolkit, not just the stored one.
+  if (provider !== "gbp") {
     try {
-      await composio().connectedAccounts.delete(conn.composio_connected_account_id);
+      const accounts = await listAccounts(clientId, provider);
+      await Promise.allSettled(accounts.map((a) => composio().connectedAccounts.delete(a.id)));
     } catch {
-      // already gone upstream; still disconnect locally
+      // upstream already gone or unreachable; still disconnect locally
     }
   }
   await admin

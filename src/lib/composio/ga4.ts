@@ -64,6 +64,8 @@ export interface Ga4ReportRequest {
   limit?: number;
   offset?: number;
   orderBys?: unknown[];
+  /** Hard stop on total rows fetched across pages (protects against huge page/event cardinality). */
+  maxRows?: number;
 }
 
 /** Fetch every page of a GA4 report (GA4 caps rows per request). */
@@ -84,6 +86,7 @@ export async function runGa4Report(ctx: AdapterContext, req: Ga4ReportRequest): 
     );
     rows.push(...report.rows);
     if (report.rows.length < pageSize) break;
+    if (req.maxRows && rows.length >= req.maxRows) break;
     offset += pageSize;
   }
   return rows;
