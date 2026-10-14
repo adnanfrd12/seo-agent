@@ -74,3 +74,6 @@ body {
 /* short viewports (e.g. 1366x768 laptops, or 1080p screens minus browser chrome): tighter vertical rhythm so the login card fits */
 @custom-variant short (@media (max-height: 900px));
 @custom-variant shorter (@media (max-height: 740px));
+
+/* the app frame scrolls internally; the document itself never does */
+html, body { height: 100%; }

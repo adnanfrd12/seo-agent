@@ -2,7 +2,7 @@
 
 import { useId, useState } from "react";
 import {
-  CartesianGrid, Line, LineChart, ResponsiveContainer, Tooltip, XAxis, YAxis,
+  Bar, CartesianGrid, ComposedChart, Line, ResponsiveContainer, Tooltip, XAxis, YAxis,
 } from "recharts";
 
 export interface TrendPoint {
@@ -44,6 +44,7 @@ export function TrendChart({
   const [table, setTable] = useState(false);
   const id = useId();
   const hasPrev = data.some((d) => d.previous != null);
+  const bars = format === "int";
 
   return (
     <figure className="flex min-w-0 flex-col rounded-xl border border-border bg-surface p-4" aria-labelledby={`${id}-t`}>
@@ -69,7 +70,7 @@ export function TrendChart({
       {hasPrev && !table && (
         <ul className="mb-2 flex flex-wrap items-center gap-x-4 gap-y-1 text-xs text-muted" aria-label="Legend">
           <li className="flex items-center gap-1.5">
-            <span className="inline-block h-0.5 w-4 rounded bg-accent" aria-hidden /> {seriesLabel}
+            <span className={bars ? "inline-block size-2.5 rounded-sm bg-accent" : "inline-block h-0.5 w-4 rounded bg-accent"} aria-hidden /> {seriesLabel}
           </li>
           <li className="flex items-center gap-1.5">
             <span className="inline-block w-4 border-t-2 border-dashed border-muted" aria-hidden /> {previousLabel}
@@ -101,9 +102,9 @@ export function TrendChart({
           </table>
         </div>
       ) : (
-        <div className="h-60" role="img" aria-label={`${title}: ${seriesLabel} line chart. Use the Table button for exact values.`}>
+        <div className="h-60" role="img" aria-label={`${title}: ${seriesLabel} ${bars ? "bar" : "line"} chart. Use the Table button for exact values.`}>
           <ResponsiveContainer width="100%" height="100%">
-            <LineChart data={data} margin={{ top: 4, right: 8, bottom: 0, left: 0 }}>
+            <ComposedChart data={data} margin={{ top: 4, right: 8, bottom: 0, left: 0 }} barCategoryGap="20%">
               <CartesianGrid stroke="var(--border)" strokeDasharray="3 3" vertical={false} />
               <XAxis
                 dataKey="date" tickFormatter={shortDate} tick={{ fill: "var(--muted)", fontSize: 12 }}
@@ -115,7 +116,7 @@ export function TrendChart({
                 domain={reverseY ? ["auto", "auto"] : [0, "auto"]} allowDecimals={format !== "int"}
               />
               <Tooltip
-                cursor={{ stroke: "var(--muted)", strokeDasharray: "3 3" }}
+                cursor={bars ? { fill: "var(--surface-muted)" } : { stroke: "var(--muted)", strokeDasharray: "3 3" }}
                 contentStyle={{
                   background: "var(--surface)", border: "1px solid var(--border)", borderRadius: 8, fontSize: 12, color: "var(--foreground)",
                 }}
@@ -124,15 +125,21 @@ export function TrendChart({
               />
               {hasPrev && (
                 <Line
-                  type="monotone" dataKey="previous" stroke="var(--muted)" strokeWidth={2} strokeDasharray="5 4"
+                  type="linear" dataKey="previous" stroke="var(--muted)" strokeWidth={2} strokeDasharray="5 4"
                   dot={false} activeDot={{ r: 4 }} isAnimationActive={false}
                 />
               )}
-              <Line
-                type="monotone" dataKey="value" stroke="var(--accent)" strokeWidth={2} dot={false}
-                activeDot={{ r: 4, stroke: "var(--surface)", strokeWidth: 2 }} isAnimationActive={false}
-              />
-            </LineChart>
+              {bars ? (
+                <Bar dataKey="value" fill="var(--accent)" radius={[3, 3, 0, 0]} maxBarSize={22} isAnimationActive={false} />
+              ) : (
+                <Line
+                  type="linear" dataKey="value" stroke="var(--accent)" strokeWidth={2}
+                  // ratios have gaps on days without data; show a dot so isolated days stay visible
+                  dot={{ r: 2.5, fill: "var(--accent)", strokeWidth: 0 }}
+                  activeDot={{ r: 4.5, stroke: "var(--surface)", strokeWidth: 2 }} isAnimationActive={false}
+                />
+              )}
+            </ComposedChart>
           </ResponsiveContainer>
         </div>
       )}

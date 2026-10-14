@@ -51,7 +51,7 @@ export function AppShell({ header, children }: { header: React.ReactNode; childr
   const [drawer, setDrawer] = useState(false);
 
   return (
-    <div className="flex h-dvh overflow-hidden">
+    <div className="relative flex h-dvh overflow-hidden">
       {/* desktop / tablet sidebar */}
       <aside
         className={cn(
@@ -99,7 +99,7 @@ export function AppShell({ header, children }: { header: React.ReactNode; childr
           </button>
           <header className="flex min-w-0 flex-1 items-center gap-3">{header}</header>
         </div>
-        <main className="flex-1 overflow-y-auto p-4 md:p-6">{children}</main>
+        <main className="relative flex-1 overflow-y-auto overscroll-contain p-4 md:p-6">{children}</main>
       </div>
     </div>
   );
