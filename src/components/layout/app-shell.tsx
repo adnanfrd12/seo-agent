@@ -51,7 +51,7 @@ export function AppShell({ header, children }: { header: React.ReactNode; childr
   const [drawer, setDrawer] = useState(false);
 
   return (
-    <div className="flex h-screen overflow-hidden">
+    <div className="flex h-dvh overflow-hidden">
       {/* desktop / tablet sidebar */}
       <aside
         className={cn(

@@ -46,7 +46,7 @@ export default async function DashboardLayout({ children }: { children: React.Re
 
   return (
     <AppShell
-      header={<HeaderContent clientName={client.name} email={user.email} lastSyncedAt={lastSync?.last_synced_at ?? null} />}
+      header={<HeaderContent clientName={client.name} user={user} lastSyncedAt={lastSync?.last_synced_at ?? null} />}
     >
       {children}
     </AppShell>
