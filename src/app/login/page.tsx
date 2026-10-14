@@ -26,7 +26,7 @@ function Headline({ className }: { className?: string }) {
 
 export default function LoginPage() {
   return (
-    <main className="relative min-h-screen overflow-hidden bg-background">
+    <main className="relative min-h-screen overflow-hidden bg-background lg:h-dvh lg:min-h-0">
       {/* ambient glows */}
       <div aria-hidden className="pointer-events-none absolute inset-0 -z-0">
         <div className="absolute -left-40 -top-40 size-[34rem] rounded-full bg-[#F2701E]/15 blur-3xl" />
@@ -36,9 +36,9 @@ export default function LoginPage() {
       </div>
 
       {/* content is capped and centered so very wide screens don't stretch it */}
-      <div className="relative mx-auto grid min-h-screen w-full max-w-[1760px] lg:grid-cols-[1.1fr_1fr] xl:grid-cols-[1.4fr_1fr]">
+      <div className="relative mx-auto grid min-h-screen w-full max-w-[1760px] lg:h-full lg:min-h-0 lg:grid-cols-[1.1fr_1fr] xl:grid-cols-[1.4fr_1fr]">
       {/* hero: desktop */}
-      <section className="relative hidden overflow-hidden px-10 pt-8 lg:flex lg:flex-col xl:px-16" aria-label="About SEO Insights">
+      <section className="relative hidden overflow-hidden px-10 pt-8 lg:flex lg:h-full lg:min-h-0 lg:flex-col xl:px-16" aria-label="About SEO Insights">
         <div className="flex items-start justify-between animate-fade-up">
           <BrandLockup tagline="Analytics Dashboard" />
           <p className="hidden pt-2 text-sm text-muted xl:block">
@@ -100,7 +100,7 @@ export default function LoginPage() {
       </section>
 
       {/* sign-in (plus a compact intro on phones and tablets, where the hero is hidden) */}
-      <section className="relative flex flex-col items-center justify-center gap-6 px-4 py-8 sm:px-8 sm:py-12 lg:sticky lg:top-0 lg:min-h-screen lg:self-start lg:px-8 lg:py-10 xl:p-10 short:lg:py-4" aria-label="Sign in">
+      <section className="relative flex flex-col items-center justify-center gap-6 px-4 py-8 sm:px-8 sm:py-12 lg:h-full lg:justify-start lg:overflow-y-auto lg:px-8 lg:py-10 xl:p-10 short:lg:py-4" aria-label="Sign in">
         <div className="w-full max-w-[480px] animate-fade-up text-center lg:hidden">
           <Headline className="text-balance text-3xl font-extrabold leading-tight tracking-tight sm:text-4xl" />
           <p className="mx-auto mt-3 hidden max-w-md text-[15px] leading-relaxed text-muted sm:block">
@@ -118,7 +118,7 @@ export default function LoginPage() {
           </ul>
         </div>
 
-        <div className="w-full max-w-[480px] animate-fade-up" style={delay(0.1)}>
+        <div className="w-full max-w-[480px] animate-fade-up lg:my-auto" style={delay(0.1)}>
           <LoginForm />
         </div>
 

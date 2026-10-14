@@ -71,6 +71,6 @@ body {
   .animate-fade-up, .animate-float { animation: none; }
 }
 
-/* short viewports (e.g. 1366x768 laptops): tighter vertical rhythm so the login card fits */
-@custom-variant short (@media (max-height: 820px));
+/* short viewports (e.g. 1366x768 laptops, or 1080p screens minus browser chrome): tighter vertical rhythm so the login card fits */
+@custom-variant short (@media (max-height: 900px));
 @custom-variant shorter (@media (max-height: 740px));
