@@ -70,3 +70,7 @@ body {
 @media (prefers-reduced-motion: reduce) {
   .animate-fade-up, .animate-float { animation: none; }
 }
+
+/* short viewports (e.g. 1366x768 laptops): tighter vertical rhythm so the login card fits */
+@custom-variant short (@media (max-height: 820px));
+@custom-variant shorter (@media (max-height: 740px));

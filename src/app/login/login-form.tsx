@@ -31,12 +31,12 @@ export function LoginForm() {
   }
 
   return (
-    <div className="relative w-full rounded-3xl border border-border bg-surface/95 p-6 shadow-2xl shadow-black/[0.07] backdrop-blur sm:p-10 lg:p-8 xl:p-10">
+    <div className="relative w-full rounded-3xl border border-border bg-surface/95 p-6 shadow-2xl shadow-black/[0.07] backdrop-blur sm:p-10 lg:p-8 xl:p-10 short:lg:py-6">
       {/* thin brand-gradient accent along the top edge */}
       <div aria-hidden className="absolute inset-x-10 top-0 h-[3px] rounded-b-full bg-gradient-to-r from-[#F2701E] to-[#E8452C]" />
       <BrandLockup stacked size="md" tagline="Client Analytics Dashboard" />
 
-      <h1 className="mt-8 text-center text-3xl font-bold tracking-tight">Welcome Back</h1>
+      <h1 className="mt-8 short:lg:mt-4 text-center text-3xl font-bold tracking-tight">Welcome Back</h1>
       <p className="mx-auto mt-2 max-w-xs text-center text-[15px] leading-relaxed text-muted">
         Sign in to your account to view your SEO performance and reports.
       </p>
@@ -44,17 +44,17 @@ export function LoginForm() {
       {/* Visual only for now: the Google sign-in flow is intentionally not implemented yet. */}
       <button
         type="button" disabled aria-disabled="true" title="Google sign-in is coming soon"
-        className="mt-7 flex w-full cursor-not-allowed items-center justify-center gap-3 rounded-xl border border-border bg-surface py-3 text-[15px] font-semibold opacity-70"
+        className="mt-7 short:lg:mt-4 flex w-full cursor-not-allowed items-center justify-center gap-3 rounded-xl border border-border bg-surface py-3 text-[15px] font-semibold opacity-70"
       >
         <GoogleG /> Continue with Google
         <span className="rounded-full bg-surface-muted px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-muted">Soon</span>
       </button>
 
-      <div className="my-5 flex items-center gap-4 text-xs font-medium text-muted" aria-hidden>
+      <div className="my-5 short:lg:my-3 flex items-center gap-4 text-xs font-medium text-muted" aria-hidden>
         <span className="h-px flex-1 bg-border" /> OR <span className="h-px flex-1 bg-border" />
       </div>
 
-      <form onSubmit={onSubmit} className="space-y-4" noValidate={false}>
+      <form onSubmit={onSubmit} className="space-y-4 short:lg:space-y-3" noValidate={false}>
         <div>
           <label htmlFor="email" className="mb-1.5 block text-sm font-semibold">Email</label>
           <div className="relative">
@@ -99,7 +99,7 @@ export function LoginForm() {
         </button>
       </form>
 
-      <ul className="mt-8 grid grid-cols-3 divide-x divide-border text-center">
+      <ul className="mt-8 short:lg:mt-5 shorter:lg:hidden grid grid-cols-3 divide-x divide-border text-center">
         {[
           { icon: ShieldCheck, title: "Secure Access", sub: "Your data is safe" },
           { icon: ChartNoAxesColumn, title: "Daily Sync", sub: "Direct from Google" },

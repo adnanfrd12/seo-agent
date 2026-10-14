@@ -5,9 +5,9 @@ import { AnalyticsIcon, BusinessProfileIcon, GoogleG } from "@/components/brand/
 import { LoginForm } from "./login-form";
 
 const SOURCES = [
-  { icon: <AnalyticsIcon />, title: "Google Analytics 4", short: "Analytics 4", sub: "Website traffic & conversions", pos: "left-[4%] top-[2%]", delay: "0s" },
-  { icon: <GoogleG className="size-9" />, title: "Google Search Console", short: "Search Console", sub: "Search visibility & keywords", pos: "left-[12%] top-[34%]", delay: "-2s" },
-  { icon: <BusinessProfileIcon />, title: "Google Business Profile", short: "Business Profile", sub: "Local views, calls & directions", pos: "left-[18%] top-[66%]", delay: "-4s" },
+  { icon: <AnalyticsIcon />, title: "Google Analytics 4", short: "Analytics 4", sub: "Website traffic & conversions", pos: "left-0 top-[2%]", delay: "0s" },
+  { icon: <GoogleG className="size-9" />, title: "Google Search Console", short: "Search Console", sub: "Search visibility & keywords", pos: "left-[3%] 2xl:left-[6%] top-[34%]", delay: "-2s" },
+  { icon: <BusinessProfileIcon />, title: "Google Business Profile", short: "Business Profile", sub: "Local views, calls & directions", pos: "left-[6%] 2xl:left-[12%] top-[66%]", delay: "-4s" },
 ];
 const BENEFITS = ["Real Google data", "Automated reporting", "Actionable insights"];
 const delay = (s: number) => ({ animationDelay: `${s}s` });
@@ -26,7 +26,7 @@ function Headline({ className }: { className?: string }) {
 
 export default function LoginPage() {
   return (
-    <main className="relative grid min-h-screen overflow-hidden bg-background lg:grid-cols-[1.1fr_1fr] xl:grid-cols-[1.4fr_1fr]">
+    <main className="relative min-h-screen overflow-hidden bg-background">
       {/* ambient glows */}
       <div aria-hidden className="pointer-events-none absolute inset-0 -z-0">
         <div className="absolute -left-40 -top-40 size-[34rem] rounded-full bg-[#F2701E]/15 blur-3xl" />
@@ -35,6 +35,8 @@ export default function LoginPage() {
         <div className="absolute -right-32 top-10 size-[24rem] rounded-full bg-[#4F7CF7]/10 blur-3xl lg:hidden" />
       </div>
 
+      {/* content is capped and centered so very wide screens don't stretch it */}
+      <div className="relative mx-auto grid min-h-screen w-full max-w-[1760px] lg:grid-cols-[1.1fr_1fr] xl:grid-cols-[1.4fr_1fr]">
       {/* hero: desktop */}
       <section className="relative hidden overflow-hidden px-10 pt-8 lg:flex lg:flex-col xl:px-16" aria-label="About SEO Insights">
         <div className="flex items-start justify-between animate-fade-up">
@@ -44,17 +46,20 @@ export default function LoginPage() {
           </p>
         </div>
 
-        <div className="mt-10 flex items-start justify-between gap-6">
+        {/* centred vertically on tall screens; on normal heights it simply fills the column */}
+        <div className="my-auto flex flex-col pb-10 pt-10">
+        <div className="flex items-start justify-between gap-6">
           <div className="max-w-[27rem] shrink-0">
-            <Headline className="animate-fade-up text-5xl font-extrabold leading-[1.04] tracking-tight 2xl:text-6xl" />
+            <Headline className="animate-fade-up text-5xl font-extrabold leading-[1.04] tracking-tight 2xl:text-6xl min-[1800px]:text-7xl" />
             <p className="mt-6 animate-fade-up text-lg leading-relaxed text-muted" style={delay(0.1)}>
               Connect Google Analytics, Search Console and Google Business Profile to track performance, find
               opportunities and grow your business.
             </p>
           </div>
 
-          {/* floating integration cards: their own column so they never cover the headline */}
-          <div className="pointer-events-none relative hidden h-[17rem] w-[21rem] shrink-0 xl:block 2xl:w-[24rem]" aria-hidden>
+          {/* floating integration cards: their own column so they never cover the headline, and only
+              from 1440px, where that column is wide enough not to spill into the sign-in card */}
+          <div className="pointer-events-none relative hidden h-[17rem] w-[16rem] shrink-0 min-[1440px]:block 2xl:w-[19rem]" aria-hidden>
             <svg className="absolute inset-0 size-full" viewBox="0 0 336 272" fill="none">
               <path d="M22 40 C 0 110, 30 175, 70 186" stroke="#4F7CF7" strokeWidth="1.2" strokeDasharray="3 4" opacity=".55" />
               <circle cx="22" cy="40" r="4" fill="#F2A81E" /><circle cx="44" cy="124" r="4" fill="#4F7CF7" />
@@ -63,7 +68,7 @@ export default function LoginPage() {
             {SOURCES.map((s, i) => (
               <div key={s.title} className={`absolute ${s.pos} animate-fade-up`} style={delay(0.15 + i * 0.1)}>
                 <div className="animate-float -rotate-[4deg]" style={{ animationDelay: s.delay }}>
-                  <div className="flex w-[17rem] items-center gap-3 rounded-2xl border border-white/60 bg-surface/90 px-4 py-3 shadow-xl shadow-black/[0.06] backdrop-blur">
+                  <div className="flex w-[15rem] items-center gap-3 rounded-2xl 2xl:w-[16.5rem] border border-white/60 bg-surface/90 px-4 py-3 shadow-xl shadow-black/[0.06] backdrop-blur">
                     {s.icon}
                     <div className="min-w-0">
                       <p className="truncate text-sm font-bold">{s.title}</p>
@@ -87,14 +92,15 @@ export default function LoginPage() {
           ))}
         </ul>
 
-        <div className="relative -mb-10 mt-8 w-[92%] animate-fade-up xl:w-[88%]" style={delay(0.3)}>
+        <div className="relative mt-10 w-[92%] max-w-[920px] animate-fade-up xl:w-[88%] min-[1800px]:max-w-[1040px]" style={delay(0.3)}>
           <div aria-hidden className="absolute inset-x-10 bottom-0 top-1/3 rounded-full bg-[#F2701E]/20 blur-3xl" />
           <DashboardPreview className="relative" />
+        </div>
         </div>
       </section>
 
       {/* sign-in (plus a compact intro on phones and tablets, where the hero is hidden) */}
-      <section className="relative flex flex-col items-center justify-center gap-6 px-4 py-8 sm:px-8 sm:py-12 lg:px-8 lg:py-10 xl:p-10" aria-label="Sign in">
+      <section className="relative flex flex-col items-center justify-center gap-6 px-4 py-8 sm:px-8 sm:py-12 lg:sticky lg:top-0 lg:min-h-screen lg:self-start lg:px-8 lg:py-10 xl:p-10 short:lg:py-4" aria-label="Sign in">
         <div className="w-full max-w-[480px] animate-fade-up text-center lg:hidden">
           <Headline className="text-balance text-3xl font-extrabold leading-tight tracking-tight sm:text-4xl" />
           <p className="mx-auto mt-3 hidden max-w-md text-[15px] leading-relaxed text-muted sm:block">
@@ -120,6 +126,7 @@ export default function LoginPage() {
           <DashboardPreview tilt={false} />
         </div>
       </section>
+      </div>
     </main>
   );
 }
