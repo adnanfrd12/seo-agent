@@ -11,9 +11,9 @@ export interface TrendPoint {
   previous?: number | null;
 }
 
-type Format = "int" | "percent" | "decimal";
+export type TrendFormat = "int" | "percent" | "decimal";
 
-function fmt(v: number | null | undefined, f: Format) {
+export function fmtTrend(v: number | null | undefined, f: TrendFormat) {
   if (v == null) return "—";
   if (f === "percent") return `${(v * 100).toFixed(1)}%`;
   if (f === "decimal") return v.toFixed(1);
@@ -24,37 +24,38 @@ const shortDate = (iso: string) =>
 
 /**
  * One measure over time. Current period is a 2px accent line; the optional previous period is a
- * dashed muted line (so identity never relies on color alone). A table view is always available.
+ * dashed muted line (so identity never relies on color alone). Chart, table and empty states all
+ * share one fixed height, so toggling or loading never shifts the layout.
  */
 export function TrendChart({
-  title, data, format = "int", seriesLabel, previousLabel = "Previous period", reverseY = false,
+  title, data, format = "int", seriesLabel, previousLabel = "Previous period", reverseY = false, toolbar, source,
 }: {
   title: string;
   data: TrendPoint[];
-  format?: Format;
+  format?: TrendFormat;
   seriesLabel: string;
   previousLabel?: string;
   reverseY?: boolean;
+  /** extra controls rendered in the header, e.g. a metric switcher */
+  toolbar?: React.ReactNode;
+  /** small source badge, e.g. "GA4" */
+  source?: string;
 }) {
   const [table, setTable] = useState(false);
   const id = useId();
   const hasPrev = data.some((d) => d.previous != null);
 
   return (
-    <figure className="rounded-xl border border-border bg-surface p-4" aria-labelledby={`${id}-t`}>
-      <div className="mb-3 flex items-center justify-between gap-2">
-        <figcaption id={`${id}-t`} className="text-sm font-semibold">{title}</figcaption>
-        <div className="flex items-center gap-3 text-xs text-muted">
-          {hasPrev && (
-            <ul className="flex items-center gap-3" aria-label="Legend">
-              <li className="flex items-center gap-1.5">
-                <span className="inline-block h-0.5 w-4 rounded bg-accent" aria-hidden /> {seriesLabel}
-              </li>
-              <li className="flex items-center gap-1.5">
-                <span className="inline-block w-4 border-t-2 border-dashed border-muted" aria-hidden /> {previousLabel}
-              </li>
-            </ul>
+    <figure className="flex min-w-0 flex-col rounded-xl border border-border bg-surface p-4" aria-labelledby={`${id}-t`}>
+      <div className="mb-3 flex flex-wrap items-center justify-between gap-x-3 gap-y-2">
+        <div className="flex min-w-0 items-center gap-2">
+          <figcaption id={`${id}-t`} className="truncate text-sm font-semibold">{title}</figcaption>
+          {source && (
+            <span className="rounded bg-accent-soft px-1.5 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-accent">{source}</span>
           )}
+        </div>
+        <div className="flex flex-wrap items-center gap-3 text-xs text-muted">
+          {toolbar}
           <button
             onClick={() => setTable((v) => !v)}
             aria-pressed={table}
@@ -65,10 +66,21 @@ export function TrendChart({
         </div>
       </div>
 
+      {hasPrev && !table && (
+        <ul className="mb-2 flex flex-wrap items-center gap-x-4 gap-y-1 text-xs text-muted" aria-label="Legend">
+          <li className="flex items-center gap-1.5">
+            <span className="inline-block h-0.5 w-4 rounded bg-accent" aria-hidden /> {seriesLabel}
+          </li>
+          <li className="flex items-center gap-1.5">
+            <span className="inline-block w-4 border-t-2 border-dashed border-muted" aria-hidden /> {previousLabel}
+          </li>
+        </ul>
+      )}
+
       {data.length === 0 ? (
-        <p className="py-12 text-center text-sm text-muted">No data for this period.</p>
+        <div className="flex h-60 items-center justify-center text-sm text-muted">No data for this period.</div>
       ) : table ? (
-        <div className="max-h-64 overflow-auto">
+        <div className="h-60 overflow-auto">
           <table className="w-full text-sm">
             <thead className="sticky top-0 bg-surface text-left text-muted">
               <tr>
@@ -81,15 +93,15 @@ export function TrendChart({
               {data.map((d) => (
                 <tr key={d.date} className="border-t border-border">
                   <td className="py-1">{d.date}</td>
-                  <td className="py-1 text-right tabular-nums">{fmt(d.value, format)}</td>
-                  {hasPrev && <td className="py-1 text-right tabular-nums">{fmt(d.previous, format)}</td>}
+                  <td className="py-1 text-right tabular-nums">{fmtTrend(d.value, format)}</td>
+                  {hasPrev && <td className="py-1 text-right tabular-nums">{fmtTrend(d.previous, format)}</td>}
                 </tr>
               ))}
             </tbody>
           </table>
         </div>
       ) : (
-        <div className="h-60" role="img" aria-label={`${title} line chart. Use the Table button for exact values.`}>
+        <div className="h-60" role="img" aria-label={`${title}: ${seriesLabel} line chart. Use the Table button for exact values.`}>
           <ResponsiveContainer width="100%" height="100%">
             <LineChart data={data} margin={{ top: 4, right: 8, bottom: 0, left: 0 }}>
               <CartesianGrid stroke="var(--border)" strokeDasharray="3 3" vertical={false} />
@@ -99,7 +111,8 @@ export function TrendChart({
               />
               <YAxis
                 width={48} tick={{ fill: "var(--muted)", fontSize: 12 }} tickLine={false} axisLine={false}
-                tickFormatter={(v: number) => fmt(v, format)} reversed={reverseY} domain={reverseY ? ["auto", "auto"] : [0, "auto"]}
+                tickFormatter={(v: number) => fmtTrend(v, format)} reversed={reverseY}
+                domain={reverseY ? ["auto", "auto"] : [0, "auto"]} allowDecimals={format !== "int"}
               />
               <Tooltip
                 cursor={{ stroke: "var(--muted)", strokeDasharray: "3 3" }}
@@ -107,17 +120,17 @@ export function TrendChart({
                   background: "var(--surface)", border: "1px solid var(--border)", borderRadius: 8, fontSize: 12, color: "var(--foreground)",
                 }}
                 labelFormatter={(l) => shortDate(String(l))}
-                formatter={(v, name) => [fmt(typeof v === "number" ? v : null, format), name === "previous" ? previousLabel : seriesLabel]}
+                formatter={(v, name) => [fmtTrend(typeof v === "number" ? v : null, format), name === "previous" ? previousLabel : seriesLabel]}
               />
               {hasPrev && (
                 <Line
                   type="monotone" dataKey="previous" stroke="var(--muted)" strokeWidth={2} strokeDasharray="5 4"
-                  dot={false} activeDot={{ r: 4 }} connectNulls isAnimationActive={false}
+                  dot={false} activeDot={{ r: 4 }} isAnimationActive={false}
                 />
               )}
               <Line
                 type="monotone" dataKey="value" stroke="var(--accent)" strokeWidth={2} dot={false}
-                activeDot={{ r: 4, stroke: "var(--surface)", strokeWidth: 2 }} connectNulls isAnimationActive={false}
+                activeDot={{ r: 4, stroke: "var(--surface)", strokeWidth: 2 }} isAnimationActive={false}
               />
             </LineChart>
           </ResponsiveContainer>

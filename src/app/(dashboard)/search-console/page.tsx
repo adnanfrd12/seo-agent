@@ -1,5 +1,5 @@
 import { ArrowDown, ArrowUp, Info } from "lucide-react";
-import { TrendChart, type TrendPoint } from "@/components/charts/trend-chart";
+import { MetricTrend } from "@/components/charts/metric-trend";
 import { FilterSelect } from "@/components/dashboard/filter-select";
 import { KpiCard } from "@/components/dashboard/kpi-card";
 import { EmptyState, PageHeader } from "@/components/dashboard/page-header";
@@ -9,6 +9,7 @@ import { DataTable } from "@/components/tables/data-table";
 import { getSession } from "@/lib/analytics/client-context";
 import { fmtDecimal, fmtInt, fmtPercent, toNum } from "@/lib/analytics/format";
 import { resolveRange } from "@/lib/analytics/range";
+import { dailySeries, type TrendData } from "@/lib/analytics/trend";
 import { first, type SearchParams } from "@/lib/analytics/url";
 import { createClient } from "@/lib/supabase/server";
 
@@ -24,18 +25,11 @@ type Summary = { current: Totals; previous: Totals; mom: Totals; yoy: Totals; de
 type Table<T> = { total: number; rows: T[] };
 type KeywordRow = { query: string; clicks: number; impressions: number; ctr: number | null; position: number | null; position_change: number | null };
 type PageRow = { page: string; clicks: number; impressions: number; ctr: number | null; position: number | null };
-type Trend = { current: ({ date: string } & Record<string, number | null>)[]; previous: ({ date: string } & Record<string, number | null>)[] };
 
 const pick = (t: Totals | undefined, k: string) => (t?.has_data ? toNum(t[k]) : null);
 const oneOf = <T extends string>(v: string | undefined, allowed: readonly T[], fallback: T): T =>
   allowed.includes(v as T) ? (v as T) : fallback;
 const cap = (s: string) => s.charAt(0).toUpperCase() + s.slice(1);
-
-function trendPoints(t: Trend | null, key: string): TrendPoint[] {
-  if (!t) return [];
-  const prev = new Map(t.previous.map((p) => [p.date, toNum(p[key])]));
-  return t.current.map((p) => ({ date: p.date, value: toNum(p[key]), previous: prev.get(p.date) ?? null }));
-}
 
 /** Positive = moved up the results page (e.g. from 8.0 to 5.0 is +3.0), which is good. */
 function PositionChange({ value }: { value: number | null }) {
@@ -152,7 +146,7 @@ export default async function SearchConsolePage({ searchParams }: { searchParams
   }
 
   const s = summary.data as Summary;
-  const t = trend.data as Trend;
+  const t = trend.data as TrendData;
   const kw = keywords.data as Table<KeywordRow>;
   const pg = pages.data as Table<PageRow>;
   const tablesNarrowed = searchType !== "web" || country !== null;
@@ -214,10 +208,14 @@ export default async function SearchConsolePage({ searchParams }: { searchParams
       </section>
 
       <div className="mt-6 grid gap-4 lg:grid-cols-2">
-        <TrendChart title="Organic clicks over time" seriesLabel="Clicks" data={trendPoints(t, "clicks")} />
-        <TrendChart title="Search impressions over time" seriesLabel="Impressions" data={trendPoints(t, "impressions")} />
-        <TrendChart title="CTR trend" seriesLabel="CTR" format="percent" data={trendPoints(t, "ctr")} />
-        <TrendChart title="Average position trend" seriesLabel="Avg position" format="decimal" reverseY data={trendPoints(t, "position")} />
+        <MetricTrend title="Search visibility" source="GSC" options={[
+          { key: "clicks", label: "Clicks", data: dailySeries(t, "clicks", range) },
+          { key: "impressions", label: "Impressions", data: dailySeries(t, "impressions", range) },
+        ]} />
+        <MetricTrend title="Click-through & ranking" source="GSC" options={[
+          { key: "ctr", label: "CTR", format: "percent", data: dailySeries(t, "ctr", range, "ratio") },
+          { key: "position", label: "Avg position", format: "decimal", reverseY: true, data: dailySeries(t, "position", range, "ratio") },
+        ]} />
       </div>
 
       <div className="mt-6 space-y-6">

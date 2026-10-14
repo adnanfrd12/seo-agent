@@ -12,6 +12,7 @@ const query = z.object({
   dir: z.enum(["asc", "desc"]).optional(),
   group: z.enum(["source_medium", "channel"]).optional(),
   pages: z.enum(["views", "landing"]).optional(),
+  channel: z.string().max(80).optional(),
 });
 
 const PAGE = 500;
@@ -35,6 +36,7 @@ export async function GET(request: NextRequest) {
         ? await supabase.rpc("get_ga4_traffic_sources", {
             p_client_id: client.id, p_start: q.start, p_end: q.end, p_group_by: q.group ?? "source_medium",
             p_sort: q.sort ?? "sessions", p_dir: q.dir ?? "desc", p_limit: PAGE, p_offset: offset,
+            p_channel: q.channel ?? null,
           })
         : await supabase.rpc("get_ga4_top_pages", {
             p_client_id: client.id, p_start: q.start, p_end: q.end, p_kind: q.pages ?? "views",

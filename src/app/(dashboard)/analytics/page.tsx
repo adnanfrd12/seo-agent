@@ -1,13 +1,16 @@
 import Link from "next/link";
+import { Info } from "lucide-react";
 import { BarList } from "@/components/charts/bar-list";
-import { TrendChart, type TrendPoint } from "@/components/charts/trend-chart";
+import { MetricTrend } from "@/components/charts/metric-trend";
 import { KpiCard } from "@/components/dashboard/kpi-card";
+import { FilterSelect } from "@/components/dashboard/filter-select";
 import { EmptyState, PageHeader } from "@/components/dashboard/page-header";
 import { RangeSelector } from "@/components/dashboard/range-selector";
 import { DataTable } from "@/components/tables/data-table";
 import { getSession } from "@/lib/analytics/client-context";
-import { fmtDecimal, fmtDuration, fmtInt, fmtMoney, fmtPercent, toNum } from "@/lib/analytics/format";
+import { fmtDecimal, fmtDuration, fmtInt, fmtMoney, fmtPercent, toNum, type Num } from "@/lib/analytics/format";
 import { resolveRange } from "@/lib/analytics/range";
+import { dailySeries, type TrendData } from "@/lib/analytics/trend";
 import { first, withParams, type SearchParams } from "@/lib/analytics/url";
 import { createClient } from "@/lib/supabase/server";
 
@@ -15,27 +18,21 @@ const PATH = "/analytics";
 const PAGE_SIZE = 10;
 
 type Totals = { has_data: boolean } & Record<string, unknown>;
-type Summary = {
-  current: Totals; previous: Totals; mom: Totals; yoy: Totals;
+type Compared = { current: Totals; previous: Totals; mom: Totals; yoy: Totals };
+type Summary = Compared & {
   devices: { value: string; sessions: number; users: number }[];
   countries: { value: string; sessions: number; users: number }[];
   key_events: { value: string; key_events: number }[];
   channels: { channel_group: string; sessions: number; users: number }[];
 };
+type ChannelSummary = Compared & { trend: TrendData };
 type Table<T> = { total: number; rows: T[] };
 type SourceRow = { source: string; medium: string | null; sessions: number; users: number; engagement_rate: number | null; key_events: number };
 type PageRow = { page_path: string; views: number; users: number; sessions: number; avg_engagement_seconds: number | null; key_events: number };
-type Trend = { current: ({ date: string } & Record<string, number | null>)[]; previous: ({ date: string } & Record<string, number | null>)[] };
 
 const pick = (t: Totals | undefined, k: string) => (t?.has_data ? toNum(t[k]) : null);
 const oneOf = <T extends string>(v: string | undefined, allowed: readonly T[], fallback: T): T =>
   allowed.includes(v as T) ? (v as T) : fallback;
-
-function trendPoints(t: Trend | null, key: string): TrendPoint[] {
-  if (!t) return [];
-  const prev = new Map(t.previous.map((p) => [p.date, toNum(p[key])]));
-  return t.current.map((p) => ({ date: p.date, value: toNum(p[key]), previous: prev.get(p.date) ?? null }));
-}
 
 export default async function Ga4Page({ searchParams }: { searchParams: Promise<SearchParams> }) {
   const { client } = await getSession();
@@ -46,6 +43,7 @@ export default async function Ga4Page({ searchParams }: { searchParams: Promise<
     client.timezone, client.defaultRangeDays,
   );
   const compare = first(sp.compare) === "1";
+  const channel = (first(sp.channel) ?? "").slice(0, 80) || null;
 
   const tsSort = oneOf(first(sp.ts_sort), ["source", "medium", "sessions", "users", "engagement_rate", "key_events"] as const, "sessions");
   const tsDir = oneOf(first(sp.ts_dir), ["asc", "desc"] as const, "desc");
@@ -79,25 +77,29 @@ export default async function Ga4Page({ searchParams }: { searchParams: Promise<
   }
 
   const args = { p_client_id: client.id, p_start: range.start, p_end: range.end };
-  const [summary, trend, sources, pages] = await Promise.all([
+  const [summary, trend, channelSummary, sources, pages] = await Promise.all([
     supabase.rpc("get_ga4_summary", args),
-    supabase.rpc("get_analytics_trends", { ...args, p_provider: "ga4", p_granularity: "day", p_compare: compare }),
+    channel
+      ? Promise.resolve({ data: null, error: null })
+      : supabase.rpc("get_analytics_trends", { ...args, p_provider: "ga4", p_granularity: "day", p_compare: compare }),
+    channel
+      ? supabase.rpc("get_ga4_channel_summary", { ...args, p_channel: channel, p_compare: compare })
+      : Promise.resolve({ data: null, error: null }),
     supabase.rpc("get_ga4_traffic_sources", {
-      ...args, p_sort: tsSort, p_dir: tsDir, p_limit: PAGE_SIZE, p_offset: (tsPage - 1) * PAGE_SIZE,
+      ...args, p_sort: tsSort, p_dir: tsDir, p_limit: PAGE_SIZE, p_offset: (tsPage - 1) * PAGE_SIZE, p_channel: channel,
     }),
     supabase.rpc("get_ga4_top_pages", {
       ...args, p_kind: pageKind, p_sort: tpSort, p_dir: tpDir, p_limit: PAGE_SIZE, p_offset: (tpPage - 1) * PAGE_SIZE,
     }),
   ]);
 
-  const failed = [summary, trend, sources, pages].find((r) => r.error);
   const header = (
     <PageHeader
       title="Google Analytics 4"
       description={`Property: ${resources.map((r) => r.display_name).join(", ")}${resources[0]?.timezone ? ` · reporting time zone ${resources[0].timezone}` : ""}`}
     />
   );
-  if (failed?.error) {
+  if ([summary, trend, channelSummary, sources, pages].some((r) => r.error)) {
     return (
       <>
         {header}
@@ -107,84 +109,110 @@ export default async function Ga4Page({ searchParams }: { searchParams: Promise<
   }
 
   const s = summary.data as Summary;
-  if (!s.current.has_data) {
+  const cs = channelSummary.data as ChannelSummary | null;
+  const stats: Compared = cs ?? s;
+  const t: TrendData = cs ? cs.trend : (trend.data as TrendData);
+  const filters = (
+    <div className="mb-5 flex flex-wrap items-end gap-3">
+      <FilterSelect label="Traffic channel" name="channel" value={channel ?? ""} path={PATH} sp={sp} resetKeys={["ts_page"]}
+        options={[{ value: "", label: "All channels" }, ...s.channels.map((c) => ({ value: c.channel_group, label: c.channel_group }))]} />
+    </div>
+  );
+
+  if (!stats.current.has_data) {
     return (
       <>
         {header}
         <RangeSelector path={PATH} sp={sp} range={range} />
+        {filters}
         <EmptyState
-          title="No GA4 data for this period"
-          body="Either the initial import hasn't finished, or this date range has no stored data. Try a wider range, or run Sync Now."
-          action={{ href: "/integrations", label: "Open Integrations" }}
+          title={channel ? `No ${channel} traffic in this period` : "No GA4 data for this period"}
+          body={channel
+            ? "Pick another channel or widen the date range."
+            : "Either the initial import hasn't finished, or this date range has no stored data. Try a wider range, or run Sync Now."}
+          action={channel ? undefined : { href: "/integrations", label: "Open Integrations" }}
         />
       </>
     );
   }
 
-  const cur = s.current, prev = s.previous, mom = s.mom, yoy = s.yoy;
-  const hasRevenue = pick(cur, "revenue") != null;
-  const kpis = [
-    { label: "Active Users", k: "users", format: fmtInt, hint: "Summed daily active users; returning users are counted once per day they were active." },
-    { label: "New Users", k: "new_users", format: fmtInt },
-    { label: "Sessions", k: "sessions", format: fmtInt },
-    { label: "Engaged Sessions", k: "engaged_sessions", format: fmtInt },
-    { label: "Engagement Rate", k: "engagement_rate", format: fmtPercent, hint: "Engaged sessions ÷ sessions." },
-    { label: "Avg Engagement Time", k: "avg_engagement_seconds", format: fmtDuration, hint: "Total engagement time ÷ active users." },
-    { label: "Event Count", k: "event_count", format: fmtInt },
-    { label: "Key Events", k: "key_events", format: fmtInt },
-    ...(hasRevenue ? [{ label: "Total Revenue", k: "revenue", format: (n: number | null | undefined) => fmtMoney(n) }] : []),
+  const hasRevenue = !channel && pick(stats.current, "revenue") != null;
+  const all = [
+    { label: "Active Users", k: "users", format: fmtInt, hint: "Summed daily active users; someone active on several days is counted once per day.", byChannel: true },
+    { label: "New Users", k: "new_users", format: fmtInt, byChannel: false },
+    { label: "Sessions", k: "sessions", format: fmtInt, byChannel: true },
+    { label: "Engaged Sessions", k: "engaged_sessions", format: fmtInt, byChannel: true },
+    { label: "Engagement Rate", k: "engagement_rate", format: fmtPercent, hint: "Engaged sessions ÷ sessions.", byChannel: true },
+    { label: "Avg Engagement Time", k: "avg_engagement_seconds", format: fmtDuration, hint: "Total engagement time ÷ active users.", byChannel: false },
+    { label: "Event Count", k: "event_count", format: fmtInt, byChannel: false },
+    { label: "Key Events", k: "key_events", format: fmtInt, hint: "GA4 key events (formerly conversions).", byChannel: true },
+    ...(hasRevenue ? [{ label: "Total Revenue", k: "revenue", format: (n: Num) => fmtMoney(n), byChannel: false }] : []),
   ];
+  const kpis = channel ? all.filter((m) => m.byChannel) : all;
 
-  const t = trend.data as Trend;
   const src = sources.data as Table<SourceRow>;
   const pg = pages.data as Table<PageRow>;
   const exportBase = `/api/export/ga4?start=${range.start}&end=${range.end}`;
+  const r = range;
 
   return (
     <>
       {header}
       <RangeSelector path={PATH} sp={sp} range={range} />
+      {filters}
 
-      <section aria-label="Key metrics" className="grid gap-4 sm:grid-cols-2 xl:grid-cols-3 2xl:grid-cols-4">
+      {channel && (
+        <p className="mb-4 flex items-start gap-2 rounded-lg bg-surface p-3 text-sm text-muted ring-1 ring-border">
+          <Info className="mt-0.5 size-4 shrink-0" aria-hidden />
+          Showing {channel} only. New users, event count and engagement time aren&apos;t broken down by channel in GA4&apos;s
+          stored data, so they&apos;re hidden rather than estimated; device, country and page breakdowns below cover all channels.
+        </p>
+      )}
+
+      <section aria-label="Key metrics" className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
         {kpis.map((m) => (
           <KpiCard
             key={m.k} label={m.label} hint={m.hint} source="GA4" format={m.format}
-            value={pick(cur, m.k)} previous={pick(prev, m.k)} mom={pick(mom, m.k)} yoy={pick(yoy, m.k)}
+            value={pick(stats.current, m.k)} previous={pick(stats.previous, m.k)} mom={pick(stats.mom, m.k)} yoy={pick(stats.yoy, m.k)}
           />
         ))}
       </section>
 
       <div className="mt-6 grid gap-4 lg:grid-cols-2">
-        <TrendChart title="Users over time" seriesLabel="Active users" data={trendPoints(t, "users")} />
-        <TrendChart title="Sessions over time" seriesLabel="Sessions" data={trendPoints(t, "sessions")} />
-        <TrendChart title="Key events over time" seriesLabel="Key events" data={trendPoints(t, "key_events")} />
-        <TrendChart title="Engagement rate over time" seriesLabel="Engagement rate" format="percent" data={trendPoints(t, "engagement_rate")} />
+        <MetricTrend title="Traffic over time" source="GA4" options={[
+          { key: "users", label: "Users", data: dailySeries(t, "users", r) },
+          { key: "sessions", label: "Sessions", data: dailySeries(t, "sessions", r) },
+        ]} />
+        <MetricTrend title="Engagement & conversions" source="GA4" options={[
+          { key: "engagement_rate", label: "Engagement rate", format: "percent", data: dailySeries(t, "engagement_rate", r, "ratio") },
+          { key: "key_events", label: "Key events", data: dailySeries(t, "key_events", r) },
+        ]} />
       </div>
 
       <div className="mt-6 grid gap-4 md:grid-cols-2 xl:grid-cols-4">
         <BarList title="Traffic by channel" valueLabel="Sessions"
-          items={s.channels.map((c) => ({ label: c.channel_group, value: Number(c.sessions) }))} />
-        <BarList title="Device categories" valueLabel="Sessions"
+          items={s.channels.map((c) => ({ label: c.channel_group === channel ? `${c.channel_group} (selected)` : c.channel_group, value: Number(c.sessions) }))} />
+        <BarList title="Device categories" valueLabel="Sessions · all channels"
           items={s.devices.map((d) => ({ label: d.value, value: Number(d.sessions) }))} />
-        <BarList title="Top countries" valueLabel="Sessions"
+        <BarList title="Top countries" valueLabel="Sessions · all channels"
           items={s.countries.map((d) => ({ label: d.value, value: Number(d.sessions) }))} />
-        <BarList title="Key event performance" valueLabel="Key events"
+        <BarList title="Key event performance" valueLabel="Key events · all channels"
           emptyText="No key events recorded. Mark events as key events in GA4 to see them here."
           items={s.key_events.map((e) => ({ label: e.value, value: Number(e.key_events) }))} />
       </div>
 
       <div className="mt-6 space-y-6">
         <DataTable<SourceRow>
-          title="Traffic sources" path={PATH} sp={sp} prefix="ts" sort={tsSort} dir={tsDir} page={tsPage} pageSize={PAGE_SIZE}
+          title={channel ? `Traffic sources · ${channel}` : "Traffic sources"} path={PATH} sp={sp} prefix="ts" sort={tsSort} dir={tsDir} page={tsPage} pageSize={PAGE_SIZE}
           total={Number(src.total)} rows={src.rows} emptyText="No traffic sources for this period."
-          csvHref={`${exportBase}&kind=sources&sort=${tsSort}&dir=${tsDir}`}
+          csvHref={`${exportBase}&kind=sources&sort=${tsSort}&dir=${tsDir}${channel ? `&channel=${encodeURIComponent(channel)}` : ""}`}
           columns={[
-            { key: "source", label: "Source", sort: "source", render: (r) => r.source },
-            { key: "medium", label: "Medium", sort: "medium", render: (r) => r.medium ?? "—" },
-            { key: "sessions", label: "Sessions", sort: "sessions", align: "right", render: (r) => fmtInt(r.sessions) },
-            { key: "users", label: "Users", sort: "users", align: "right", render: (r) => fmtInt(r.users) },
-            { key: "eng", label: "Engagement rate", sort: "engagement_rate", align: "right", render: (r) => fmtPercent(toNum(r.engagement_rate)) },
-            { key: "ke", label: "Key events", sort: "key_events", align: "right", render: (r) => fmtDecimal(toNum(r.key_events)) },
+            { key: "source", label: "Source", sort: "source", render: (x) => x.source },
+            { key: "medium", label: "Medium", sort: "medium", render: (x) => x.medium ?? "—" },
+            { key: "sessions", label: "Sessions", sort: "sessions", align: "right", render: (x) => fmtInt(x.sessions) },
+            { key: "users", label: "Users", sort: "users", align: "right", render: (x) => fmtInt(x.users) },
+            { key: "eng", label: "Engagement rate", sort: "engagement_rate", align: "right", render: (x) => fmtPercent(toNum(x.engagement_rate)) },
+            { key: "ke", label: "Key events", sort: "key_events", align: "right", render: (x) => fmtDecimal(toNum(x.key_events)) },
           ]}
         />
 
@@ -192,7 +220,7 @@ export default async function Ga4Page({ searchParams }: { searchParams: Promise<
           <div className="mb-2 inline-flex rounded-lg border border-border bg-surface p-0.5 text-sm" role="group" aria-label="Page report type">
             {(["views", "landing"] as const).map((k) => (
               <Link
-                key={k} href={withParams(PATH, sp, { pages: k, tp_page: null })} aria-current={pageKind === k ? "true" : undefined}
+                key={k} href={withParams(PATH, sp, { pages: k, tp_page: null, tp_sort: null })} aria-current={pageKind === k ? "true" : undefined}
                 className={`rounded-md px-3 py-1 font-medium ${pageKind === k ? "bg-accent text-accent-foreground" : "hover:bg-surface-muted"}`}
               >
                 {k === "views" ? "Top pages by views" : "Top landing pages"}
@@ -200,18 +228,18 @@ export default async function Ga4Page({ searchParams }: { searchParams: Promise<
             ))}
           </div>
           <DataTable<PageRow>
-            title={pageKind === "views" ? "Top pages by views" : "Top landing pages"}
+            title={`${pageKind === "views" ? "Top pages by views" : "Top landing pages"}${channel ? " · all channels" : ""}`}
             path={PATH} sp={sp} prefix="tp" sort={tpSort} dir={tpDir} page={tpPage} pageSize={PAGE_SIZE}
             total={Number(pg.total)} rows={pg.rows} emptyText="No pages for this period."
             csvHref={`${exportBase}&kind=pages&pages=${pageKind}&sort=${tpSort}&dir=${tpDir}`}
             columns={[
-              { key: "path", label: "Page path", sort: "page_path", render: (r) => <span className="break-all">{r.page_path}</span> },
+              { key: "path", label: "Page path", sort: "page_path", render: (x) => <span className="break-all">{x.page_path}</span> },
               ...(pageKind === "views"
-                ? [{ key: "views", label: "Views", sort: "views", align: "right" as const, render: (r: PageRow) => fmtInt(r.views) }]
-                : [{ key: "sessions", label: "Sessions", sort: "sessions", align: "right" as const, render: (r: PageRow) => fmtInt(r.sessions) }]),
-              { key: "users", label: "Active users", sort: "users", align: "right", render: (r) => fmtInt(r.users) },
-              { key: "eng", label: "Avg engagement", sort: "avg_engagement_seconds", align: "right", render: (r) => fmtDuration(toNum(r.avg_engagement_seconds)) },
-              { key: "ke", label: "Key events", sort: "key_events", align: "right", render: (r) => fmtDecimal(toNum(r.key_events)) },
+                ? [{ key: "views", label: "Views", sort: "views", align: "right" as const, render: (x: PageRow) => fmtInt(x.views) }]
+                : [{ key: "sessions", label: "Sessions", sort: "sessions", align: "right" as const, render: (x: PageRow) => fmtInt(x.sessions) }]),
+              { key: "users", label: "Active users", sort: "users", align: "right", render: (x) => fmtInt(x.users) },
+              { key: "eng", label: "Avg engagement", sort: "avg_engagement_seconds", align: "right", render: (x) => fmtDuration(toNum(x.avg_engagement_seconds)) },
+              { key: "ke", label: "Key events", sort: "key_events", align: "right", render: (x) => fmtDecimal(toNum(x.key_events)) },
             ]}
           />
         </div>
