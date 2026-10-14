@@ -9,6 +9,7 @@ const query = z.object({
   start: z.iso.date(),
   end: z.iso.date(),
   sort: z.string().max(40).optional(),
+  site: z.uuid().optional(),
   dir: z.enum(["asc", "desc"]).optional(),
   device: z.string().max(20).optional(),
   country: z.string().max(10).optional(),
@@ -26,7 +27,8 @@ export async function GET(request: NextRequest) {
 
   const { client } = await getSession();
   if (!client) return NextResponse.json({ error: "No client" }, { status: 400 });
-  const supabase = await createClient();
+  // the RPCs only narrow to this site if it is one of the client's tracked resources
+  const supabase = await createClient(q.site ? { "x-resource-gsc": q.site } : undefined);
 
   type Row = Record<string, unknown>;
   const rows: Row[] = [];

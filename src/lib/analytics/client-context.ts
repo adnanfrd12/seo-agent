@@ -1,7 +1,10 @@
 import "server-only";
 import { cache } from "react";
+import { cookies } from "next/headers";
 import { redirect } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
+
+export const ACTIVE_CLIENT_COOKIE = "sa_client";
 
 export interface CurrentClient {
   id: string;
@@ -18,28 +21,34 @@ export interface CurrentUser {
   avatarUrl: string | null;
 }
 
-/** The signed-in user (with profile) and their first client. Single-client for now; schema supports many. */
+type ClientRow = { id: string; name: string; timezone: string; default_range_days: number };
+
+/**
+ * The signed-in user (with profile), every client they belong to, and the active client: the one
+ * named by the sa_client cookie if the user is still a member of it, otherwise their first.
+ * The cookie is only a preference; membership is always re-checked here (and by RLS).
+ */
 export const getSession = cache(async () => {
   const supabase = await createClient();
   const { data: { user } } = await supabase.auth.getUser();
   if (!user) redirect("/login");
 
-  const [{ data: membership }, { data: profile }] = await Promise.all([
+  const [{ data: memberships }, { data: profile }, cookieStore] = await Promise.all([
     supabase
       .from("client_members")
-      .select("role, clients(id, name, timezone, default_range_days)")
+      .select("role, created_at, clients(id, name, timezone, default_range_days)")
       .eq("user_id", user.id)
-      .order("created_at")
-      .limit(1)
-      .maybeSingle(),
+      .order("created_at"),
     supabase.from("profiles").select("full_name, avatar_url").eq("user_id", user.id).maybeSingle(),
+    cookies(),
   ]);
 
-  const c = Array.isArray(membership?.clients) ? membership?.clients[0] : membership?.clients;
-  const client: CurrentClient | null =
-    membership && c
-      ? { id: c.id, name: c.name, timezone: c.timezone, defaultRangeDays: c.default_range_days, role: membership.role }
-      : null;
+  const clients: CurrentClient[] = (memberships ?? []).flatMap((m) => {
+    const c = (Array.isArray(m.clients) ? m.clients[0] : m.clients) as ClientRow | null;
+    return c ? [{ id: c.id, name: c.name, timezone: c.timezone, defaultRangeDays: c.default_range_days, role: m.role }] : [];
+  });
+  const wanted = cookieStore.get(ACTIVE_CLIENT_COOKIE)?.value;
+  const client = clients.find((c) => c.id === wanted) ?? clients[0] ?? null;
 
   const me: CurrentUser = {
     id: user.id,
@@ -47,5 +56,5 @@ export const getSession = cache(async () => {
     fullName: profile?.full_name ?? null,
     avatarUrl: profile?.avatar_url ?? null,
   };
-  return { user: me, client };
+  return { user: me, client, clients };
 });

@@ -11,7 +11,7 @@ import { fmtDecimal, fmtInt, fmtPercent, toNum } from "@/lib/analytics/format";
 import { resolveRange } from "@/lib/analytics/range";
 import { dailySeries, type TrendData } from "@/lib/analytics/trend";
 import { first, type SearchParams } from "@/lib/analytics/url";
-import { createClient } from "@/lib/supabase/server";
+import { resourceOptions, resourceScope } from "@/lib/analytics/resource-scope";
 
 const PATH = "/search-console";
 const PAGE_SIZE = 10;
@@ -92,14 +92,13 @@ export default async function SearchConsolePage({ searchParams }: { searchParams
   const pgDir = oneOf(first(sp.pg_dir), ["asc", "desc"] as const, "desc");
   const pgPage = Math.max(1, Number(first(sp.pg_page)) || 1);
 
-  const supabase = await createClient();
-  const { data: resources } = await supabase
-    .from("integration_resources")
-    .select("display_name")
-    .eq("client_id", client.id).eq("provider", "gsc").eq("is_selected", true);
+  const scope = await resourceScope(client.id, sp);
+  const supabase = scope.supabase; // RPCs scoped to the picked site (or all tracked ones)
+  const resources = scope.gscPick ? [scope.gscPick] : scope.gsc;
+  const siteOptions = resourceOptions(scope.gsc, "All sites (combined)");
 
   const title = "Google Search Console";
-  if (!resources || resources.length === 0) {
+  if (scope.gsc.length === 0) {
     return (
       <>
         <PageHeader title={title} description="Organic search performance." />
@@ -153,12 +152,16 @@ export default async function SearchConsolePage({ searchParams }: { searchParams
   const filtersActive = searchType !== "web" || device !== null || country !== null;
   const resetPagers = ["kw_page", "pg_page"];
   const exportBase =
-    `/api/export/gsc?start=${range.start}&end=${range.end}` +
+    `/api/export/gsc?start=${range.start}&end=${range.end}${scope.gscPick ? `&site=${scope.gscPick.id}` : ""}` +
     `${device ? `&device=${encodeURIComponent(device)}` : ""}` +
     `${country ? `&country=${encodeURIComponent(country)}` : ""}`;
 
   const filters = (
     <div className="mb-5 flex flex-wrap items-end gap-3">
+      {siteOptions && (
+        <FilterSelect label="Site" name="site" value={scope.gscPick?.id ?? ""} path={PATH} sp={sp}
+          resetKeys={resetPagers} options={siteOptions} />
+      )}
       <FilterSelect label="Search type" name="type" value={searchType} path={PATH} sp={sp} resetKeys={resetPagers}
         options={SEARCH_TYPES.map((x) => ({ value: x.value, label: x.label }))} />
       <FilterSelect label="Device" name="device" value={device ?? ""} path={PATH} sp={sp} resetKeys={resetPagers}

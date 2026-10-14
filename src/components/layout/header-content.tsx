@@ -1,6 +1,7 @@
 import { redirect } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
-import type { CurrentUser } from "@/lib/analytics/client-context";
+import type { CurrentClient, CurrentUser } from "@/lib/analytics/client-context";
+import { ClientSwitcher } from "./client-switcher";
 import { UserMenu } from "./user-menu";
 
 async function signOut() {
@@ -10,16 +11,15 @@ async function signOut() {
 }
 
 export function HeaderContent({
-  clientName, user, lastSyncedAt,
-}: { clientName: string; user: CurrentUser; lastSyncedAt: string | null }) {
+  client, clients, user, lastSyncedAt,
+}: { client: CurrentClient; clients: CurrentClient[]; user: CurrentUser; lastSyncedAt: string | null }) {
   return (
     <>
-      <div className="min-w-0">
-        <p className="truncate text-sm font-semibold">{clientName}</p>
-        <p className="truncate text-xs text-muted">
-          {lastSyncedAt ? `Last synced ${new Date(lastSyncedAt).toLocaleString()}` : "Not synced yet"}
-        </p>
-      </div>
+      <ClientSwitcher
+        clients={clients.map((c) => ({ id: c.id, name: c.name, role: c.role }))}
+        activeId={client.id}
+        lastSyncedAt={lastSyncedAt}
+      />
       <div className="ml-auto flex items-center gap-2">
         <UserMenu name={user.fullName} email={user.email} avatarUrl={user.avatarUrl} signOut={signOut} />
       </div>

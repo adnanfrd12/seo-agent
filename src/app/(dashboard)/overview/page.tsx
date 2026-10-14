@@ -10,7 +10,8 @@ import { fmtDecimal, fmtInt, fmtPercent, toNum, type Num } from "@/lib/analytics
 import { resolveRange } from "@/lib/analytics/range";
 import { dailySeries, type TrendData } from "@/lib/analytics/trend";
 import { first, type SearchParams } from "@/lib/analytics/url";
-import { createClient } from "@/lib/supabase/server";
+import { resourceOptions, resourceScope } from "@/lib/analytics/resource-scope";
+import { FilterSelect } from "@/components/dashboard/filter-select";
 
 const PATH = "/overview";
 
@@ -45,15 +46,17 @@ export default async function OverviewPage({ searchParams }: { searchParams: Pro
   const compare = first(sp.compare) === "1";
   const args = { p_client_id: client.id, p_start: range.start, p_end: range.end };
 
-  const supabase = await createClient();
-  const [overview, ga4Trend, gscTrend, ga4Summary, keywords, resources] = await Promise.all([
+  const scope = await resourceScope(client.id, sp);
+  const supabase = scope.supabase; // scoped to the picked property/site, if any
+  const propertyOptions = resourceOptions(scope.ga4, "All properties (combined)");
+  const siteOptions = resourceOptions(scope.gsc, "All sites (combined)");
+  const [overview, ga4Trend, gscTrend, ga4Summary, keywords] = await Promise.all([
     supabase.rpc("get_seo_overview", args),
     supabase.rpc("get_analytics_trends", { ...args, p_provider: "ga4", p_granularity: "day", p_compare: compare }),
     // the overview's Search Console figures are Web search, matching the KPI cards
     supabase.rpc("get_analytics_trends", { ...args, p_provider: "gsc", p_granularity: "day", p_compare: compare, p_search_type: "web" }),
     supabase.rpc("get_ga4_summary", args),
     supabase.rpc("get_gsc_keywords", { ...args, p_search_type: "web", p_sort: "clicks", p_dir: "desc", p_limit: 5, p_offset: 0 }),
-    supabase.from("integration_resources").select("provider, display_name").eq("client_id", client.id).eq("is_selected", true),
   ]);
 
   const header = <PageHeader title="Overview" description={`${client.name} · consolidated performance across Google Analytics and Search Console`} />;
@@ -67,7 +70,7 @@ export default async function OverviewPage({ searchParams }: { searchParams: Pro
   }
 
   const o = overview.data as Overview;
-  const names = (p: string) => (resources.data ?? []).filter((r) => r.provider === p).map((r) => r.display_name).join(", ");
+  const names = (p: "ga4" | "gsc") => (p === "ga4" ? scope.label(scope.ga4, scope.ga4Pick) : scope.label(scope.gsc, scope.gscPick));
   const ga = o.ga4, gs = o.gsc;
   const ga4Cards = [
     { label: "Total Users", k: "users", format: fmtInt, hint: "Sum of daily active users: someone active on 3 days counts 3 times." },
@@ -90,6 +93,16 @@ export default async function OverviewPage({ searchParams }: { searchParams: Pro
     <>
       {header}
       <RangeSelector path={PATH} sp={sp} range={range} />
+      {(propertyOptions || siteOptions) && (
+        <div className="mb-5 flex flex-wrap items-end gap-3">
+          {propertyOptions && (
+            <FilterSelect label="GA4 property" name="property" value={scope.ga4Pick?.id ?? ""} path={PATH} sp={sp} options={propertyOptions} />
+          )}
+          {siteOptions && (
+            <FilterSelect label="Search Console site" name="site" value={scope.gscPick?.id ?? ""} path={PATH} sp={sp} options={siteOptions} />
+          )}
+        </div>
+      )}
 
       <section aria-labelledby="ov-ga4" className="mb-8">
         <SectionHeader id="ov-ga4" source="GA4" title="Website performance" subtitle={names("ga4") || undefined} href={o.connected.ga4 ? "/analytics" : undefined} />

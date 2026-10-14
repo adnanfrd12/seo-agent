@@ -12,7 +12,7 @@ import { fmtDecimal, fmtDuration, fmtInt, fmtMoney, fmtPercent, toNum, type Num 
 import { resolveRange } from "@/lib/analytics/range";
 import { dailySeries, type TrendData } from "@/lib/analytics/trend";
 import { first, withParams, type SearchParams } from "@/lib/analytics/url";
-import { createClient } from "@/lib/supabase/server";
+import { resourceOptions, resourceScope } from "@/lib/analytics/resource-scope";
 
 const PATH = "/analytics";
 const PAGE_SIZE = 10;
@@ -61,13 +61,12 @@ export default async function Ga4Page({ searchParams }: { searchParams: Promise<
   const tpDir = oneOf(first(sp.tp_dir), ["asc", "desc"] as const, "desc");
   const tpPage = Math.max(1, Number(first(sp.tp_page)) || 1);
 
-  const supabase = await createClient();
-  const { data: resources } = await supabase
-    .from("integration_resources")
-    .select("display_name, timezone")
-    .eq("client_id", client.id).eq("provider", "ga4").eq("is_selected", true);
+  const scope = await resourceScope(client.id, sp);
+  const supabase = scope.supabase; // RPCs scoped to the picked property (or all tracked ones)
+  const resources = scope.ga4Pick ? [scope.ga4Pick] : scope.ga4;
+  const propertyOptions = resourceOptions(scope.ga4, "All properties (combined)");
 
-  if (!resources || resources.length === 0) {
+  if (scope.ga4.length === 0) {
     return (
       <>
         <PageHeader title="Google Analytics 4" description="Traffic, engagement and key events." />
@@ -124,6 +123,10 @@ export default async function Ga4Page({ searchParams }: { searchParams: Promise<
   ];
   const filters = (
     <div className="mb-5 flex flex-wrap items-end gap-3">
+      {propertyOptions && (
+        <FilterSelect label="Property" name="property" value={scope.ga4Pick?.id ?? ""} path={PATH} sp={sp}
+          resetKeys={["ts_page", "tp_page"]} options={propertyOptions} />
+      )}
       <FilterSelect label="Traffic channel" name="channel" value={channel ?? ""} path={PATH} sp={sp} resetKeys={["ts_page"]}
         options={opts(b.channels, channel, "All channels")} />
       <FilterSelect label="Device" name="device" value={device ?? ""} path={PATH} sp={sp} resetKeys={["ts_page"]}
@@ -167,7 +170,7 @@ export default async function Ga4Page({ searchParams }: { searchParams: Promise<
 
   const src = sources.data as Table<SourceRow>;
   const pg = pages.data as Table<PageRow>;
-  const exportBase = `/api/export/ga4?start=${range.start}&end=${range.end}`;
+  const exportBase = `/api/export/ga4?start=${range.start}&end=${range.end}${scope.ga4Pick ? `&property=${scope.ga4Pick.id}` : ""}`;
   const r = range;
 
   return (

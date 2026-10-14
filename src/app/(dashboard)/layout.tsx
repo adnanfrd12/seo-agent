@@ -14,7 +14,7 @@ async function createFirstClient(formData: FormData) {
 }
 
 export default async function DashboardLayout({ children }: { children: React.ReactNode }) {
-  const { user, client } = await getSession();
+  const { user, client, clients } = await getSession();
 
   if (!client) {
     return (
@@ -46,7 +46,7 @@ export default async function DashboardLayout({ children }: { children: React.Re
 
   return (
     <AppShell
-      header={<HeaderContent clientName={client.name} user={user} lastSyncedAt={lastSync?.last_synced_at ?? null} />}
+      header={<HeaderContent client={client} clients={clients} user={user} lastSyncedAt={lastSync?.last_synced_at ?? null} />}
     >
       {children}
     </AppShell>

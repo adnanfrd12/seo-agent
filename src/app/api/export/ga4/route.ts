@@ -9,6 +9,7 @@ const query = z.object({
   start: z.iso.date(),
   end: z.iso.date(),
   sort: z.string().max(40).optional(),
+  property: z.uuid().optional(),
   dir: z.enum(["asc", "desc"]).optional(),
   group: z.enum(["source_medium", "channel"]).optional(),
   pages: z.enum(["views", "landing"]).optional(),
@@ -26,7 +27,8 @@ export async function GET(request: NextRequest) {
 
   const { client } = await getSession();
   if (!client) return NextResponse.json({ error: "No client" }, { status: 400 });
-  const supabase = await createClient();
+  // the RPCs only narrow to this property if it is one of the client's tracked resources
+  const supabase = await createClient(q.property ? { "x-resource-ga4": q.property } : undefined);
 
   type Row = Record<string, unknown>;
   const rows: Row[] = [];
