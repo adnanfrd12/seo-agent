@@ -11,6 +11,7 @@ const query = z.object({
   sort: z.string().max(40).optional(),
   dir: z.enum(["asc", "desc"]).optional(),
   device: z.string().max(20).optional(),
+  country: z.string().max(10).optional(),
   search: z.string().max(200).optional(),
 });
 
@@ -31,7 +32,7 @@ export async function GET(request: NextRequest) {
   const rows: Row[] = [];
   const base = {
     p_client_id: client.id, p_start: q.start, p_end: q.end, p_search: q.search ?? null,
-    p_search_type: "web", p_device: q.device ?? null, p_country: null, p_dir: q.dir ?? "desc", p_limit: PAGE,
+    p_search_type: "web", p_device: q.device ?? null, p_country: q.country ?? null, p_dir: q.dir ?? "desc", p_limit: PAGE,
   };
   for (let offset = 0; offset < MAX_ROWS; offset += PAGE) {
     const { data, error } =

@@ -113,9 +113,9 @@ export default async function SearchConsolePage({ searchParams }: { searchParams
   }
 
   const args = { p_client_id: client.id, p_start: range.start, p_end: range.end };
-  // Query/page detail is stored for web search across all countries only (see lib/sync/gsc.ts),
-  // so the tables ignore the search-type and country filters rather than showing empty results.
-  const tableArgs = { ...args, p_search_type: "web", p_device: device, p_country: null };
+  // Query/page detail is stored for web search (by device and country; see lib/sync/gsc.ts),
+  // so the tables ignore a non-web search type rather than showing empty results.
+  const tableArgs = { ...args, p_search_type: "web", p_device: device, p_country: country };
   const [summary, trend, keywords, pages] = await Promise.all([
     supabase.rpc("get_gsc_summary", { ...args, p_search_type: searchType, p_device: device, p_country: country }),
     supabase.rpc("get_analytics_trends", {
@@ -149,12 +149,13 @@ export default async function SearchConsolePage({ searchParams }: { searchParams
   const t = trend.data as TrendData;
   const kw = keywords.data as Table<KeywordRow>;
   const pg = pages.data as Table<PageRow>;
-  const tablesNarrowed = searchType !== "web" || country !== null;
+  const tablesNarrowed = searchType !== "web";
   const filtersActive = searchType !== "web" || device !== null || country !== null;
   const resetPagers = ["kw_page", "pg_page"];
   const exportBase =
     `/api/export/gsc?start=${range.start}&end=${range.end}` +
-    `${device ? `&device=${encodeURIComponent(device)}` : ""}`;
+    `${device ? `&device=${encodeURIComponent(device)}` : ""}` +
+    `${country ? `&country=${encodeURIComponent(country)}` : ""}`;
 
   const filters = (
     <div className="mb-5 flex flex-wrap items-end gap-3">
@@ -222,8 +223,8 @@ export default async function SearchConsolePage({ searchParams }: { searchParams
         {tablesNarrowed && (
           <p className="flex items-start gap-2 rounded-lg bg-surface p-3 text-sm text-muted ring-1 ring-border">
             <Info className="mt-0.5 size-4 shrink-0" aria-hidden />
-            Keyword and page tables show Web search across all countries; the search type and country filters apply to the
-            totals and charts above. The device filter applies everywhere.
+            Keyword and page tables show Web search; the search type filter applies to the totals and charts above.
+            Device and country filters apply everywhere.
           </p>
         )}
 

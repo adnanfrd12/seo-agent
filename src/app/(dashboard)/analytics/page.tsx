@@ -25,7 +25,8 @@ type Summary = Compared & {
   key_events: { value: string; key_events: number }[];
   channels: { channel_group: string; sessions: number; users: number }[];
 };
-type ChannelSummary = Compared & { trend: TrendData };
+type Breakdown = { value: string; sessions: number; users: number; key_events: number }[];
+type Filtered = Compared & { trend: TrendData; channels: Breakdown; devices: Breakdown; countries: Breakdown };
 type Table<T> = { total: number; rows: T[] };
 type SourceRow = { source: string; medium: string | null; sessions: number; users: number; engagement_rate: number | null; key_events: number };
 type PageRow = { page_path: string; views: number; users: number; sessions: number; avg_engagement_seconds: number | null; key_events: number };
@@ -44,6 +45,9 @@ export default async function Ga4Page({ searchParams }: { searchParams: Promise<
   );
   const compare = first(sp.compare) === "1";
   const channel = (first(sp.channel) ?? "").slice(0, 80) || null;
+  const device = (first(sp.device) ?? "").slice(0, 40) || null;
+  const country = (first(sp.country) ?? "").slice(0, 80) || null;
+  const filtered = Boolean(channel || device || country);
 
   const tsSort = oneOf(first(sp.ts_sort), ["source", "medium", "sessions", "users", "engagement_rate", "key_events"] as const, "sessions");
   const tsDir = oneOf(first(sp.ts_dir), ["asc", "desc"] as const, "desc");
@@ -77,14 +81,14 @@ export default async function Ga4Page({ searchParams }: { searchParams: Promise<
   }
 
   const args = { p_client_id: client.id, p_start: range.start, p_end: range.end };
-  const [summary, trend, channelSummary, sources, pages] = await Promise.all([
+  // Unfiltered totals come from the exact daily report; any filter uses the channel x device x
+  // country breakdown (which also feeds the filter options and breakdown panels).
+  const [summary, trend, breakdown, sources, pages] = await Promise.all([
     supabase.rpc("get_ga4_summary", args),
-    channel
+    filtered
       ? Promise.resolve({ data: null, error: null })
       : supabase.rpc("get_analytics_trends", { ...args, p_provider: "ga4", p_granularity: "day", p_compare: compare }),
-    channel
-      ? supabase.rpc("get_ga4_channel_summary", { ...args, p_channel: channel, p_compare: compare })
-      : Promise.resolve({ data: null, error: null }),
+    supabase.rpc("get_ga4_filtered", { ...args, p_channel: channel, p_device: device, p_country: country, p_compare: compare }),
     supabase.rpc("get_ga4_traffic_sources", {
       ...args, p_sort: tsSort, p_dir: tsDir, p_limit: PAGE_SIZE, p_offset: (tsPage - 1) * PAGE_SIZE, p_channel: channel,
     }),
@@ -99,7 +103,7 @@ export default async function Ga4Page({ searchParams }: { searchParams: Promise<
       description={`Property: ${resources.map((r) => r.display_name).join(", ")}${resources[0]?.timezone ? ` · reporting time zone ${resources[0].timezone}` : ""}`}
     />
   );
-  if ([summary, trend, channelSummary, sources, pages].some((r) => r.error)) {
+  if ([summary, trend, breakdown, sources, pages].some((r) => r.error)) {
     return (
       <>
         {header}
@@ -109,15 +113,26 @@ export default async function Ga4Page({ searchParams }: { searchParams: Promise<
   }
 
   const s = summary.data as Summary;
-  const cs = channelSummary.data as ChannelSummary | null;
-  const stats: Compared = cs ?? s;
-  const t: TrendData = cs ? cs.trend : (trend.data as TrendData);
+  const b = breakdown.data as Filtered;
+  const stats: Compared = filtered ? b : s;
+  const t: TrendData = filtered ? b.trend : (trend.data as TrendData);
+  // keep the selected value in the list even if it has no traffic under the other filters
+  const opts = (list: Breakdown, selected: string | null, all: string) => [
+    { value: "", label: all },
+    ...(selected && !list.some((x) => x.value === selected) ? [{ value: selected, label: selected }] : []),
+    ...list.map((x) => ({ value: x.value, label: x.value })),
+  ];
   const filters = (
     <div className="mb-5 flex flex-wrap items-end gap-3">
       <FilterSelect label="Traffic channel" name="channel" value={channel ?? ""} path={PATH} sp={sp} resetKeys={["ts_page"]}
-        options={[{ value: "", label: "All channels" }, ...s.channels.map((c) => ({ value: c.channel_group, label: c.channel_group }))]} />
+        options={opts(b.channels, channel, "All channels")} />
+      <FilterSelect label="Device" name="device" value={device ?? ""} path={PATH} sp={sp} resetKeys={["ts_page"]}
+        options={opts(b.devices, device, "All devices")} />
+      <FilterSelect label="Country" name="country" value={country ?? ""} path={PATH} sp={sp} resetKeys={["ts_page"]}
+        options={opts(b.countries, country, "All countries")} />
     </div>
   );
+  const filterLabel = [channel, device, country].filter(Boolean).join(" · ");
 
   if (!stats.current.has_data) {
     return (
@@ -126,29 +141,29 @@ export default async function Ga4Page({ searchParams }: { searchParams: Promise<
         <RangeSelector path={PATH} sp={sp} range={range} />
         {filters}
         <EmptyState
-          title={channel ? `No ${channel} traffic in this period` : "No GA4 data for this period"}
-          body={channel
-            ? "Pick another channel or widen the date range."
+          title={filtered ? `No traffic for ${filterLabel} in this period` : "No GA4 data for this period"}
+          body={filtered
+            ? "Change the filters or widen the date range."
             : "Either the initial import hasn't finished, or this date range has no stored data. Try a wider range, or run Sync Now."}
-          action={channel ? undefined : { href: "/integrations", label: "Open Integrations" }}
+          action={filtered ? undefined : { href: "/integrations", label: "Open Integrations" }}
         />
       </>
     );
   }
 
-  const hasRevenue = !channel && pick(stats.current, "revenue") != null;
+  const hasRevenue = !filtered && pick(stats.current, "revenue") != null;
   const all = [
-    { label: "Active Users", k: "users", format: fmtInt, hint: "Summed daily active users; someone active on several days is counted once per day.", byChannel: true },
-    { label: "New Users", k: "new_users", format: fmtInt, byChannel: false },
-    { label: "Sessions", k: "sessions", format: fmtInt, byChannel: true },
-    { label: "Engaged Sessions", k: "engaged_sessions", format: fmtInt, byChannel: true },
-    { label: "Engagement Rate", k: "engagement_rate", format: fmtPercent, hint: "Engaged sessions ÷ sessions.", byChannel: true },
-    { label: "Avg Engagement Time", k: "avg_engagement_seconds", format: fmtDuration, hint: "Total engagement time ÷ active users.", byChannel: false },
-    { label: "Event Count", k: "event_count", format: fmtInt, byChannel: false },
-    { label: "Key Events", k: "key_events", format: fmtInt, hint: "GA4 key events (formerly conversions).", byChannel: true },
-    ...(hasRevenue ? [{ label: "Total Revenue", k: "revenue", format: (n: Num) => fmtMoney(n), byChannel: false }] : []),
+    { label: "Active Users", k: "users", format: fmtInt, hint: "Summed daily active users; someone active on several days is counted once per day." },
+    { label: "New Users", k: "new_users", format: fmtInt },
+    { label: "Sessions", k: "sessions", format: fmtInt },
+    { label: "Engaged Sessions", k: "engaged_sessions", format: fmtInt },
+    { label: "Engagement Rate", k: "engagement_rate", format: fmtPercent, hint: "Engaged sessions ÷ sessions." },
+    { label: "Avg Engagement Time", k: "avg_engagement_seconds", format: fmtDuration, hint: "Total engagement time ÷ active users." },
+    { label: "Event Count", k: "event_count", format: fmtInt },
+    { label: "Key Events", k: "key_events", format: fmtInt, hint: "GA4 key events (formerly conversions)." },
+    ...(hasRevenue ? [{ label: "Total Revenue", k: "revenue", format: (n: Num) => fmtMoney(n) }] : []),
   ];
-  const kpis = channel ? all.filter((m) => m.byChannel) : all;
+  const kpis = all;
 
   const src = sources.data as Table<SourceRow>;
   const pg = pages.data as Table<PageRow>;
@@ -161,11 +176,12 @@ export default async function Ga4Page({ searchParams }: { searchParams: Promise<
       <RangeSelector path={PATH} sp={sp} range={range} />
       {filters}
 
-      {channel && (
+      {filtered && (
         <p className="mb-4 flex items-start gap-2 rounded-lg bg-surface p-3 text-sm text-muted ring-1 ring-border">
           <Info className="mt-0.5 size-4 shrink-0" aria-hidden />
-          Showing {channel} only. New users, event count and engagement time aren&apos;t broken down by channel in GA4&apos;s
-          stored data, so they&apos;re hidden rather than estimated; device, country and page breakdowns below cover all channels.
+          Filtered to {filterLabel}. These figures come from GA4&apos;s channel × device × country breakdown, where a session
+          that touches more than one value is counted in each, so they can read a few percent above the unfiltered totals.
+          Top pages and key events below cover all traffic.
         </p>
       )}
 
@@ -191,19 +207,19 @@ export default async function Ga4Page({ searchParams }: { searchParams: Promise<
 
       <div className="mt-6 grid gap-4 md:grid-cols-2 xl:grid-cols-4">
         <BarList title="Traffic by channel" valueLabel="Sessions"
-          items={s.channels.map((c) => ({ label: c.channel_group === channel ? `${c.channel_group} (selected)` : c.channel_group, value: Number(c.sessions) }))} />
-        <BarList title="Device categories" valueLabel="Sessions · all channels"
-          items={s.devices.map((d) => ({ label: d.value, value: Number(d.sessions) }))} />
-        <BarList title="Top countries" valueLabel="Sessions · all channels"
-          items={s.countries.map((d) => ({ label: d.value, value: Number(d.sessions) }))} />
-        <BarList title="Key event performance" valueLabel="Key events · all channels"
+          items={b.channels.map((c) => ({ label: c.value === channel ? `${c.value} (selected)` : c.value, value: Number(c.sessions) }))} />
+        <BarList title="Device categories" valueLabel="Sessions"
+          items={b.devices.map((d) => ({ label: d.value === device ? `${d.value} (selected)` : d.value, value: Number(d.sessions) }))} />
+        <BarList title="Top countries" valueLabel="Sessions"
+          items={b.countries.slice(0, 15).map((d) => ({ label: d.value === country ? `${d.value} (selected)` : d.value, value: Number(d.sessions) }))} />
+        <BarList title="Key event performance" valueLabel="Key events · all traffic"
           emptyText="No key events recorded. Mark events as key events in GA4 to see them here."
           items={s.key_events.map((e) => ({ label: e.value, value: Number(e.key_events) }))} />
       </div>
 
       <div className="mt-6 space-y-6">
         <DataTable<SourceRow>
-          title={channel ? `Traffic sources · ${channel}` : "Traffic sources"} path={PATH} sp={sp} prefix="ts" sort={tsSort} dir={tsDir} page={tsPage} pageSize={PAGE_SIZE}
+          title={`Traffic sources${channel ? ` · ${channel}` : ""}${device || country ? " (channel filter only)" : ""}`} path={PATH} sp={sp} prefix="ts" sort={tsSort} dir={tsDir} page={tsPage} pageSize={PAGE_SIZE}
           total={Number(src.total)} rows={src.rows} emptyText="No traffic sources for this period."
           csvHref={`${exportBase}&kind=sources&sort=${tsSort}&dir=${tsDir}${channel ? `&channel=${encodeURIComponent(channel)}` : ""}`}
           columns={[
@@ -228,7 +244,7 @@ export default async function Ga4Page({ searchParams }: { searchParams: Promise<
             ))}
           </div>
           <DataTable<PageRow>
-            title={`${pageKind === "views" ? "Top pages by views" : "Top landing pages"}${channel ? " · all channels" : ""}`}
+            title={`${pageKind === "views" ? "Top pages by views" : "Top landing pages"}${filtered ? " · all traffic" : ""}`}
             path={PATH} sp={sp} prefix="tp" sort={tpSort} dir={tpDir} page={tpPage} pageSize={PAGE_SIZE}
             total={Number(pg.total)} rows={pg.rows} emptyText="No pages for this period."
             csvHref={`${exportBase}&kind=pages&pages=${pageKind}&sort=${tpSort}&dir=${tpDir}`}

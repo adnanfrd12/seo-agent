@@ -36,10 +36,7 @@ const kindOf = (e: unknown) => (e && typeof e === "object" && "kind" in e ? (e a
  * What is stored, and its limits (all Search Console API behaviour, not choices we can undo):
  *  - gsc_daily_metrics: date × device × country totals, for every search type that returns rows.
  *    These are the authoritative totals (they include anonymized queries).
- *  - gsc_query_metrics / gsc_page_metrics: date × query|page × device, WEB search only, with
- *    country left empty. The API excludes anonymized queries, so these never sum to the daily totals.
- *    Adding country would multiply row counts several times over, so the country filter applies
- *    to totals and trends, not to the keyword/page tables.
+ *  - gsc_query_metrics / gsc_page_metrics: date × query|page × device × country, WEB search only. The API excludes anonymized queries, so these never sum to the daily totals.
  *  - Devices are stored lower-case (mobile/desktop/tablet); countries as the API's lower-case
  *    ISO-3166 alpha-3 codes (e.g. "usa").
  */
@@ -89,14 +86,15 @@ export async function syncGsc(
   }
 
   await step("queries", async () => {
-    const rows = await q(["date", "query", "device"], "web", 250_000);
+    const rows = await q(["date", "query", "device", "country"], "web", 500_000);
     const map = new Map<string, Record<string, unknown>>();
     for (const r of rows) {
-      const [date, query, device] = r.keys;
+      const [date, query, device, country] = r.keys;
       if (!isIso(date) || !query) continue;
       const dev = (device ?? "").toLowerCase();
-      map.set(`${date}|${dev}|${query}`, {
-        ...base, metric_date: date, search_type: "web", device: dev, country: "", query,
+      const ctry = (country ?? "").toLowerCase();
+      map.set(`${date}|${dev}|${ctry}|${query}`, {
+        ...base, metric_date: date, search_type: "web", device: dev, country: ctry, query,
         clicks: r.clicks, impressions: r.impressions, position_x_impressions: weighted(r),
       });
     }
@@ -104,14 +102,15 @@ export async function syncGsc(
   });
 
   await step("pages", async () => {
-    const rows = await q(["date", "page", "device"], "web", 250_000);
+    const rows = await q(["date", "page", "device", "country"], "web", 500_000);
     const map = new Map<string, Record<string, unknown>>();
     for (const r of rows) {
-      const [date, page, device] = r.keys;
+      const [date, page, device, country] = r.keys;
       if (!isIso(date) || !page) continue;
       const dev = (device ?? "").toLowerCase();
-      map.set(`${date}|${dev}|${page}`, {
-        ...base, metric_date: date, search_type: "web", device: dev, country: "", page,
+      const ctry = (country ?? "").toLowerCase();
+      map.set(`${date}|${dev}|${ctry}|${page}`, {
+        ...base, metric_date: date, search_type: "web", device: dev, country: ctry, page,
         clicks: r.clicks, impressions: r.impressions, position_x_impressions: weighted(r),
       });
     }

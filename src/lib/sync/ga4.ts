@@ -75,6 +75,30 @@ export async function syncGa4(
       },
     },
     {
+      // date x channel x device x country: lets channel/device/country filters combine on every metric
+      name: "cube",
+      run: async () => {
+        const rows = await report(
+          ["date", "sessionDefaultChannelGroup", "deviceCategory", "country"],
+          ["activeUsers", "newUsers", "sessions", "engagedSessions", "userEngagementDuration", "eventCount", "keyEvents"],
+          { maxRows: 250_000 },
+        );
+        const map = new Map<string, Record<string, unknown>>();
+        for (const r of rows) {
+          const d = isoDate(dim(r, 0));
+          if (!d) continue;
+          const row = {
+            ...base, metric_date: d,
+            channel_group: dim(r, 1) || "(not set)", device: dim(r, 2) || "(not set)", country: dim(r, 3) || "(not set)",
+            users: met(r, 0), new_users: met(r, 1), sessions: met(r, 2), engaged_sessions: met(r, 3),
+            engagement_seconds: met(r, 4), event_count: met(r, 5), key_events: met(r, 6),
+          };
+          map.set(`${d}|${row.channel_group}|${row.device}|${row.country}`, row);
+        }
+        return upsertChunks(admin, "ga4_cube_metrics", [...map.values()], "resource_id,metric_date,channel_group,device,country");
+      },
+    },
+    {
       name: "traffic_sources",
       run: async () => {
         const rows = await report(
