@@ -234,6 +234,7 @@ The Supabase advisor still lists four `SECURITY DEFINER` functions callable by s
 - Composio connect, callback and property discovery for GA4.
 - GA4 sync worker: a real 90-day import wrote daily, traffic-source, page, landing-page, device and country rows. Composio returns the GA4 report directly as `data` (dates as `YYYYMMDD`, days without data omitted).
 - GA4 RPCs against that data as the signed-in user under RLS.
+- Search Console sync: a real 90-day import (daily totals for every search type, plus web query and page detail), the Search Console page's RPCs including device/country/search-type filters, and the connect flow's recovery from duplicate/expired Composio links.
 
 **Built but not yet verified**
 
@@ -243,8 +244,8 @@ The Supabase advisor still lists four `SECURITY DEFINER` functions callable by s
 
 **Not built yet**
 
-- Search Console and Business Profile **sync** (their queued jobs fail with "not implemented yet").
-- Overview, Search Console and Business Profile pages.
+- Business Profile **sync** (its queued jobs fail with "not implemented yet").
+- Overview and Business Profile pages.
 - Monthly Reports (print / PDF), Historical Performance, and Settings.
 - Header date-range selector and Refresh button.
 - Google Business Profile integration. Composio has no toolkit for it, so this needs a direct Google adapter and approval of the Business Profile APIs for your Google Cloud project. That approval is outside this codebase.
@@ -270,5 +271,5 @@ The Vercel project is linked to GitHub (`adnanfrd12/seo-agent`, branch `main`): 
 | Connect redirects back with an error | Callback URL not allowed in the Composio auth config, or Google consent was cancelled |
 | Sync Now is disabled | No resource selected yet, or a sync is already queued or running |
 | Jobs stay `queued` | Click **Sync Now** (starts the worker), or call the cron endpoint: `curl -H "Authorization: Bearer $CRON_SECRET" http://localhost:3000/api/cron/sync` |
-| GSC/GBP job fails "not implemented yet" | Only GA4 import is built so far |
+| GBP job fails "not implemented yet" | Business Profile import isn't built yet |
 | Production build fails with "uncached or runtime data during prerendering" | Cache Components were turned back on in `next.config.ts` |
