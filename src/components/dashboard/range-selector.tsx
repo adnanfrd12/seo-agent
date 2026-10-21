@@ -7,6 +7,7 @@ const PRESETS = [
   { id: "7", label: "7 days" },
   { id: "30", label: "30 days" },
   { id: "90", label: "90 days" },
+  { id: "month", label: "Last month" },
 ] as const;
 
 /** URL-driven range picker: presets, custom range, and previous-period comparison toggle. */

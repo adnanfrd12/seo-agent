@@ -117,5 +117,21 @@ export async function syncGsc(
     return upsertChunks(admin, "gsc_page_metrics", [...map.values()], "resource_id,metric_date,search_type,device,country,page");
   });
 
+  // query x page pairs (web): which page ranks for which query. Powers keyword-to-page mapping and
+  // possible-cannibalization detection (get_gsc_opportunities).
+  await step("query_pages", async () => {
+    const rows = await q(["date", "query", "page"], "web", 500_000);
+    const map = new Map<string, Record<string, unknown>>();
+    for (const r of rows) {
+      const [date, query, page] = r.keys;
+      if (!isIso(date) || !query || !page) continue;
+      map.set(`${date}|${query}|${page}`, {
+        ...base, metric_date: date, query, page,
+        clicks: r.clicks, impressions: r.impressions, position_x_impressions: weighted(r),
+      });
+    }
+    return upsertChunks(admin, "gsc_query_page_metrics", [...map.values()], "resource_id,metric_date,query,page");
+  });
+
   return { written, failures, authError };
 }

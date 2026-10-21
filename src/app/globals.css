@@ -51,9 +51,28 @@ body {
   font-family: var(--font-geist-sans), system-ui, sans-serif;
 }
 
+/* ---------------------------------------------------------------- print / PDF */
+@page {
+  size: A4;
+  margin: 14mm 12mm 16mm;
+  @bottom-left { content: "SEO Insights · Performance report"; font: 9px system-ui, sans-serif; color: #6b6b76; }
+  @bottom-right { content: "Page " counter(page) " of " counter(pages); font: 9px system-ui, sans-serif; color: #6b6b76; }
+}
+@page :first { @bottom-left { content: none; } @bottom-right { content: none; } }
+
 @media print {
-  aside, header, .no-print { display: none !important; }
-  body { background: #fff; }
+  :root { color-scheme: light; }
+  html, body { height: auto !important; overflow: visible !important; background: #fff !important; }
+  aside, .no-print, [role="tablist"], figure button { display: none !important; }
+  .report-root { background: #fff !important; }
+  .report-cover { break-after: page; }
+  .report-page-break { break-before: page; }
+  .report-chapter { break-before: page; border-top: 0 !important; padding-top: 0 !important; }
+  .report-chapter:first-child { break-before: auto; }
+  .report-avoid-break, figure, tr, li { break-inside: avoid; }
+  h2, h3 { break-after: avoid; }
+  * { -webkit-print-color-adjust: exact; print-color-adjust: exact; animation: none !important; transition: none !important; }
+  a { color: inherit; text-decoration: none; }
 }
 
 /* login page motion: subtle, and disabled for users who prefer reduced motion */
@@ -77,3 +96,12 @@ body {
 
 /* the app frame scrolls internally; the document itself never does */
 html, body { height: 100%; }
+
+/* reports always print on white, whatever the viewer's dark-mode setting */
+@media print {
+  :root {
+    --background: #ffffff; --surface: #ffffff; --surface-muted: #f3f3f5; --border: #e4e4e8;
+    --foreground: #16161a; --muted: #6b6b76; --accent: #e8452c; --accent-soft: #fdece8;
+    --positive: #12805c; --negative: #c4301c;
+  }
+}
