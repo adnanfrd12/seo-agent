@@ -1,5 +1,6 @@
 import { CheckCircle2, CircleDot, XCircle } from "lucide-react";
 import { GenerateButton, InsightActions } from "@/components/ai/ai-controls";
+import { AutoAnalysis } from "@/components/ai/auto-analysis";
 import { PageHeader } from "@/components/dashboard/page-header";
 import { RangeSelector } from "@/components/dashboard/range-selector";
 import { Unavailable } from "@/components/report/report-ui";
@@ -45,6 +46,9 @@ export default async function InsightsPage({ searchParams }: { searchParams: Pro
   ]);
   const migrationMissing = Boolean(runsErr);
   const latest = ((runs ?? []) as Run[]).find((r) => r.kind === "insights" && r.status === "succeeded");
+  const running = ((runs ?? []) as Run[]).some((r) => r.kind === "insights" && r.status === "running");
+  // first visit with nothing generated yet: admins get one started automatically
+  const autoStart = configured && canEdit && !migrationMissing && !latest && !running;
   const evidenceById = new Map((latest?.evidence?.items ?? []).map((i) => [i.id, i]));
   const current = ((insights ?? []) as Insight[]).filter((i) => !latest || i.run_id === latest.id);
 
@@ -58,9 +62,12 @@ export default async function InsightsPage({ searchParams }: { searchParams: Pro
       ) : !configured ? (
         <Unavailable title="AI isn't configured" body="Add ANTHROPIC_API_KEY to the environment (and Vercel), then redeploy." />
       ) : (
-        <div className="mb-8">
+        <div className="mb-8 space-y-2">
+          <AutoAnalysis kind="insights" start={range.start} end={range.end} autoStart={autoStart} running={running} />
           <GenerateButton kind="insights" start={range.start} end={range.end}
-            label={latest ? "Regenerate analysis" : "Generate AI analysis"} disabled={!canEdit} disabledReason="Owners and admins only" />
+            label={latest ? `Generate latest analysis (${range.start} → ${range.end})` : "Generate AI analysis"}
+            disabled={!canEdit || running} disabledReason={running ? "An analysis is already running" : "Owners and admins only"} />
+          {latest && <p className="text-xs text-muted">Showing the analysis generated {new Date(latest.created_at).toLocaleString()} for {latest.range_start} → {latest.range_end}. A new one is prepared automatically after each month closes.</p>}
         </div>
       )}
 

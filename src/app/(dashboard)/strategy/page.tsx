@@ -1,4 +1,5 @@
 import { GenerateButton, TaskStatusSelect } from "@/components/ai/ai-controls";
+import { AutoAnalysis } from "@/components/ai/auto-analysis";
 import { PageHeader } from "@/components/dashboard/page-header";
 import { RangeSelector } from "@/components/dashboard/range-selector";
 import { Unavailable } from "@/components/report/report-ui";
@@ -31,6 +32,10 @@ export default async function StrategyPage({ searchParams }: { searchParams: Pro
     ? await supabase.from("seo_strategy_tasks").select("*").eq("plan_id", plan.id).order("week").order("sort")
     : { data: [] as Task[] };
   const all = (tasks ?? []) as Task[];
+  const { data: runningRow } = await supabase.from("ai_analysis_runs").select("id").eq("client_id", client.id).eq("kind", "strategy").eq("status", "running").limit(1);
+  const running = (runningRow ?? []).length > 0;
+  const configured = Boolean(process.env.ANTHROPIC_API_KEY);
+  const autoStart = configured && canEdit && !error && !plan && !running;
   const done = all.filter((t) => t.status === "completed").length;
 
   return (
@@ -42,9 +47,12 @@ export default async function StrategyPage({ searchParams }: { searchParams: Pro
       ) : !process.env.ANTHROPIC_API_KEY ? (
         <Unavailable title="AI isn't configured" body="Add ANTHROPIC_API_KEY to the environment (and Vercel), then redeploy." />
       ) : (
-        <div className="mb-8">
-          <GenerateButton kind="strategy" start={range.start} end={range.end} label={plan ? "Generate a new 30-day strategy" : "Generate 30-day strategy"}
-            disabled={!canEdit} disabledReason="Owners and admins only" />
+        <div className="mb-8 space-y-2">
+          <AutoAnalysis kind="strategy" start={range.start} end={range.end} autoStart={autoStart} running={running} />
+          <GenerateButton kind="strategy" start={range.start} end={range.end}
+            label={plan ? `Generate latest strategy (${range.start} → ${range.end})` : "Generate 30-day strategy"}
+            disabled={!canEdit || running} disabledReason={running ? "A strategy is already being generated" : "Owners and admins only"} />
+          {plan && <p className="text-xs text-muted">A new plan is prepared automatically after each month closes. Generating a new one keeps earlier plans and their task history.</p>}
         </div>
       )}
 

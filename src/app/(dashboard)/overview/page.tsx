@@ -1,8 +1,9 @@
 import Link from "next/link";
-import { FileText, Printer } from "lucide-react";
+import { Printer } from "lucide-react";
 import { FilterSelect } from "@/components/dashboard/filter-select";
 import { RangeSelector } from "@/components/dashboard/range-selector";
 import { ReportBody } from "@/components/report/report-body";
+import { PdfDownloadButton } from "@/components/report/pdf-download";
 import { getSession } from "@/lib/analytics/client-context";
 import { resolveRange } from "@/lib/analytics/range";
 import { resourceOptions, resourceScope } from "@/lib/analytics/resource-scope";
@@ -40,6 +41,7 @@ export default async function OverviewPage({ searchParams }: { searchParams: Pro
     `/report?${qs.toString()}&type=${type}${print ? "&print=1" : ""}`;
   // server-rendered PDF file (falls back to the print view if Chromium isn't available)
   const pdfHref = (type: "full" | "executive") => `/api/report/pdf?${qs.toString()}&type=${type}`;
+  const fileBase = `${client.name.replace(/[^w-]+/g, "-").slice(0, 40) || "report"}-${range.start}_${range.end}`;
   const basisLabel = range.preset === "month" ? "vs the previous month" : "vs the previous period of equal length";
 
   return (
@@ -54,14 +56,10 @@ export default async function OverviewPage({ searchParams }: { searchParams: Pro
             </p>
           </div>
           <div className="flex flex-wrap gap-2">
-            <a href={pdfHref("full")} download
-              className="inline-flex items-center gap-1.5 rounded-lg bg-accent px-3.5 py-2 text-sm font-medium text-accent-foreground hover:opacity-90">
-              <FileText className="size-4" aria-hidden /> Download full report PDF
-            </a>
-            <a href={pdfHref("executive")} download
-              className="inline-flex items-center gap-1.5 rounded-lg border border-border bg-surface px-3.5 py-2 text-sm font-medium hover:bg-surface-muted">
-              <FileText className="size-4" aria-hidden /> Executive summary PDF
-            </a>
+            <PdfDownloadButton primary href={pdfHref("full")} printHref={reportHref("full", true)}
+              label="Download full report PDF" filename={`${fileBase}-full-report.pdf`} />
+            <PdfDownloadButton href={pdfHref("executive")} printHref={reportHref("executive", true)}
+              label="Executive summary PDF" filename={`${fileBase}-executive-summary.pdf`} />
             <Link href={reportHref("full", true)} target="_blank"
               className="inline-flex items-center gap-1.5 rounded-lg border border-border bg-surface px-3.5 py-2 text-sm font-medium hover:bg-surface-muted">
               <Printer className="size-4" aria-hidden /> Print report

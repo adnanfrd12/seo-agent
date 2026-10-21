@@ -1,5 +1,6 @@
 import Link from "next/link";
-import { FileText, Printer } from "lucide-react";
+import { Printer } from "lucide-react";
+import { PdfDownloadButton } from "@/components/report/pdf-download";
 import { PageHeader } from "@/components/dashboard/page-header";
 import { getSession } from "@/lib/analytics/client-context";
 import { monthLabel, previousMonth, todayIn } from "@/lib/analytics/range";
@@ -24,12 +25,10 @@ export default async function ReportsPage() {
             <span className="min-w-40 font-medium">{monthLabel(m)}</span>
             <div className="ml-auto flex flex-wrap gap-2 text-sm">
               <Link href={`/report?month=${m}`} target="_blank" className="rounded-lg border border-border px-3 py-1.5 hover:bg-surface-muted">View</Link>
-              <a href={`/api/report/pdf?month=${m}&type=full`} download className="inline-flex items-center gap-1.5 rounded-lg bg-accent px-3 py-1.5 font-medium text-accent-foreground hover:opacity-90">
-                <FileText className="size-4" aria-hidden /> Full PDF
-              </a>
-              <a href={`/api/report/pdf?month=${m}&type=executive`} download className="inline-flex items-center gap-1.5 rounded-lg border border-border px-3 py-1.5 hover:bg-surface-muted">
-                <FileText className="size-4" aria-hidden /> Executive PDF
-              </a>
+              <PdfDownloadButton primary href={`/api/report/pdf?month=${m}&type=full`} printHref={`/report?month=${m}&type=full&print=1`}
+                label="Full PDF" filename={`report-${m}-full.pdf`} />
+              <PdfDownloadButton href={`/api/report/pdf?month=${m}&type=executive`} printHref={`/report?month=${m}&type=executive&print=1`}
+                label="Executive PDF" filename={`report-${m}-executive.pdf`} />
               <Link href={`/report?month=${m}&print=1`} target="_blank" className="inline-flex items-center gap-1.5 rounded-lg border border-border px-3 py-1.5 hover:bg-surface-muted">
                 <Printer className="size-4" aria-hidden /> Print
               </Link>

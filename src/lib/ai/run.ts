@@ -37,12 +37,22 @@ Each week has 2-5 tasks. Each task: title, category, priority, target URL (or nu
  * run records model, tokens and cost. One run per (client, kind) at a time.
  */
 export async function runAnalysis(
-  userClient: SupabaseClient, clientId: string, userId: string, range: { start: string; end: string }, kind: RunKind,
+  userClient: SupabaseClient, clientId: string, userId: string | null, range: { start: string; end: string }, kind: RunKind,
 ): Promise<RunResult> {
   const admin = createAdminClient();
-  const data = await loadReportData(userClient, clientId, range, false); // RLS-checked read
+  // userClient is the signed-in user's client (RLS-checked) or, for scheduled runs, the service role
+  let data;
+  try {
+    data = await loadReportData(userClient, clientId, range, false);
+  } catch {
+    return { ok: false, error: userId ? "Could not load this period's data." : "Scheduled analysis couldn't read data (apply migration 20261021000012)." };
+  }
   const evidence = await buildEvidence(admin, clientId, data);
   const known = new Set(evidence.items.map((i) => i.id));
+
+  // a run whose server function was killed (timeout/deploy) would otherwise block new runs forever
+  await admin.from("ai_analysis_runs").update({ status: "failed", error: "Timed out", finished_at: new Date().toISOString() })
+    .eq("client_id", clientId).eq("kind", kind).eq("status", "running").lt("created_at", new Date(Date.now() - 10 * 60_000).toISOString());
 
   const { data: run, error: runErr } = await admin.from("ai_analysis_runs").insert({
     client_id: clientId, kind, status: "running", range_start: range.start, range_end: range.end,

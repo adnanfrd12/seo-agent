@@ -42,8 +42,10 @@ export async function GET(request: NextRequest) {
   const target = new URL(`/report?${params.toString()}`, request.nextUrl.origin);
 
   let browser: Awaited<ReturnType<typeof launch>> | null = null;
+  let step = "launching the PDF renderer";
   try {
     browser = await launch();
+    step = "loading the report";
     const page = await browser.newPage();
     await page.setCookie(...request.cookies.getAll().map((c) => ({
       name: c.name, value: c.value, domain: target.hostname, path: "/", httpOnly: true, secure: target.protocol === "https:",
@@ -54,6 +56,7 @@ export async function GET(request: NextRequest) {
     if (!res || !res.ok()) throw new Error(`Report page returned ${res?.status() ?? "no response"}`);
     if (new URL(page.url()).pathname !== "/report") throw new Error("Session could not be forwarded to the renderer.");
     await new Promise((r) => setTimeout(r, 800)); // let charts finish layout
+    step = "rendering the PDF";
     const pdf = await page.pdf({ format: "A4", printBackground: true, preferCSSPageSize: true });
     const kind = params.get("type") === "executive" ? "executive-summary" : "full-report";
     const period = params.get("month") ?? `${params.get("start") ?? ""}_${params.get("end") ?? ""}`;
@@ -66,8 +69,9 @@ export async function GET(request: NextRequest) {
       },
     });
   } catch (e) {
-    console.error("pdf render failed:", e instanceof Error ? e.message : e);
-    return NextResponse.json({ error: "Could not generate the PDF. Use Print view → Save as PDF instead." }, { status: 500 });
+    const detail = (e instanceof Error ? e.message : String(e)).slice(0, 200);
+    console.error(`pdf render failed while ${step}:`, detail);
+    return NextResponse.json({ error: `Could not generate the PDF (failed while ${step}).`, step, detail }, { status: 500 });
   } finally {
     await browser?.close().catch(() => {});
   }
