@@ -45,6 +45,13 @@ export default async function IntegrationsPage({
           <IntegrationCard key={p} provider={p} status={status[p] ?? EMPTY} canEdit={canEdit} />
         ))}
       </div>
+      <div className="mt-4 flex flex-wrap items-center justify-between gap-3 rounded-xl border border-border bg-surface p-5">
+        <div>
+          <h2 className="text-base font-semibold">Microsoft Clarity</h2>
+          <p className="text-sm text-muted">Behaviour metrics via Clarity&apos;s Data Export API token, plus recording reviews.</p>
+        </div>
+        <a href="/clarity" className="rounded-lg border border-border px-3 py-1.5 text-sm font-medium hover:bg-surface-muted">Manage Clarity →</a>
+      </div>
     </>
   );
 }

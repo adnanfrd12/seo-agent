@@ -12,6 +12,10 @@ const schema = z.object({
   COMPOSIO_TOOLKIT_VERSION_GOOGLE_SEARCH_CONSOLE: z.string().optional(),
   NEXT_PUBLIC_APP_URL: z.url(),
   CRON_SECRET: z.string().min(16),
+  // optional features: each is disabled with a clear message when its variable is missing
+  ANTHROPIC_API_KEY: z.string().min(1).optional(),
+  TOKEN_ENCRYPTION_KEY: z.string().min(1).optional(),
+  CHROME_EXECUTABLE_PATH: z.string().min(1).optional(),
 });
 
 export type ServerEnv = z.infer<typeof schema>;
@@ -27,4 +31,11 @@ export function serverEnv(): ServerEnv {
     throw new Error(`Missing or invalid environment variables: ${names}`);
   }
   return (cached = parsed.data);
+}
+
+/** Name of a missing optional variable as a readable error (never the value). */
+export function requireOptional<K extends "ANTHROPIC_API_KEY" | "TOKEN_ENCRYPTION_KEY">(name: K): string {
+  const v = serverEnv()[name];
+  if (!v) throw new Error(`Missing or invalid environment variables: ${name}`);
+  return v;
 }

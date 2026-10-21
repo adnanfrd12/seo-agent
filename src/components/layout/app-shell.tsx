@@ -11,7 +11,7 @@ import { cn } from "@/lib/utils";
 function NavList({ collapsed, onNavigate }: { collapsed: boolean; onNavigate?: () => void }) {
   const pathname = usePathname();
   return (
-    <nav aria-label="Main" className="space-y-5 px-3 py-4">
+    <nav aria-label="Main" className="space-y-5 px-3 py-4 short:space-y-3 short:py-3">
       {NAV.map((group) => (
         <div key={group.title}>
           {!collapsed && (
@@ -28,7 +28,7 @@ function NavList({ collapsed, onNavigate }: { collapsed: boolean; onNavigate?: (
                     aria-current={active ? "page" : undefined}
                     title={collapsed ? label : undefined}
                     className={cn(
-                      "flex items-center gap-3 rounded-lg px-2.5 py-2 text-sm font-medium outline-none transition-colors focus-visible:ring-2 focus-visible:ring-accent",
+                      "flex items-center gap-3 rounded-lg px-2.5 py-2 text-sm font-medium short:py-1.5 outline-none transition-colors focus-visible:ring-2 focus-visible:ring-accent",
                       active ? "bg-accent text-accent-foreground" : "text-foreground/80 hover:bg-surface-muted",
                       collapsed && "justify-center",
                     )}

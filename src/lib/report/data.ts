@@ -29,7 +29,18 @@ export interface ReportData {
   topPages: Row[];
   /** null when the opportunities RPC isn't available yet (migration not applied) */
   opportunities: Opportunities | null;
+  /** latest stored AI output (null when none / not configured) */
+  ai: AiSection | null;
+  /** Clarity friction totals over the stored days inside the range (null when not connected) */
+  clarity: { days: number; totals: Record<string, number>; topPages: { url: string; total: number }[] } | null;
   errors: string[];
+}
+
+export interface AiSection {
+  generatedAt: string; model: string | null; periodStart: string | null; periodEnd: string | null;
+  summary: string | null; improvements: string[]; declines: string[];
+  recommendations: { title: string; summary: string; priority: string; category: string; target_url: string | null; recommended_action: string; success_metric: string; implementation_status: string; evidence_references: string[] }[];
+  plan: { summary: string | null; tasks: { week: number; title: string; priority: string; target_url: string | null; success_metric: string; status: string; estimated_effort: string }[] } | null;
 }
 
 const DAY = 86_400_000;
@@ -88,7 +99,50 @@ export async function loadReportData(
     topPages: ((pages.data as { rows?: Row[] } | null)?.rows ?? []),
     // a missing RPC (migration not yet applied) must not break the report
     opportunities: opps.error ? null : (opps.data as Opportunities),
+    ai: await loadAi(supabase, clientId),
+    clarity: await loadClarity(supabase, clientId, range),
     errors: opps.error ? ["opportunities"] : [],
+  };
+}
+
+async function loadAi(supabase: SupabaseClient, clientId: string): Promise<AiSection | null> {
+  const { data: run, error } = await supabase.from("ai_analysis_runs").select("id, created_at, model, range_start, range_end, output")
+    .eq("client_id", clientId).eq("kind", "insights").eq("status", "succeeded").order("created_at", { ascending: false }).limit(1).maybeSingle();
+  const { data: plan } = await supabase.from("seo_strategy_plans").select("id, summary").eq("client_id", clientId).order("created_at", { ascending: false }).limit(1).maybeSingle();
+  if (error || (!run && !plan)) return null;
+  const [{ data: recs }, { data: tasks }] = await Promise.all([
+    run ? supabase.from("analytics_insights").select("title, summary, priority, category, target_url, recommended_action, success_metric, implementation_status, evidence_references")
+      .eq("run_id", run.id).neq("implementation_status", "dismissed").order("created_at") : Promise.resolve({ data: [] }),
+    plan ? supabase.from("seo_strategy_tasks").select("week, title, priority, target_url, success_metric, status, estimated_effort").eq("plan_id", plan.id).order("week").order("sort")
+      : Promise.resolve({ data: [] }),
+  ]);
+  const out = (run?.output ?? {}) as { executive_summary?: string; significant_improvements?: { statement: string }[]; significant_declines?: { statement: string }[] };
+  const rank = { high: 0, medium: 1, low: 2 } as Record<string, number>;
+  return {
+    generatedAt: run?.created_at ?? "", model: run?.model ?? null, periodStart: run?.range_start ?? null, periodEnd: run?.range_end ?? null,
+    summary: out.executive_summary ?? null,
+    improvements: (out.significant_improvements ?? []).map((x) => x.statement),
+    declines: (out.significant_declines ?? []).map((x) => x.statement),
+    recommendations: ((recs ?? []) as AiSection["recommendations"]).sort((a, b) => (rank[a.priority] ?? 3) - (rank[b.priority] ?? 3)),
+    plan: plan ? { summary: plan.summary, tasks: (tasks ?? []) as NonNullable<AiSection["plan"]>["tasks"] } : null,
+  };
+}
+
+const FRICTION = ["RageClickCount", "DeadClickCount", "ExcessiveScroll", "QuickbackClick"];
+async function loadClarity(supabase: SupabaseClient, clientId: string, range: { start: string; end: string }) {
+  const { data, error } = await supabase.from("clarity_behavior_metrics").select("metric_date, dimension, value, metric, count")
+    .eq("client_id", clientId).gte("metric_date", range.start).lte("metric_date", range.end).in("metric", FRICTION).limit(5000);
+  if (error || !data || data.length === 0) return null;
+  const totals: Record<string, number> = {};
+  const pages = new Map<string, number>();
+  for (const r of data) {
+    if (r.dimension === "total") totals[r.metric] = (totals[r.metric] ?? 0) + Number(r.count ?? 0);
+    if (r.dimension === "url") pages.set(r.value, (pages.get(r.value) ?? 0) + Number(r.count ?? 0));
+  }
+  return {
+    days: new Set(data.map((r) => r.metric_date)).size,
+    totals,
+    topPages: [...pages.entries()].map(([url, total]) => ({ url, total })).sort((a, b) => b.total - a.total).slice(0, 8),
   };
 }
 

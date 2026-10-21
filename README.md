@@ -250,6 +250,27 @@ The Supabase advisor still lists four `SECURITY DEFINER` functions callable by s
 - Header date-range selector and Refresh button.
 - Google Business Profile integration. Composio has no toolkit for it, so this needs a direct Google adapter and approval of the Business Profile APIs for your Google Cloud project. That approval is outside this codebase.
 
+## AI, Clarity, reports and imports
+
+| Feature | Where | Needs |
+|---|---|---|
+| Executive report Overview (chapters 01–07) | `/overview` | GA4 / GSC connected |
+| Report-only layout (no sidebar) | `/report?month=YYYY-MM&type=full|executive` | — |
+| Server-side PDF | `/api/report/pdf?...` (same params) | Chromium: bundled on Vercel; local Chrome or `CHROME_EXECUTABLE_PATH` |
+| SEO opportunity engine | `/opportunities` (RPC `get_gsc_opportunities`) | migration 10 + a GSC re-sync |
+| AI SEO Insights | `/insights` | `ANTHROPIC_API_KEY`, migration 11 |
+| 30-Day Strategy + task tracking | `/strategy` | `ANTHROPIC_API_KEY`, migration 11 |
+| Microsoft Clarity + recording reviews | `/clarity` | Clarity API token, `TOKEN_ENCRYPTION_KEY`, migration 11 |
+| PDF report import | `/imports` | `ANTHROPIC_API_KEY`, migration 11 |
+
+**AI pipeline.** Stored data → deterministic calculations (SQL/TypeScript) → an evidence package where every fact has a stable id → Claude (`claude-opus-5-5`, structured outputs, server-side refusal fallback) → Zod validation → recommendations citing unknown evidence ids are discarded → stored with model, tokens and estimated cost. One run per kind per client at a time. The AI interprets; it never calculates metrics.
+
+**Clarity limits (Microsoft's).** The Data Export API returns only the last 1–3 days, 10 requests per project per day, 1,000 rows, no pagination. Each sync uses 3 requests and stores "yesterday"; history accumulates daily. There is **no API for session recordings**, so recordings are reviewed by a person in Clarity and logged as structured observations, which the AI cites as human observations.
+
+**Imports.** PDFs upload straight to a private bucket via a signed URL, Claude extracts the figures (including image-only pages), a reviewer accepts or rejects each one, and only accepted figures become evidence, always labelled "imported" and never merged with API data.
+
+**Tests.** `npm test` runs unit tests (encryption, Clarity parsing, period maths, wins and declines, gap filling, CSV safety, AI schemas).
+
 ## Deploying to Vercel
 
 The Vercel project is linked to GitHub (`adnanfrd12/seo-agent`, branch `main`): every push to `main` deploys to production.

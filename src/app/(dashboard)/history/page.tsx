@@ -1,14 +1,68 @@
-import { PageHeader, EmptyState } from "@/components/dashboard/page-header";
+import { MetricTrend } from "@/components/charts/metric-trend";
+import type { TrendPoint } from "@/components/charts/trend-chart";
+import { PageHeader } from "@/components/dashboard/page-header";
+import { ReportTable, Unavailable } from "@/components/report/report-ui";
+import { getSession } from "@/lib/analytics/client-context";
+import { fmtDecimal, fmtInt, fmtPercent, toNum } from "@/lib/analytics/format";
+import { monthLabel, monthRange, previousMonth, todayIn } from "@/lib/analytics/range";
+import { resourceScope } from "@/lib/analytics/resource-scope";
+import type { SearchParams } from "@/lib/analytics/url";
 
-export default function Page() {
+type Row = { date: string } & Record<string, unknown>;
+
+/** Long-term view: complete calendar months only (the current partial month is excluded). */
+export default async function HistoryPage({ searchParams }: { searchParams: Promise<SearchParams> }) {
+  const { client } = await getSession();
+  if (!client) return null;
+  const sp = await searchParams;
+  const last = previousMonth(todayIn(client.timezone));
+  let firstM = last;
+  for (let i = 0; i < 11; i++) firstM = previousMonth(`${firstM}-15`);
+  const range = { start: monthRange(firstM).start, end: monthRange(last).end };
+  const scope = await resourceScope(client.id, sp);
+  const args = { p_client_id: client.id, p_start: range.start, p_end: range.end, p_granularity: "month", p_compare: false };
+  const [ga4, gsc] = await Promise.all([
+    scope.supabase.rpc("get_analytics_trends", { ...args, p_provider: "ga4" }),
+    scope.supabase.rpc("get_analytics_trends", { ...args, p_provider: "gsc", p_search_type: "web" }),
+  ]);
+  const g = ((ga4.data as { current?: Row[] } | null)?.current ?? []);
+  const s = ((gsc.data as { current?: Row[] } | null)?.current ?? []);
+  const pts = (rows: Row[], k: string): TrendPoint[] => rows.map((r) => ({ date: String(r.date), value: toNum(r[k]) }));
+  const months = [...new Set([...g, ...s].map((r) => String(r.date)))].sort().reverse();
+  const at = (rows: Row[], m: string) => rows.find((r) => String(r.date) === m);
+
   return (
-    <>
-      <PageHeader title="Historical Performance" description="Compare periods and analyze long-term trends." />
-      <EmptyState
-        title="Not built yet"
-        body="This page is scaffolded. It will show real data from Supabase once data is synced (Phase 8)."
-        action={{ href: "/integrations", label: "Go to Integrations" }}
-      />
-    </>
+    <div className="mx-auto max-w-6xl space-y-6">
+      <PageHeader title="Historical Reports" description={`Complete months from ${monthLabel(firstM)} to ${monthLabel(last)}. History starts when each source was connected (GA4 and Search Console import 90 days at connection).`} />
+      {months.length === 0 ? (
+        <Unavailable title="No historical data yet" body="Connect and sync Google Analytics 4 or Search Console." />
+      ) : (
+        <>
+          <div className="grid gap-4 lg:grid-cols-2">
+            {g.length > 0 && <MetricTrend title="Website traffic by month" source="GA4" options={[
+              { key: "sessions", label: "Sessions", data: pts(g, "sessions") },
+              { key: "users", label: "Users", data: pts(g, "users") },
+              { key: "key_events", label: "Key events", data: pts(g, "key_events") },
+            ]} />}
+            {s.length > 0 && <MetricTrend title="Organic search by month" source="GSC" options={[
+              { key: "clicks", label: "Clicks", data: pts(s, "clicks") },
+              { key: "impressions", label: "Impressions", data: pts(s, "impressions") },
+              { key: "position", label: "Position", format: "decimal", reverseY: true, data: pts(s, "position") },
+            ]} />}
+          </div>
+          <ReportTable<string> title="Month by month" empty="" rows={months} columns={[
+            { label: "Month", render: (m) => monthLabel(m.slice(0, 7)) },
+            { label: "Sessions", align: "right", render: (m) => fmtInt(toNum(at(g, m)?.sessions)) },
+            { label: "Users", align: "right", render: (m) => fmtInt(toNum(at(g, m)?.users)) },
+            { label: "Engagement", align: "right", render: (m) => fmtPercent(toNum(at(g, m)?.engagement_rate)) },
+            { label: "Clicks", align: "right", render: (m) => fmtInt(toNum(at(s, m)?.clicks)) },
+            { label: "Impressions", align: "right", render: (m) => fmtInt(toNum(at(s, m)?.impressions)) },
+            { label: "CTR", align: "right", render: (m) => fmtPercent(toNum(at(s, m)?.ctr), 2) },
+            { label: "Position", align: "right", render: (m) => fmtDecimal(toNum(at(s, m)?.position)) },
+          ]} />
+          <p className="text-xs text-muted">A month only covers the days that were imported; the earliest month can be partial. Compare any two custom periods on the Overview with the date picker and &quot;Compare to previous period&quot;.</p>
+        </>
+      )}
+    </div>
   );
 }

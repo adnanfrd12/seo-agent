@@ -6,10 +6,13 @@
     "dev": "next dev",
     "build": "next build",
     "start": "next start",
-    "lint": "eslint"
+    "lint": "eslint",
+    "test": "tsx --tsconfig tests/tsconfig.test.json --test tests/unit.test.mts"
   },
   "dependencies": {
+    "@anthropic-ai/sdk": "^0.137.0",
     "@composio/core": "^0.23.0",
+    "@sparticuz/chromium": "^153.0.0",
     "@supabase/ssr": "^0.12.7",
     "@supabase/supabase-js": "^2.117.3",
     "class-variance-authority": "^0.7.1",
@@ -17,6 +20,7 @@
     "date-fns": "^4.4.0",
     "lucide-react": "^1.56.0",
     "next": "16.4.0",
+    "puppeteer-core": "^25.15.0",
     "react": "19.3.0",
     "react-dom": "19.3.0",
     "recharts": "^3.10.1",
@@ -32,6 +36,7 @@
     "eslint": "^9",
     "eslint-config-next": "16.4.0",
     "tailwindcss": "^4",
+    "tsx": "^4.23.15",
     "typescript": "^5"
   }
 }

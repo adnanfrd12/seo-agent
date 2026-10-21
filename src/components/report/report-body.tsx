@@ -4,6 +4,7 @@ import {
   TrendingDown, TrendingUp, Trophy, Users,
 } from "lucide-react";
 import { MetricTrend } from "@/components/charts/metric-trend";
+import { AiInsightsBlock, ClarityBlock, StrategyBlock } from "./ai-sections";
 import { fmtDecimal, fmtDuration, fmtInt, fmtPercent, toNum, type Num } from "@/lib/analytics/format";
 import { dailySeries } from "@/lib/analytics/trend";
 import { monthlyWins, notableDeclines, type Compared, type ReportData } from "@/lib/report/data";
@@ -268,8 +269,7 @@ export function ReportBody({ d, opts }: { d: ReportData; opts: ReportOptions }) 
                 { label: "Key events", align: "right", render: (x) => fmtInt(num(x.key_events)) },
               ]} />
           )}
-          <Unavailable title="Microsoft Clarity isn't connected yet"
-            body="Rage clicks, dead clicks, excessive scrolling and quick backs will appear here once a Clarity API token is added. Clarity's API provides aggregated behaviour metrics only (last 1–3 days per call), so history builds up from daily syncs. Session recordings can't be retrieved through any official API; recording insights come from a reviewer's structured observations." />
+          <ClarityBlock d={d} />
           <Unavailable title="Funnel drop-off can't be measured yet"
             body="Exact drop-off rates need each funnel step tracked as a GA4 event (for example: view_service → click_cta → form_start → form_submit). Until then, this report doesn't show a conversion funnel." />
           <p className="text-xs text-muted">404 monitoring needs either a GA4 event for error pages or verified page titles; it is not inferred from URLs.</p>
@@ -279,11 +279,11 @@ export function ReportBody({ d, opts }: { d: ReportData; opts: ReportOptions }) 
       {/* ---------------------------------------------------------------- 06/07 */}
       <Chapter n={opts.executive ? 5 : 6} id="ch-06" icon={Sparkles} title="AI SEO Insights"
         subtitle="Evidence-based interpretation of the data above">
-        <Unavailable title="AI analysis isn't configured yet"
-          body="Once an Anthropic API key is added, insights are generated from a structured evidence package of the figures in this report. Every recommendation cites its supporting data; AI interprets the data but never calculates or invents metrics." />
+        <AiInsightsBlock d={d} linked={opts.variant === "dashboard"} />
       </Chapter>
       <Chapter n={opts.executive ? 6 : 7} id="ch-07" icon={CalendarCheck} title="30-Day SEO Strategy"
         subtitle="Prioritised plan for the next month">
+        <StrategyBlock d={d} linked={opts.variant === "dashboard"} fallback={<>
         {o && o.quick_wins.length + o.declining_keywords.length + o.decaying_pages.length > 0 ? (
           <Findings title="Evidence-based starting points (deterministic)" items={[
             ...o.quick_wins.slice(0, 3).map((x) => `Improve the title and description for "${str(x.query)}"${x.page ? ` on ${urlLabel(x.page)}` : ""}: ${fmtInt(num(x.impressions))} impressions at position ${fmtDecimal(num(x.position))} but ${pct2(num(x.ctr))} CTR.`),
@@ -294,6 +294,7 @@ export function ReportBody({ d, opts }: { d: ReportData; opts: ReportOptions }) 
           <Unavailable title="Not enough evidence for a strategy yet"
             body="A full week-by-week plan is generated with AI from the evidence in this report once AI analysis is configured." />
         )}
+        </>} />
         <p className="text-xs text-muted">No ranking or revenue outcome is guaranteed; each action lists the metric that will show whether it worked.</p>
       </Chapter>
 

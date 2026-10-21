@@ -38,6 +38,8 @@ export default async function OverviewPage({ searchParams }: { searchParams: Pro
   if (scope.gscPick) qs.set("site", scope.gscPick.id);
   const reportHref = (type: "full" | "executive", print = false) =>
     `/report?${qs.toString()}&type=${type}${print ? "&print=1" : ""}`;
+  // server-rendered PDF file (falls back to the print view if Chromium isn't available)
+  const pdfHref = (type: "full" | "executive") => `/api/report/pdf?${qs.toString()}&type=${type}`;
   const basisLabel = range.preset === "month" ? "vs the previous month" : "vs the previous period of equal length";
 
   return (
@@ -52,17 +54,17 @@ export default async function OverviewPage({ searchParams }: { searchParams: Pro
             </p>
           </div>
           <div className="flex flex-wrap gap-2">
-            <Link href={reportHref("full", true)} target="_blank"
+            <a href={pdfHref("full")} download
               className="inline-flex items-center gap-1.5 rounded-lg bg-accent px-3.5 py-2 text-sm font-medium text-accent-foreground hover:opacity-90">
-              <FileText className="size-4" aria-hidden /> Full report PDF
-            </Link>
-            <Link href={reportHref("executive", true)} target="_blank"
+              <FileText className="size-4" aria-hidden /> Download full report PDF
+            </a>
+            <a href={pdfHref("executive")} download
               className="inline-flex items-center gap-1.5 rounded-lg border border-border bg-surface px-3.5 py-2 text-sm font-medium hover:bg-surface-muted">
               <FileText className="size-4" aria-hidden /> Executive summary PDF
-            </Link>
-            <Link href={reportHref("full")} target="_blank"
+            </a>
+            <Link href={reportHref("full", true)} target="_blank"
               className="inline-flex items-center gap-1.5 rounded-lg border border-border bg-surface px-3.5 py-2 text-sm font-medium hover:bg-surface-muted">
-              <Printer className="size-4" aria-hidden /> Print view
+              <Printer className="size-4" aria-hidden /> Print report
             </Link>
           </div>
         </div>

@@ -3,6 +3,7 @@ import { ProviderAuthError, ProviderRateLimitError } from "@/lib/composio/client
 import { createAdminClient } from "@/lib/supabase/admin";
 import { syncGa4 } from "./ga4";
 import { GSC_TIME_ZONE, syncGsc } from "./gsc";
+import { syncClarity } from "./clarity";
 
 const DAY = 86_400_000;
 const LOOKBACK_DAYS = { initial: 90, daily: 7, manual: 14 } as const;
@@ -12,7 +13,7 @@ type Job = {
   client_id: string;
   connection_id: string | null;
   resource_id: string | null;
-  provider: "ga4" | "gsc" | "gbp";
+  provider: "ga4" | "gsc" | "gbp" | "clarity";
   job_type: keyof typeof LOOKBACK_DAYS;
   range_start: string | null;
   range_end: string | null;
@@ -75,7 +76,9 @@ export async function processQueue(opts: { budgetMs?: number } = {}): Promise<Qu
         tally("skipped");
         continue;
       }
-      if (!conn || conn.status !== "connected" || !conn.composio_connected_account_id || !conn.composio_entity_id) {
+      // Clarity uses a stored API token instead of a Composio account
+      const viaComposio = job.provider !== "clarity";
+      if (!conn || conn.status !== "connected" || (viaComposio && (!conn.composio_connected_account_id || !conn.composio_entity_id))) {
         await finish("failed", "Connection is not active. Reconnect the integration.", {}, true);
         tally("auth");
         continue;
@@ -90,12 +93,14 @@ export async function processQueue(opts: { budgetMs?: number } = {}): Promise<Qu
       // Each provider reports dates in its own time zone: GA4 in the property's, Search Console in Pacific.
       const end = job.range_end ?? todayIn(job.provider === "gsc" ? GSC_TIME_ZONE : resource.timezone);
       const start = job.range_start ?? shiftDays(end, -(LOOKBACK_DAYS[job.job_type] - 1));
-      const ctx = { userId: conn.composio_entity_id, connectedAccountId: conn.composio_connected_account_id };
       const target = { clientId: job.client_id, resourceId: job.resource_id! };
+      const ctx = { userId: conn.composio_entity_id ?? "", connectedAccountId: conn.composio_connected_account_id ?? "" };
       const run =
-        job.provider === "ga4"
-          ? await syncGa4(admin, ctx, { ...target, property: resource.external_id }, { start, end })
-          : await syncGsc(admin, ctx, { ...target, siteUrl: resource.external_id }, { start, end });
+        job.provider === "clarity"
+          ? await syncClarity(admin, { ...target, connectionId: job.connection_id! })
+          : job.provider === "ga4"
+            ? await syncGa4(admin, ctx, { ...target, property: resource.external_id }, { start, end })
+            : await syncGsc(admin, ctx, { ...target, siteUrl: resource.external_id }, { start, end });
 
       const stats = { range: { start, end }, written: run.written, failures: run.failures };
       const failed = Object.keys(run.failures).length;
