@@ -3,6 +3,7 @@ import { composio } from "@/lib/composio/client";
 import { ga4Adapter } from "@/lib/composio/ga4";
 import { gscAdapter } from "@/lib/composio/gsc";
 import { serverEnv } from "@/lib/env";
+import { revokeGbp } from "./gbp-service";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { createClient } from "@/lib/supabase/server";
 import type { DiscoveredResource } from "@/lib/analytics/types";
@@ -234,6 +235,8 @@ export async function disconnect(clientId: string, provider: ProviderId) {
     } catch {
       // upstream already gone or unreachable; still disconnect locally
     }
+  } else {
+    await revokeGbp(admin, conn.id);
   }
   await admin
     .from("integration_connections")

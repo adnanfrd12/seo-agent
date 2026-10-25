@@ -31,8 +31,8 @@ const btnPrimary =
   "inline-flex items-center gap-1.5 rounded-lg bg-accent px-3 py-1.5 text-sm font-medium text-accent-foreground outline-none transition hover:opacity-90 focus-visible:ring-2 focus-visible:ring-accent disabled:cursor-not-allowed disabled:opacity-50";
 
 export function IntegrationCard({
-  provider, status, canEdit,
-}: { provider: ProviderId; status: ProviderStatus; canEdit: boolean }) {
+  provider, status, canEdit, available = true,
+}: { provider: ProviderId; status: ProviderStatus; canEdit: boolean; available?: boolean }) {
   const router = useRouter();
   const meta = PROVIDER_META[provider];
   const conn = status.connection;
@@ -85,7 +85,7 @@ export function IntegrationCard({
     const json = await call("select", { resourceIds: [...picked] });
     if (json) {
       setMessage(
-        json.queued > 0 ? "Saved. Initial 90-day import queued." : "Saved.",
+        json.queued > 0 ? "Saved. Import queued: recent data first, then older history in the background." : "Saved.",
       );
       router.refresh();
     }
@@ -125,11 +125,11 @@ export function IntegrationCard({
         </span>
       </div>
 
-      {!meta.viaComposio ? (
+      {!available ? (
         <div className="space-y-2 text-sm text-muted">
           <p>
-            Composio has no Google Business Profile toolkit, so this needs a direct Google adapter
-            and approval of the Business Profile APIs for your Google Cloud project.
+            {meta.label} connects with its own Google OAuth client. Add GOOGLE_GBP_CLIENT_ID,
+            GOOGLE_GBP_CLIENT_SECRET and TOKEN_ENCRYPTION_KEY to the environment, then redeploy.
           </p>
           <button className={btn} disabled>Connect Account</button>
         </div>

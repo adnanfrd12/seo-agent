@@ -76,6 +76,16 @@ export async function buildEvidence(
         `${x.pages} pages share ${x.impressions} impressions`, JSON.stringify(x.detail).slice(0, 400)));
     }
   }
+  if (d.connected.gbp && d.gbp?.current?.has_data) {
+    kpis("gbp", "Business Profile", d.gbp, [
+      ["impressions", "Profile views (Search + Maps)", "n"], ["impressions_search", "Profile views on Google Search", "n"],
+      ["impressions_maps", "Profile views on Google Maps", "n"], ["impressions_mobile", "Profile views on mobile", "n"],
+      ["impressions_desktop", "Profile views on desktop", "n"], ["website_clicks", "Website clicks from the profile", "n"],
+      ["call_clicks", "Call button clicks (not completed calls)", "n"], ["direction_requests", "Direction requests", "n"],
+    ]);
+    d.gbpKeywords.slice(0, 15).forEach((k, i) => add(`gbp.keyword.${i + 1}`, "Business Profile", `Search term "${k.keyword}" showed the profile`,
+      k.impressions != null ? `${k.impressions} impressions` : `fewer than ${k.impressions_threshold} impressions`, "monthly figure, months overlapping the period"));
+  }
   monthlyWins(d).forEach((w, i) => add(`derived.win.${i + 1}`, w.source, "Calculated improvement", w.text));
   notableDeclines(d).forEach((w, i) => add(`derived.decline.${i + 1}`, w.source, "Calculated decline", w.text));
 
@@ -100,7 +110,7 @@ export async function buildEvidence(
   const unavailable = [
     !d.connected.ga4 && "Google Analytics 4",
     !d.connected.gsc && "Google Search Console",
-    !d.connected.gbp && "Google Business Profile (not connected: no local metrics)",
+    !(d.connected.gbp && d.gbp?.current?.has_data) && "Google Business Profile (not connected or no data: no local metrics)",
     !(clarity ?? []).length && "Microsoft Clarity behaviour metrics",
     !(reviews ?? []).length && "Session recording observations",
     "Funnel steps (not instrumented as GA4 events)",

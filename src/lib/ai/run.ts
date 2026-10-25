@@ -65,7 +65,7 @@ export async function runAnalysis(
     await admin.from("ai_analysis_runs").update({ status: "failed", error, finished_at: new Date().toISOString() }).eq("id", run.id);
     return { ok: false as const, error };
   };
-  if (evidence.items.length < 5) return fail("Not enough connected data to analyse yet. Connect and sync GA4 or Search Console first.");
+  if (evidence.items.length < 5) return fail("Not enough connected data to analyse yet. Connect and sync GA4, Search Console or Business Profile first.");
 
   try {
     const schema = (kind === "insights" ? insightsSchema : strategySchema) as z.ZodType<InsightsOutput | StrategyOutput>;

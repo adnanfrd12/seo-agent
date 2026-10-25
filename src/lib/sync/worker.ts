@@ -4,9 +4,22 @@ import { createAdminClient } from "@/lib/supabase/admin";
 import { syncGa4 } from "./ga4";
 import { GSC_TIME_ZONE, syncGsc } from "./gsc";
 import { syncClarity } from "./clarity";
+import { syncGbp } from "./gbp";
 
 const DAY = 86_400_000;
-const LOOKBACK_DAYS = { initial: 90, daily: 7, manual: 14 } as const;
+const LOOKBACK_DAYS = { initial: 90, daily: 7, manual: 14, backfill: 90 } as const;
+
+/**
+ * "As much history as the API allows": after the initial import, older chunks are queued one at a
+ * time (one active job per resource) until the provider's limit, or until a chunk comes back
+ * empty (the property/site didn't exist yet).
+ *   GSC keeps 16 months, the GBP Performance API serves 18 months, GA4 has no fixed limit.
+ */
+const BACKFILL = {
+  gsc: { maxDays: 486, chunk: 90 },
+  gbp: { maxDays: 540, chunk: 180 },
+  ga4: { maxDays: 5 * 365, chunk: 90 },
+} as const;
 
 type Job = {
   id: string;
@@ -76,20 +89,13 @@ export async function processQueue(opts: { budgetMs?: number } = {}): Promise<Qu
         tally("skipped");
         continue;
       }
-      // Clarity uses a stored API token instead of a Composio account
-      const viaComposio = job.provider !== "clarity";
+      // Clarity (API token) and Business Profile (direct Google OAuth) don't use Composio
+      const viaComposio = job.provider === "ga4" || job.provider === "gsc";
       if (!conn || conn.status !== "connected" || (viaComposio && (!conn.composio_connected_account_id || !conn.composio_entity_id))) {
         await finish("failed", "Connection is not active. Reconnect the integration.", {}, true);
         tally("auth");
         continue;
       }
-      if (job.provider === "gbp") {
-        // Honest failure instead of pretending: Business Profile import is not implemented yet.
-        await finish("failed", "Google Business Profile sync is not implemented yet", {});
-        tally("unsupported");
-        continue;
-      }
-
       // Each provider reports dates in its own time zone: GA4 in the property's, Search Console in Pacific.
       const end = job.range_end ?? todayIn(job.provider === "gsc" ? GSC_TIME_ZONE : resource.timezone);
       const start = job.range_start ?? shiftDays(end, -(LOOKBACK_DAYS[job.job_type] - 1));
@@ -98,6 +104,8 @@ export async function processQueue(opts: { budgetMs?: number } = {}): Promise<Qu
       const run =
         job.provider === "clarity"
           ? await syncClarity(admin, { ...target, connectionId: job.connection_id! })
+          : job.provider === "gbp"
+            ? await syncGbp(admin, { ...target, connectionId: job.connection_id!, location: resource.external_id }, { start, end })
           : job.provider === "ga4"
             ? await syncGa4(admin, ctx, { ...target, property: resource.external_id }, { start, end })
             : await syncGsc(admin, ctx, { ...target, siteUrl: resource.external_id }, { start, end });
@@ -111,9 +119,15 @@ export async function processQueue(opts: { budgetMs?: number } = {}): Promise<Qu
       } else if (failed === 0) {
         await finish("succeeded", null, stats);
         tally("succeeded");
+        await queueOlderChunk(admin, job, start, run.written);
       } else if (ok > 0) {
-        await finish("partial", `${failed} report(s) failed: ${Object.keys(run.failures).join(", ")}`, stats);
+        await finish("partial", `${failed} report(s) failed: ${Object.entries(run.failures).map(([k, v]) => `${k}: ${v}`).join("; ").slice(0, 900)}`, stats);
         tally("partial");
+        await queueOlderChunk(admin, job, start, run.written);
+      } else if (Object.values(run.failures).some((m) => /quota 0|is not enabled|not enabled in the Google Cloud|cannot access the profile/i.test(m))) {
+        // retrying can't fix missing API approval or permissions: fail once with Google's reason
+        await finish("failed", Object.values(run.failures)[0]!.slice(0, 900), stats);
+        tally("failed");
       } else {
         await finish("retry", Object.values(run.failures)[0] ?? "all reports failed", stats);
         tally("retry");
@@ -131,4 +145,20 @@ export async function processQueue(opts: { budgetMs?: number } = {}): Promise<Qu
     }
   }
   return result;
+}
+
+/** Chains the next-older history chunk after a successful initial/backfill import. */
+async function queueOlderChunk(admin: ReturnType<typeof createAdminClient>, job: Job, start: string, written: Record<string, number>) {
+  if (job.provider === "clarity" || (job.job_type !== "initial" && job.job_type !== "backfill")) return;
+  // an empty older chunk means there is no earlier data
+  if (job.job_type === "backfill" && Object.values(written).every((n) => !n)) return;
+  const { maxDays, chunk } = BACKFILL[job.provider];
+  const floor = shiftDays(todayIn("UTC"), -maxDays);
+  const end = shiftDays(start, -1);
+  if (end < floor) return;
+  const from = shiftDays(end, -(chunk - 1));
+  await admin.from("analytics_sync_jobs").insert({
+    client_id: job.client_id, connection_id: job.connection_id, resource_id: job.resource_id, provider: job.provider,
+    job_type: "backfill", range_start: from < floor ? floor : from, range_end: end,
+  }); // a unique-index conflict just means another job is already active for this resource
 }

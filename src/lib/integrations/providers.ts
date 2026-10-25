@@ -9,6 +9,6 @@ export const PROVIDER_META: Record<
 > = {
   ga4: { label: "Google Analytics 4", resourceNoun: "property", viaComposio: true },
   gsc: { label: "Google Search Console", resourceNoun: "site", viaComposio: true },
-  // Composio has no Business Profile toolkit; needs the direct adapter + Google API approval.
+  // Composio has no Business Profile toolkit: direct Google OAuth (src/lib/google/oauth.ts).
   gbp: { label: "Google Business Profile", resourceNoun: "location", viaComposio: false },
 };

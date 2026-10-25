@@ -16,6 +16,10 @@ const schema = z.object({
   ANTHROPIC_API_KEY: z.string().min(1).optional(),
   TOKEN_ENCRYPTION_KEY: z.string().min(1).optional(),
   CHROME_EXECUTABLE_PATH: z.string().min(1).optional(),
+  // Google Business Profile uses its own Google OAuth client (Composio has no GBP toolkit)
+  GOOGLE_GBP_CLIENT_ID: z.string().min(1).optional(),
+  GOOGLE_GBP_CLIENT_SECRET: z.string().min(1).optional(),
+  GOOGLE_GBP_REDIRECT_URI: z.url().optional(),
 });
 
 export type ServerEnv = z.infer<typeof schema>;
@@ -34,7 +38,9 @@ export function serverEnv(): ServerEnv {
 }
 
 /** Name of a missing optional variable as a readable error (never the value). */
-export function requireOptional<K extends "ANTHROPIC_API_KEY" | "TOKEN_ENCRYPTION_KEY">(name: K): string {
+export function requireOptional<
+  K extends "ANTHROPIC_API_KEY" | "TOKEN_ENCRYPTION_KEY" | "GOOGLE_GBP_CLIENT_ID" | "GOOGLE_GBP_CLIENT_SECRET",
+>(name: K): string {
   const v = serverEnv()[name];
   if (!v) throw new Error(`Missing or invalid environment variables: ${name}`);
   return v;

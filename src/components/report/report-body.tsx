@@ -1,6 +1,6 @@
 import Link from "next/link";
 import {
-  Activity, BarChart3, CalendarCheck, Eye, Flag, Gauge, Globe, MapPin, MousePointerClick, Search, Sparkles, Target,
+  Activity, BarChart3, CalendarCheck, Eye, Flag, Gauge, Globe, MapPin, MousePointerClick, Navigation, Phone, Search, Sparkles, Target,
   TrendingDown, TrendingUp, Trophy, Users,
 } from "lucide-react";
 import { MetricTrend } from "@/components/charts/metric-trend";
@@ -51,14 +51,15 @@ export function ReportBody({ d, opts }: { d: ReportData; opts: ReportOptions }) 
   const organic = d.channels.find((c) => c.channel === "Organic Search");
   const ga4Ok = d.connected.ga4 && g.current?.has_data;
   const gscOk = d.connected.gsc && s.current?.has_data;
+  const b = d.gbp, gbpOk = d.connected.gbp && b?.current?.has_data;
 
   return (
     <div className="space-y-14">
       {/* ---------------------------------------------------------------- 01 */}
       <Chapter n={1} id="ch-01" icon={Flag} title="Overall Performance & Monthly Wins"
         subtitle="Headline website, search and local visibility results at a glance"
-        sources={[ga4Ok && "Google Analytics 4", gscOk && "Google Search Console"].filter(Boolean) as string[]}>
-        {!ga4Ok && !gscOk ? (
+        sources={[ga4Ok && "Google Analytics 4", gscOk && "Google Search Console", gbpOk && "Google Business Profile"].filter(Boolean) as string[]}>
+        {!ga4Ok && !gscOk && !gbpOk ? (
           <Unavailable title="No connected data for this period" body="Connect Google Analytics 4 or Search Console on the Integrations page, then run a sync." />
         ) : (
           <TileGrid>
@@ -89,6 +90,8 @@ export function ReportBody({ d, opts }: { d: ReportData; opts: ReportOptions }) 
               {o && <StatTile label="Keywords declining" icon={TrendingDown} color={CHAPTER_COLORS[0]} source="GSC" format={fmtInt} higherIsBetter={false}
                 value={o.declining_keywords.length} />}
             </>}
+            {gbpOk && <StatTile label="Business Profile views" icon={MapPin} color={CHAPTER_COLORS[0]} source="GBP" format={fmtInt}
+              value={pick(b, "impressions")} previous={prevOf(b, "impressions")} mom={momOf(b, "impressions")} yoy={yoyOf(b, "impressions")} spark={spark(d.gbpTrend, "impressions")} />}
           </TileGrid>
         )}
         <div className="grid gap-4 lg:grid-cols-2">
@@ -142,9 +145,56 @@ export function ReportBody({ d, opts }: { d: ReportData; opts: ReportOptions }) 
 
       {/* ---------------------------------------------------------------- 03 */}
       <Chapter n={3} id="ch-03" icon={MapPin} title="Google Business Profile Performance"
-        subtitle="Local visibility, calls, website visits and direction requests">
-        <Unavailable title="Not connected"
-          body="Google Business Profile data needs Google's Business Profile API approval for this project and a direct Google sign-in (Composio has no Business Profile toolkit). Once approved, profile impressions (Search and Maps), call clicks, website clicks, direction requests and search keywords will appear here. Note: call clicks are taps on the call button, not completed calls." />
+        subtitle="Local visibility, calls, website visits and direction requests" sources={gbpOk ? ["Google Business Profile"] : []}>
+        {!gbpOk ? (
+          <Unavailable title={d.connected.gbp ? "No Business Profile data for this period" : "Google Business Profile isn't connected"}
+            body={d.connected.gbp
+              ? "The location is connected but Google returned no performance data for this range yet (metrics arrive a few days late, and API access must be approved for the project)."
+              : "Connect the Google account that manages the Business Profile on the Integrations page. Profile views (Search and Maps), call clicks, website clicks, direction requests and search keywords will appear here."} />
+        ) : <>
+          <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
+            <StatTile label="Profile views" icon={Eye} color={CHAPTER_COLORS[2]} source="GBP" format={fmtInt}
+              value={pick(b, "impressions")} previous={prevOf(b, "impressions")} mom={momOf(b, "impressions")} yoy={yoyOf(b, "impressions")} spark={spark(d.gbpTrend, "impressions")} />
+            <StatTile label="Website clicks" icon={MousePointerClick} color={CHAPTER_COLORS[2]} source="GBP" format={fmtInt}
+              value={pick(b, "website_clicks")} previous={prevOf(b, "website_clicks")} mom={momOf(b, "website_clicks")} yoy={yoyOf(b, "website_clicks")} />
+            <StatTile label="Call button clicks" icon={Phone} color={CHAPTER_COLORS[2]} source="GBP" format={fmtInt}
+              value={pick(b, "call_clicks")} previous={prevOf(b, "call_clicks")} mom={momOf(b, "call_clicks")} yoy={yoyOf(b, "call_clicks")}
+              hint="Taps on the call button, not completed calls." />
+            <StatTile label="Direction requests" icon={Navigation} color={CHAPTER_COLORS[2]} source="GBP" format={fmtInt}
+              value={pick(b, "direction_requests")} previous={prevOf(b, "direction_requests")} mom={momOf(b, "direction_requests")} yoy={yoyOf(b, "direction_requests")} />
+          </div>
+          {!opts.executive && (
+            <MetricTrend title="Business Profile over time" source="GBP" options={[
+              { key: "impressions", label: "Views", data: dailySeries(d.gbpTrend, "impressions", r) },
+              { key: "website_clicks", label: "Website", data: dailySeries(d.gbpTrend, "website_clicks", r) },
+              { key: "call_clicks", label: "Calls", data: dailySeries(d.gbpTrend, "call_clicks", r) },
+              { key: "direction_requests", label: "Directions", data: dailySeries(d.gbpTrend, "direction_requests", r) },
+            ]} />
+          )}
+          <div>
+            <h3 className="mb-2 text-sm font-bold">Where the profile was seen</h3>
+            <BarRows color={CHAPTER_COLORS[2]} rows={[
+              { label: "Google Search", value: pick(b, "impressions_search") ?? 0, base: prevOf(b, "impressions_search") },
+              { label: "Google Maps", value: pick(b, "impressions_maps") ?? 0, base: prevOf(b, "impressions_maps") },
+              { label: "Mobile", value: pick(b, "impressions_mobile") ?? 0, base: prevOf(b, "impressions_mobile") },
+              { label: "Desktop", value: pick(b, "impressions_desktop") ?? 0, base: prevOf(b, "impressions_desktop") },
+            ].filter((x) => x.value > 0)} />
+          </div>
+          <Findings items={[
+            changeText("Profile views", pick(b, "impressions"), prevOf(b, "impressions"), { basisLabel: opts.basisLabel }),
+            changeText("Website clicks from the profile", pick(b, "website_clicks"), prevOf(b, "website_clicks"), { basisLabel: opts.basisLabel }),
+            changeText("Call button clicks", pick(b, "call_clicks"), prevOf(b, "call_clicks"), { basisLabel: opts.basisLabel }),
+            changeText("Direction requests", pick(b, "direction_requests"), prevOf(b, "direction_requests"), { basisLabel: opts.basisLabel }),
+          ].filter((x): x is string => Boolean(x))} />
+          {!opts.executive && d.gbpKeywords.length > 0 && (
+            <ReportTable<ReportData["gbpKeywords"][number]> title="Searches that showed the profile" source="GBP" empty="No keyword data." rows={d.gbpKeywords}
+              columns={[
+                { label: "Search term", render: (x) => x.keyword },
+                { label: "Impressions", align: "right", render: (x) => (x.impressions != null ? fmtInt(num(x.impressions)) : "< " + fmtInt(num(x.impressions_threshold))) },
+              ]} />
+          )}
+          {detail("/business-profile", "Full Business Profile analysis")}
+        </>}
       </Chapter>
 
       {/* ---------------------------------------------------------------- 04 */}
@@ -301,7 +351,7 @@ export function ReportBody({ d, opts }: { d: ReportData; opts: ReportOptions }) 
       <footer className="border-t border-border pt-6 text-xs text-muted">
         <p className="flex items-center gap-1.5"><Trophy className="size-3.5" aria-hidden /> Figures come directly from connected Google APIs and are never estimated. Unavailable data is labelled, never shown as zero.</p>
         <p className="mt-1 flex items-center gap-1.5"><Globe className="size-3.5" aria-hidden /> GA4 dates use the property&apos;s time zone; Search Console dates are Pacific Time. GA4 users are summed daily active users.</p>
-        <div className="mt-2 flex flex-wrap gap-1.5">{ga4Ok && <SourceTag>Google Analytics 4 API</SourceTag>}{gscOk && <SourceTag>Google Search Console API</SourceTag>}</div>
+        <div className="mt-2 flex flex-wrap gap-1.5">{ga4Ok && <SourceTag>Google Analytics 4 API</SourceTag>}{gscOk && <SourceTag>Google Search Console API</SourceTag>}{gbpOk && <SourceTag>Business Profile Performance API</SourceTag>}</div>
       </footer>
     </div>
   );

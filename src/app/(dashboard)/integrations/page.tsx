@@ -1,6 +1,7 @@
 import { PageHeader } from "@/components/dashboard/page-header";
 import { IntegrationCard, type ProviderStatus } from "@/components/integrations/integration-card";
 import { getSession } from "@/lib/analytics/client-context";
+import { gbpConfigured } from "@/lib/google/oauth";
 import { PROVIDER_META, type ProviderId } from "@/lib/integrations/providers";
 import { createClient } from "@/lib/supabase/server";
 
@@ -42,7 +43,7 @@ export default async function IntegrationsPage({
       )}
       <div className="grid gap-4 lg:grid-cols-3">
         {ORDER.map((p) => (
-          <IntegrationCard key={p} provider={p} status={status[p] ?? EMPTY} canEdit={canEdit} />
+          <IntegrationCard key={p} provider={p} status={status[p] ?? EMPTY} canEdit={canEdit} available={p !== "gbp" || gbpConfigured()} />
         ))}
       </div>
       <div className="mt-4 flex flex-wrap items-center justify-between gap-3 rounded-xl border border-border bg-surface p-5">

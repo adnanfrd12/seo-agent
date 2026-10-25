@@ -54,7 +54,7 @@ export default async function InsightsPage({ searchParams }: { searchParams: Pro
 
   return (
     <div className="mx-auto max-w-5xl">
-      <PageHeader title="AI SEO Insights" description="Evidence-based interpretation of your GA4, Search Console, Clarity and imported data. The numbers are calculated by the app; the AI only interprets them." />
+      <PageHeader title="AI SEO Insights" description="Evidence-based interpretation of your GA4, Search Console, Business Profile, Clarity and imported data. The numbers are calculated by the app; the AI only interprets them." />
       <RangeSelector path="/insights" sp={sp} range={range} showCompare={false} />
 
       {migrationMissing ? (

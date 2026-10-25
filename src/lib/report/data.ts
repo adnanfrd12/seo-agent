@@ -19,7 +19,11 @@ export interface ReportData {
   connected: { ga4: boolean; gsc: boolean; gbp: boolean; clarity: boolean };
   ga4: Compared;
   gsc: Compared;
+  gbp: Compared;
   ga4Trend: TrendData;
+  gbpTrend: TrendData;
+  /** Business Profile search keywords for the months overlapping the range */
+  gbpKeywords: { keyword: string; impressions: number | null; impressions_threshold: number | null }[];
   gscTrend: TrendData;
   channels: ChannelRow[];
   devices: { value: string; sessions: number }[];
@@ -57,7 +61,7 @@ export async function loadReportData(
   const len = Math.round((Date.parse(range.end) - Date.parse(range.start)) / DAY) + 1;
   const prev = { p_client_id: clientId, p_start: shift(range.start, -len), p_end: shift(range.start, -1) };
 
-  const [overview, ga4Trend, gscTrend, ga4Summary, chCur, chPrev, landing, queries, pages, opps] = await Promise.all([
+  const [overview, ga4Trend, gscTrend, ga4Summary, chCur, chPrev, landing, queries, pages, opps, gbpTrend, gbpSummary] = await Promise.all([
     supabase.rpc("get_seo_overview", args),
     supabase.rpc("get_analytics_trends", { ...args, p_provider: "ga4", p_granularity: "day", p_compare: compare }),
     supabase.rpc("get_analytics_trends", { ...args, p_provider: "gsc", p_granularity: "day", p_compare: compare, p_search_type: "web" }),
@@ -68,12 +72,14 @@ export async function loadReportData(
     supabase.rpc("get_gsc_keywords", { ...args, p_search_type: "web", p_sort: "clicks", p_dir: "desc", p_limit: 10, p_offset: 0 }),
     supabase.rpc("get_gsc_top_pages", { ...args, p_search_type: "web", p_sort: "clicks", p_dir: "desc", p_limit: 10, p_offset: 0 }),
     supabase.rpc("get_gsc_opportunities", args),
+    supabase.rpc("get_analytics_trends", { ...args, p_provider: "gbp", p_granularity: "day", p_compare: compare }),
+    supabase.rpc("get_gbp_summary", args),
   ]);
 
   const errors = [overview, ga4Trend, gscTrend].filter((r) => r.error).map((r) => r.error!.message);
   if (errors.length) throw new Error("Could not load report data");
 
-  const o = overview.data as { connected: { ga4: boolean; gsc: boolean; gbp: boolean }; ga4: Compared; gsc: Compared };
+  const o = overview.data as { connected: { ga4: boolean; gsc: boolean; gbp: boolean }; ga4: Compared; gsc: Compared; gbp: Compared };
   const s = (ga4Summary.data ?? {}) as { devices?: { value: string; sessions: number }[]; key_events?: { value: string; key_events: number }[] };
   const prevMap = new Map(((chPrev.data as { rows?: Row[] } | null)?.rows ?? []).map((r) => [String(r.source), toNum(r.sessions)]));
   const channels: ChannelRow[] = ((chCur.data as { rows?: Row[] } | null)?.rows ?? []).map((r) => ({
@@ -89,7 +95,10 @@ export async function loadReportData(
     connected: { ...o.connected, clarity: false },
     ga4: o.ga4,
     gsc: o.gsc,
+    gbp: o.gbp,
     ga4Trend: ga4Trend.data as TrendData,
+    gbpTrend: (gbpTrend.data ?? { current: [], previous: [] }) as TrendData,
+    gbpKeywords: ((gbpSummary.data as { keywords?: ReportData["gbpKeywords"] } | null)?.keywords ?? []).slice(0, 15),
     gscTrend: gscTrend.data as TrendData,
     channels,
     devices: s.devices ?? [],
@@ -180,6 +189,12 @@ export function monthlyWins(d: ReportData, basis: "previous" | "mom" = "previous
     consider("Search impressions", "GSC", d.gsc, "impressions", 100);
     consider("Average position", "GSC", d.gsc, "position", 0, false, (n) => n.toFixed(1));
   }
+  if (d.connected.gbp) {
+    consider("Business Profile views", "GBP", d.gbp, "impressions", 100);
+    consider("Profile website clicks", "GBP", d.gbp, "website_clicks", 10);
+    consider("Call button clicks", "GBP", d.gbp, "call_clicks", 5);
+    consider("Direction requests", "GBP", d.gbp, "direction_requests", 5);
+  }
   for (const c of d.channels) {
     if (c.prevSessions && c.prevSessions >= 20) {
       const pct = ((c.sessions - c.prevSessions) / c.prevSessions) * 100;
@@ -205,5 +220,9 @@ export function notableDeclines(d: ReportData, minPct = 10): Win[] {
   };
   if (d.connected.ga4) { consider("Users", "GA4", d.ga4, "users", 50); consider("Sessions", "GA4", d.ga4, "sessions", 50); consider("Engagement rate", "GA4", d.ga4, "engagement_rate", 0); }
   if (d.connected.gsc) { consider("Organic clicks", "GSC", d.gsc, "clicks", 10); consider("Search impressions", "GSC", d.gsc, "impressions", 100); consider("Average position", "GSC", d.gsc, "position", 0, false); }
+  if (d.connected.gbp) {
+    consider("Business Profile views", "GBP", d.gbp, "impressions", 100); consider("Profile website clicks", "GBP", d.gbp, "website_clicks", 10);
+    consider("Call button clicks", "GBP", d.gbp, "call_clicks", 5); consider("Direction requests", "GBP", d.gbp, "direction_requests", 5);
+  }
   return out.sort((a, b) => a.changePct - b.changePct);
 }
