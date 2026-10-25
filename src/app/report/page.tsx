@@ -42,7 +42,7 @@ export default async function ReportPage({ searchParams }: { searchParams: Promi
   const scope = await resourceScope(client.id, sp);
   const data = await loadReportData(scope.supabase, client.id, { start: range.start, end: range.end }, true);
   const generated = new Date().toLocaleDateString("en-US", { year: "numeric", month: "long", day: "numeric" });
-  const toc = executive ? EXEC : FULL;
+  const toc = executive && !data.clarity ? EXEC : executive ? [...EXEC.slice(0, 4), FULL[4], ...EXEC.slice(4)] : FULL;
   const properties = [scope.label(scope.ga4, scope.ga4Pick), scope.label(scope.gsc, scope.gscPick)].filter(Boolean).join(" · ");
 
   return (

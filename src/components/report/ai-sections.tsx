@@ -34,6 +34,15 @@ export function ClarityBlock({ d }: { d: ReportData }) {
       <ReportTable<{ url: string; total: number }> title={`Pages with most friction signals (${c.days} stored day(s))`} source="Microsoft Clarity"
         empty="No page-level Clarity data in this period." rows={c.topPages}
         columns={[{ label: "Page", render: (p) => <span className="break-all">{p.url || "(unknown)"}</span> }, { label: "Signals", align: "right", render: (p) => fmtInt(p.total) }]} />
+      {c.lists.length > 0 && (
+        <div className="grid gap-4 md:grid-cols-2">
+          {c.lists.map((l) => (
+            <ReportTable<{ label: string; value: number }> key={l.title} title={l.title} source="Microsoft Clarity" empty="" rows={l.items}
+              columns={[{ label: l.title === "Popular pages" ? "Page" : "Name", render: (x) => <span className="break-all">{x.label}</span> },
+                { label: l.title === "Popular pages" ? "Visits" : "Sessions", align: "right", render: (x) => fmtInt(x.value) }]} />
+          ))}
+        </div>
+      )}
     </>
   );
 }

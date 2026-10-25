@@ -308,10 +308,11 @@ export function ReportBody({ d, opts }: { d: ReportData; opts: ReportOptions }) 
       </Chapter>
 
       {/* ---------------------------------------------------------------- 05 */}
-      {!opts.executive && (
+      {(!opts.executive || d.clarity) && (
         <Chapter n={5} id="ch-05" icon={Activity} title="User Behavior & Conversion Analysis"
-          subtitle="Landing page engagement, key events and behavioural evidence" sources={ga4Ok ? ["Google Analytics 4"] : []}>
-          {ga4Ok && (
+          subtitle="Landing page engagement, key events and behavioural evidence"
+          sources={[ga4Ok && !opts.executive && "Google Analytics 4", d.clarity && "Microsoft Clarity"].filter(Boolean) as string[]}>
+          {ga4Ok && !opts.executive && (
             <ReportTable<{ value: string; key_events: number }> title="Key events by event name" source="GA4"
               empty="No key events were recorded in this period. Mark meaningful actions (e.g. form_submit) as key events in GA4; counting starts from the moment they are marked."
               rows={d.keyEvents} columns={[
@@ -320,18 +321,20 @@ export function ReportBody({ d, opts }: { d: ReportData; opts: ReportOptions }) 
               ]} />
           )}
           <ClarityBlock d={d} />
-          <Unavailable title="Funnel drop-off can't be measured yet"
-            body="Exact drop-off rates need each funnel step tracked as a GA4 event (for example: view_service → click_cta → form_start → form_submit). Until then, this report doesn't show a conversion funnel." />
-          <p className="text-xs text-muted">404 monitoring needs either a GA4 event for error pages or verified page titles; it is not inferred from URLs.</p>
+          {!opts.executive && <>
+            <Unavailable title="Funnel drop-off can't be measured yet"
+              body="Exact drop-off rates need each funnel step tracked as a GA4 event (for example: view_service → click_cta → form_start → form_submit). Until then, this report doesn't show a conversion funnel." />
+            <p className="text-xs text-muted">404 monitoring needs either a GA4 event for error pages or verified page titles; it is not inferred from URLs.</p>
+          </>}
         </Chapter>
       )}
 
       {/* ---------------------------------------------------------------- 06/07 */}
-      <Chapter n={opts.executive ? 5 : 6} id="ch-06" icon={Sparkles} title="AI SEO Insights"
+      <Chapter n={opts.executive && !d.clarity ? 5 : 6} id="ch-06" icon={Sparkles} title="AI SEO Insights"
         subtitle="Evidence-based interpretation of the data above">
         <AiInsightsBlock d={d} linked={opts.variant === "dashboard"} />
       </Chapter>
-      <Chapter n={opts.executive ? 6 : 7} id="ch-07" icon={CalendarCheck} title="30-Day SEO Strategy"
+      <Chapter n={opts.executive && !d.clarity ? 6 : 7} id="ch-07" icon={CalendarCheck} title="30-Day SEO Strategy"
         subtitle="Prioritised plan for the next month">
         <StrategyBlock d={d} linked={opts.variant === "dashboard"} fallback={<>
         {o && o.quick_wins.length + o.declining_keywords.length + o.decaying_pages.length > 0 ? (
@@ -351,7 +354,7 @@ export function ReportBody({ d, opts }: { d: ReportData; opts: ReportOptions }) 
       <footer className="border-t border-border pt-6 text-xs text-muted">
         <p className="flex items-center gap-1.5"><Trophy className="size-3.5" aria-hidden /> Figures come directly from connected Google APIs and are never estimated. Unavailable data is labelled, never shown as zero.</p>
         <p className="mt-1 flex items-center gap-1.5"><Globe className="size-3.5" aria-hidden /> GA4 dates use the property&apos;s time zone; Search Console dates are Pacific Time. GA4 users are summed daily active users.</p>
-        <div className="mt-2 flex flex-wrap gap-1.5">{ga4Ok && <SourceTag>Google Analytics 4 API</SourceTag>}{gscOk && <SourceTag>Google Search Console API</SourceTag>}{gbpOk && <SourceTag>Business Profile Performance API</SourceTag>}</div>
+        <div className="mt-2 flex flex-wrap gap-1.5">{ga4Ok && <SourceTag>Google Analytics 4 API</SourceTag>}{gscOk && <SourceTag>Google Search Console API</SourceTag>}{gbpOk && <SourceTag>Business Profile Performance API</SourceTag>}{d.clarity && <SourceTag>Microsoft Clarity Data Export API</SourceTag>}</div>
       </footer>
     </div>
   );

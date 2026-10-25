@@ -39,6 +39,8 @@ export interface ReportData {
   clarity: {
     days: number; from: string; to: string; outsideRange: boolean; totals: Record<string, number>;
     scrollDepth: number | null; activeSeconds: number | null; topPages: { url: string; total: number }[];
+    /** ranked lists from Clarity's site-wide response: popular pages, referrers, countries, devices, browsers */
+    lists: { title: string; items: { label: string; value: number }[] }[];
   } | null;
   errors: string[];
 }
@@ -141,6 +143,9 @@ async function loadAi(supabase: SupabaseClient, clientId: string): Promise<AiSec
 }
 
 const FRICTION = ["RageClickCount", "DeadClickCount", "ExcessiveScroll", "QuickbackClick", "ScriptErrorCount", "ErrorClickCount"];
+const CLARITY_LISTS: Record<string, string> = {
+  PopularPages: "Popular pages", ReferrerUrl: "Referrers", Country: "Countries", Device: "Devices", Browser: "Browsers",
+};
 type ClarityRow = { metric_date: string; dimension: string; value: string; metric: string; count: number | null; raw: Record<string, unknown> | null };
 
 /**
@@ -167,8 +172,14 @@ async function loadClarity(supabase: SupabaseClient, clientId: string, range: { 
   if (error || rows.length === 0) return null;
   const totals: Record<string, number> = {};
   const pages = new Map<string, number>();
+  const listMaps = new Map<string, Map<string, number>>();
   let scroll = 0, scrollDays = 0, active = 0, activeDays = 0;
   for (const r of rows) {
+    if (r.dimension === "total" && r.value && CLARITY_LISTS[r.metric]) {
+      const m = listMaps.get(r.metric) ?? new Map<string, number>();
+      m.set(r.value, (m.get(r.value) ?? 0) + Number(r.count ?? 0));
+      listMaps.set(r.metric, m);
+    }
     if (r.dimension === "total" && !r.value) {
       if (FRICTION.includes(r.metric)) totals[r.metric] = (totals[r.metric] ?? 0) + Number(r.count ?? 0);
       if (r.metric === "Traffic") totals.sessions = (totals.sessions ?? 0) + Number(r.raw?.totalSessionCount ?? 0);
@@ -184,6 +195,11 @@ async function loadClarity(supabase: SupabaseClient, clientId: string, range: { 
     totals,
     scrollDepth: scrollDays ? scroll / scrollDays : null,
     activeSeconds: activeDays ? active / activeDays : null,
+    lists: Object.entries(CLARITY_LISTS).flatMap(([metric, title]) => {
+      const m = listMaps.get(metric);
+      if (!m?.size) return [];
+      return [{ title, items: [...m.entries()].map(([label, value]) => ({ label, value })).sort((a, b) => b.value - a.value).slice(0, 8) }];
+    }),
     topPages: [...pages.entries()].map(([url, total]) => ({ url, total })).filter((p) => p.total > 0).sort((a, b) => b.total - a.total).slice(0, 8),
   };
 }
