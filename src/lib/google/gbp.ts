@@ -43,11 +43,25 @@ function classify(status: number, body: GoogleErrorBody): GbpApiError {
   return new GbpApiError("other", status, msg);
 }
 
+/**
+ * The OAuth token proves who the user is; GOOGLE_API_KEY (server-side only) additionally names the
+ * Cloud project, so requests are attributed to the project whose Business Profile access Google
+ * approved. If Google rejects the key, the request is retried with the token alone.
+ */
+let useKey = Boolean(process.env.GOOGLE_API_KEY);
+
 async function call<T>(token: string, url: string): Promise<T> {
   for (let attempt = 0; ; attempt++) {
-    const res = await fetch(url, { headers: { authorization: `Bearer ${token}` }, cache: "no-store" });
+    const headers: Record<string, string> = { authorization: `Bearer ${token}` };
+    if (useKey) headers["x-goog-api-key"] = process.env.GOOGLE_API_KEY!;
+    const res = await fetch(url, { headers, cache: "no-store" });
     if (res.ok) return (await res.json()) as T;
-    const err = classify(res.status, (await res.json().catch(() => ({}))) as GoogleErrorBody);
+    const body = (await res.json().catch(() => ({}))) as GoogleErrorBody;
+    if (useKey && res.status !== 429 && /API_KEY|api key|API key/i.test(JSON.stringify(body))) {
+      useKey = false;
+      continue;
+    }
+    const err = classify(res.status, body);
     // brief retry for transient errors; the queue's exponential back-off handles the rest
     if ((err.kind === "rate_limit" || res.status >= 500) && attempt < 2) {
       await new Promise((r) => setTimeout(r, 1500 * (attempt + 1)));
