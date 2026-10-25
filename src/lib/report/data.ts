@@ -36,7 +36,10 @@ export interface ReportData {
   /** latest stored AI output (null when none / not configured) */
   ai: AiSection | null;
   /** Clarity friction totals over the stored days inside the range (null when not connected) */
-  clarity: { days: number; totals: Record<string, number>; topPages: { url: string; total: number }[] } | null;
+  clarity: {
+    days: number; from: string; to: string; outsideRange: boolean; totals: Record<string, number>;
+    scrollDepth: number | null; activeSeconds: number | null; topPages: { url: string; total: number }[];
+  } | null;
   errors: string[];
 }
 
@@ -92,7 +95,7 @@ export async function loadReportData(
 
   return {
     range,
-    connected: { ...o.connected, clarity: false },
+    connected: { ...o.connected, clarity: false }, // set below once Clarity rows are loaded
     ga4: o.ga4,
     gsc: o.gsc,
     gbp: o.gbp,
@@ -137,21 +140,51 @@ async function loadAi(supabase: SupabaseClient, clientId: string): Promise<AiSec
   };
 }
 
-const FRICTION = ["RageClickCount", "DeadClickCount", "ExcessiveScroll", "QuickbackClick"];
+const FRICTION = ["RageClickCount", "DeadClickCount", "ExcessiveScroll", "QuickbackClick", "ScriptErrorCount", "ErrorClickCount"];
+type ClarityRow = { metric_date: string; dimension: string; value: string; metric: string; count: number | null; raw: Record<string, unknown> | null };
+
+/**
+ * Clarity totals for the stored days inside the range. Clarity's API only serves the last 1-3 days,
+ * so a range with no stored days (e.g. last month, right after connecting) falls back to the most
+ * recent stored days, flagged with `outsideRange` so the report says which dates it shows.
+ */
 async function loadClarity(supabase: SupabaseClient, clientId: string, range: { start: string; end: string }) {
-  const { data, error } = await supabase.from("clarity_behavior_metrics").select("metric_date, dimension, value, metric, count")
-    .eq("client_id", clientId).gte("metric_date", range.start).lte("metric_date", range.end).in("metric", FRICTION).limit(5000);
-  if (error || !data || data.length === 0) return null;
+  const cols = "metric_date, dimension, value, metric, count, raw";
+  let outsideRange = false;
+  let { data, error } = await supabase.from("clarity_behavior_metrics").select(cols)
+    .eq("client_id", clientId).gte("metric_date", range.start).lte("metric_date", range.end).in("dimension", ["total", "url"]).limit(10000);
+  if (!error && (data ?? []).length === 0) {
+    const { data: latest } = await supabase.from("clarity_behavior_metrics").select("metric_date").eq("client_id", clientId)
+      .order("metric_date", { ascending: false }).limit(1).maybeSingle();
+    if (latest) {
+      outsideRange = true;
+      const from = shift(latest.metric_date, -6);
+      ({ data, error } = await supabase.from("clarity_behavior_metrics").select(cols)
+        .eq("client_id", clientId).gte("metric_date", from).lte("metric_date", latest.metric_date).in("dimension", ["total", "url"]).limit(10000));
+    }
+  }
+  const rows = (data ?? []) as ClarityRow[];
+  if (error || rows.length === 0) return null;
   const totals: Record<string, number> = {};
   const pages = new Map<string, number>();
-  for (const r of data) {
-    if (r.dimension === "total") totals[r.metric] = (totals[r.metric] ?? 0) + Number(r.count ?? 0);
-    if (r.dimension === "url") pages.set(r.value, (pages.get(r.value) ?? 0) + Number(r.count ?? 0));
+  let scroll = 0, scrollDays = 0, active = 0, activeDays = 0;
+  for (const r of rows) {
+    if (r.dimension === "total" && !r.value) {
+      if (FRICTION.includes(r.metric)) totals[r.metric] = (totals[r.metric] ?? 0) + Number(r.count ?? 0);
+      if (r.metric === "Traffic") totals.sessions = (totals.sessions ?? 0) + Number(r.raw?.totalSessionCount ?? 0);
+      if (r.metric === "ScrollDepth" && r.raw?.averageScrollDepth != null) { scroll += Number(r.raw.averageScrollDepth); scrollDays++; }
+      if (r.metric === "EngagementTime" && r.raw?.activeTime != null) { active += Number(r.raw.activeTime); activeDays++; }
+    }
+    if (r.dimension === "url" && FRICTION.includes(r.metric)) pages.set(r.value, (pages.get(r.value) ?? 0) + Number(r.count ?? 0));
   }
+  const dates = [...new Set(rows.map((r) => r.metric_date))].sort();
   return {
-    days: new Set(data.map((r) => r.metric_date)).size,
+    days: dates.length,
+    from: dates[0], to: dates.at(-1)!, outsideRange,
     totals,
-    topPages: [...pages.entries()].map(([url, total]) => ({ url, total })).sort((a, b) => b.total - a.total).slice(0, 8),
+    scrollDepth: scrollDays ? scroll / scrollDays : null,
+    activeSeconds: activeDays ? active / activeDays : null,
+    topPages: [...pages.entries()].map(([url, total]) => ({ url, total })).filter((p) => p.total > 0).sort((a, b) => b.total - a.total).slice(0, 8),
   };
 }
 

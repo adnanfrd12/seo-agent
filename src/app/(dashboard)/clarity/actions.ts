@@ -69,7 +69,7 @@ export async function syncClarityNow(): Promise<Result> {
   const { data, error } = await (await createClient()).rpc("enqueue_sync_job", { p_client_id: client.id, p_provider: "clarity", p_job_type: "manual" });
   if (error) return { ok: false, error: "Could not queue a sync." };
   after(() => processQueue().catch(() => {}));
-  revalidatePath("/clarity");
+  revalidatePath("/clarity"); revalidatePath("/integrations");
   return { ok: true, message: data ? "Sync queued." : "A sync is already queued or running." };
 }
 
@@ -92,6 +92,6 @@ export async function addRecordingReview(input: z.input<typeof reviewSchema>): P
   const { user, client } = await requireAdmin();
   const { error } = await createAdminClient().from("clarity_recording_reviews").insert({ ...p.data, client_id: client.id, reviewer: user.id });
   if (error) return { ok: false, error: "Could not save the review." };
-  revalidatePath("/clarity");
+  revalidatePath("/clarity"); revalidatePath("/integrations");
   return { ok: true, message: "Observation saved. It will be used as evidence in the next AI analysis." };
 }

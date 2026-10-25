@@ -45,7 +45,8 @@ const asNum = (v: unknown) => {
 
 /** Field holding the dimension value in an information row (key casing varies by dimension). */
 function dimValue(info: Record<string, unknown>, dimension?: ClarityDimension): string {
-  if (!dimension) return "";
+  // without a dimension, list metrics (PopularPages, Browser, OS, Country, ReferrerUrl...) carry their own label
+  if (!dimension) return String(info.url ?? info.name ?? info.title ?? info.Url ?? info.Name ?? "");
   const key = Object.keys(info).find((k) => k.toLowerCase() === dimension.toLowerCase());
   return key ? String(info[key] ?? "") : "";
 }
@@ -62,7 +63,7 @@ export function flatten(resp: ClarityResponse, dimension?: ClarityDimension): Cl
     dimension: dim,
     value: dimValue(info, dimension).slice(0, 2000),
     metric: m.metricName,
-    count: asNum(info.subTotal ?? info.totalSessionCount ?? info.averageScrollDepth ?? info.totalTime ?? info.activeTime),
+    count: asNum(info.subTotal ?? info.totalSessionCount ?? info.averageScrollDepth ?? info.totalTime ?? info.activeTime ?? info.visitsCount ?? info.sessionsCount),
     sessions_pct: asNum(info.sessionsWithMetricPercentage),
     sessions: asNum(info.sessionsCount ?? info.totalSessionCount),
     raw: info,

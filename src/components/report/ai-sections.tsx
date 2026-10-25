@@ -1,5 +1,5 @@
 import Link from "next/link";
-import { MousePointerClick } from "lucide-react";
+import { Activity, Clock, MousePointerClick, ScrollText } from "lucide-react";
 import type { ReportData } from "@/lib/report/data";
 import { CHAPTER_COLORS, Findings, ReportTable, StatTile, Unavailable } from "./report-ui";
 import { fmtInt } from "@/lib/analytics/format";
@@ -9,16 +9,26 @@ const WEEK = ["Critical fixes & quick wins", "Keyword & content optimisation", "
 export function ClarityBlock({ d }: { d: ReportData }) {
   if (!d.clarity) {
     return <Unavailable title="Microsoft Clarity data isn't available for this period"
-      body="Connect Clarity on the Microsoft Clarity page. Its API provides the last 1–3 days per call, so stored history starts from the day it is connected. Session recordings can't be retrieved through any official API; recording insights come from reviewers' logged observations." />;
+      body="Connect Clarity on the Integrations page. Its API provides the last 1–3 days per call, so stored history starts from the day it is connected. Session recordings can't be retrieved through any official API; recording insights come from reviewers' logged observations." />;
   }
   const c = d.clarity;
+  const span = c.from === c.to ? c.from : `${c.from} → ${c.to}`;
   const tile = (k: string, label: string) => (
     <StatTile key={k} label={label} icon={MousePointerClick} color={CHAPTER_COLORS[4]} source="Clarity" format={fmtInt} higherIsBetter={false} value={c.totals[k] ?? 0}
-      hint={`Sum over ${c.days} stored day(s) in this period. No comparison until a full previous period is stored.`} />
+      hint={`Sum over ${c.days} stored day(s) (${span}). No comparison until a full previous period is stored.`} />
   );
   return (
     <>
+      <p className="text-xs text-muted">
+        {c.outsideRange
+          ? `No Clarity data is stored for the selected period (Clarity's API only serves the last 1-3 days). Showing the latest stored days: ${span} (UTC).`
+          : `${c.days} stored day(s) in this period: ${span} (UTC).`}
+      </p>
       <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
+        <StatTile label="Sessions" icon={Activity} color={CHAPTER_COLORS[4]} source="Clarity" format={fmtInt} value={c.totals.sessions ?? 0} />
+        <StatTile label="Avg scroll depth" icon={ScrollText} color={CHAPTER_COLORS[4]} source="Clarity" format={(v) => (v == null ? "—" : `${v.toFixed(1)}%`)} value={c.scrollDepth} />
+        <StatTile label="Avg active time (s)" icon={Clock} color={CHAPTER_COLORS[4]} source="Clarity" format={fmtInt} value={c.activeSeconds} />
+        {tile("ScriptErrorCount", "Script errors")}
         {tile("RageClickCount", "Rage clicks")}{tile("DeadClickCount", "Dead clicks")}{tile("ExcessiveScroll", "Excessive scrolling")}{tile("QuickbackClick", "Quick backs")}
       </div>
       <ReportTable<{ url: string; total: number }> title={`Pages with most friction signals (${c.days} stored day(s))`} source="Microsoft Clarity"
