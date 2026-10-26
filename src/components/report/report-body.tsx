@@ -116,7 +116,7 @@ export function ReportBody({ d, opts }: { d: ReportData; opts: ReportOptions }) 
           <Unavailable title="Google Analytics 4 isn't connected or has no data for this period" body="Connect GA4 to see traffic by source, device and landing page." />
         ) : <>
           {!opts.executive && (
-            <MetricTrend title="Website traffic over time" source="GA4" options={[
+            <MetricTrend title="Website traffic over time" source="GA4" expanded={opts.variant === "print"} options={[
               { key: "sessions", label: "Sessions", data: dailySeries(d.ga4Trend, "sessions", r) },
               { key: "users", label: "Users", data: dailySeries(d.ga4Trend, "users", r) },
               { key: "engagement_rate", label: "Engagement", format: "percent", data: dailySeries(d.ga4Trend, "engagement_rate", r, "ratio") },
@@ -174,7 +174,7 @@ export function ReportBody({ d, opts }: { d: ReportData; opts: ReportOptions }) 
               value={pick(b, "direction_requests")} previous={prevOf(b, "direction_requests")} mom={momOf(b, "direction_requests")} yoy={yoyOf(b, "direction_requests")} />
           </div>
           {!opts.executive && (
-            <MetricTrend title="Business Profile over time" source="GBP" options={[
+            <MetricTrend title="Business Profile over time" source="GBP" expanded={opts.variant === "print"} options={[
               { key: "impressions", label: "Views", data: dailySeries(d.gbpTrend, "impressions", r) },
               { key: "website_clicks", label: "Website", data: dailySeries(d.gbpTrend, "website_clicks", r) },
               { key: "call_clicks", label: "Calls", data: dailySeries(d.gbpTrend, "call_clicks", r) },
@@ -258,7 +258,7 @@ export function ReportBody({ d, opts }: { d: ReportData; opts: ReportOptions }) 
               value={pick(s, "position")} previous={prevOf(s, "position")} mom={momOf(s, "position")} yoy={yoyOf(s, "position")} />
           </div>
           {!opts.executive && (
-            <MetricTrend title="Organic search over time" source="GSC" options={[
+            <MetricTrend title="Organic search over time" source="GSC" expanded={opts.variant === "print"} options={[
               { key: "clicks", label: "Clicks", data: dailySeries(d.gscTrend, "clicks", r) },
               { key: "impressions", label: "Impressions", data: dailySeries(d.gscTrend, "impressions", r) },
               { key: "position", label: "Position", format: "decimal", reverseY: true, data: dailySeries(d.gscTrend, "position", r, "ratio") },

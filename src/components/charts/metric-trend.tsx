@@ -27,13 +27,28 @@ const STYLES: { variant: TrendVariant; color: string }[] = [
  * One chart with a segmented metric switcher. Measures with different scales (e.g. clicks and
  * impressions) are shown one at a time instead of on a misleading dual axis.
  */
-export function MetricTrend({ title, source, options }: { title: string; source?: string; options: MetricOption[] }) {
+export function MetricTrend({ title, source, options, expanded = false }: {
+  title: string; source?: string; options: MetricOption[];
+  /** print/PDF: every metric as its own chart (same per-tab style and colour), no switcher */
+  expanded?: boolean;
+}) {
   const [active, setActive] = useState(options[0]?.key);
   const id = useId();
   const index = Math.max(0, options.findIndex((o) => o.key === active));
   const current = options[index];
   if (!current) return null;
   const style = STYLES[index % STYLES.length];
+
+  if (expanded) {
+    return (
+      <div className="grid gap-3 sm:grid-cols-2">
+        {options.map((o, i) => (
+          <TrendChart key={o.key} title={`${title} · ${o.label}`} source={source} seriesLabel={o.label} data={o.data} format={o.format}
+            reverseY={o.reverseY} variant={STYLES[i % STYLES.length].variant} color={STYLES[i % STYLES.length].color} compact />
+        ))}
+      </div>
+    );
+  }
 
   const switcher = (
     <div role="tablist" aria-label={`${title} metric`} className="inline-flex flex-wrap rounded-lg border border-border p-0.5">

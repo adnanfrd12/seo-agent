@@ -31,7 +31,7 @@ const shortDate = (iso: string) =>
  */
 export function TrendChart({
   title, data, format = "int", seriesLabel, previousLabel = "Previous period", reverseY = false, toolbar, source,
-  variant, color = "var(--accent)",
+  variant, color = "var(--accent)", compact = false,
 }: {
   title: string;
   data: TrendPoint[];
@@ -47,6 +47,8 @@ export function TrendChart({
   variant?: TrendVariant;
   /** series colour (any CSS colour) */
   color?: string;
+  /** static rendering for print/PDF: no Table toggle, shorter plot */
+  compact?: boolean;
 }) {
   const [table, setTable] = useState(false);
   const id = useId();
@@ -55,7 +57,7 @@ export function TrendChart({
   const gradient = `${id.replace(/[^a-zA-Z0-9]/g, "")}-fill`;
 
   return (
-    <figure className="flex min-w-0 flex-col rounded-xl border border-border bg-surface p-4" aria-labelledby={`${id}-t`}>
+    <figure className="report-avoid-break flex min-w-0 flex-col rounded-xl border border-border bg-surface p-4" aria-labelledby={`${id}-t`}>
       <div className="mb-3 flex flex-wrap items-center justify-between gap-x-3 gap-y-2">
         <div className="flex min-w-0 items-center gap-2">
           <figcaption id={`${id}-t`} className="truncate text-sm font-semibold">{title}</figcaption>
@@ -65,13 +67,13 @@ export function TrendChart({
         </div>
         <div className="flex flex-wrap items-center gap-2 text-xs text-muted">
           {toolbar}
-          <button
+          {!compact && <button
             onClick={() => setTable((v) => !v)}
             aria-pressed={table}
             className="rounded-md border border-border px-2 py-1 outline-none hover:bg-surface-muted focus-visible:ring-2 focus-visible:ring-accent"
           >
             {table ? "Chart" : "Table"}
-          </button>
+          </button>}
         </div>
       </div>
 
@@ -88,7 +90,7 @@ export function TrendChart({
       )}
 
       {data.length === 0 ? (
-        <div className="flex h-60 items-center justify-center text-sm text-muted">No data for this period.</div>
+        <div className={`flex ${compact ? "h-44" : "h-60"} items-center justify-center text-sm text-muted`}>No data for this period.</div>
       ) : table ? (
         <div className="h-60 overflow-auto">
           <table className="w-full text-sm">
@@ -111,7 +113,7 @@ export function TrendChart({
           </table>
         </div>
       ) : (
-        <div className="h-60" role="img" aria-label={`${title}: ${seriesLabel} ${kind === "bar" ? "bar" : kind === "area" ? "area" : "line"} chart. Use the Table button for exact values.`}>
+        <div className={compact ? "h-44" : "h-60"} role="img" aria-label={`${title}: ${seriesLabel} ${kind === "bar" ? "bar" : kind === "area" ? "area" : "line"} chart. Use the Table button for exact values.`}>
           <ResponsiveContainer width="100%" height="100%">
             <ComposedChart data={data} margin={{ top: 4, right: 8, bottom: 0, left: 0 }} barCategoryGap="20%">
               <defs>
