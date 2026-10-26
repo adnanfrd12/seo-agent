@@ -2,7 +2,7 @@
 
 import { useId, useState } from "react";
 import {
-  Bar, CartesianGrid, ComposedChart, Line, ResponsiveContainer, Tooltip, XAxis, YAxis,
+  Area, Bar, CartesianGrid, ComposedChart, Line, ResponsiveContainer, Tooltip, XAxis, YAxis,
 } from "recharts";
 
 export interface TrendPoint {
@@ -12,6 +12,8 @@ export interface TrendPoint {
 }
 
 export type TrendFormat = "int" | "percent" | "decimal";
+/** How the current period is drawn. Each tab of a metric switcher uses a different one. */
+export type TrendVariant = "bar" | "area" | "line" | "step";
 
 export function fmtTrend(v: number | null | undefined, f: TrendFormat) {
   if (v == null) return "—";
@@ -23,12 +25,13 @@ const shortDate = (iso: string) =>
   new Date(`${iso}T00:00:00Z`).toLocaleDateString("en-US", { month: "short", day: "numeric", timeZone: "UTC" });
 
 /**
- * One measure over time. Current period is a 2px accent line; the optional previous period is a
- * dashed muted line (so identity never relies on color alone). Chart, table and empty states all
- * share one fixed height, so toggling or loading never shifts the layout.
+ * One measure over time, drawn as bars, a filled area, a line or a stepped line. The optional
+ * previous period is always a dashed muted line (so identity never relies on colour alone).
+ * Chart, table and empty states share one fixed height, so toggling never shifts the layout.
  */
 export function TrendChart({
   title, data, format = "int", seriesLabel, previousLabel = "Previous period", reverseY = false, toolbar, source,
+  variant, color = "var(--accent)",
 }: {
   title: string;
   data: TrendPoint[];
@@ -40,11 +43,16 @@ export function TrendChart({
   toolbar?: React.ReactNode;
   /** small source badge, e.g. "GA4" */
   source?: string;
+  /** chart style; defaults to bars for counts and a line for ratios */
+  variant?: TrendVariant;
+  /** series colour (any CSS colour) */
+  color?: string;
 }) {
   const [table, setTable] = useState(false);
   const id = useId();
   const hasPrev = data.some((d) => d.previous != null);
-  const bars = format === "int";
+  const kind: TrendVariant = variant ?? (format === "int" ? "bar" : "line");
+  const gradient = `${id.replace(/[^a-zA-Z0-9]/g, "")}-fill`;
 
   return (
     <figure className="flex min-w-0 flex-col rounded-xl border border-border bg-surface p-4" aria-labelledby={`${id}-t`}>
@@ -55,7 +63,7 @@ export function TrendChart({
             <span className="rounded bg-accent-soft px-1.5 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-accent">{source}</span>
           )}
         </div>
-        <div className="flex flex-wrap items-center gap-3 text-xs text-muted">
+        <div className="flex flex-wrap items-center gap-2 text-xs text-muted">
           {toolbar}
           <button
             onClick={() => setTable((v) => !v)}
@@ -70,7 +78,8 @@ export function TrendChart({
       {hasPrev && !table && (
         <ul className="mb-2 flex flex-wrap items-center gap-x-4 gap-y-1 text-xs text-muted" aria-label="Legend">
           <li className="flex items-center gap-1.5">
-            <span className={bars ? "inline-block size-2.5 rounded-sm bg-accent" : "inline-block h-0.5 w-4 rounded bg-accent"} aria-hidden /> {seriesLabel}
+            <span className={kind === "bar" ? "inline-block size-2.5 rounded-sm" : "inline-block h-0.5 w-4 rounded"} style={{ background: color }} aria-hidden />
+            {seriesLabel}
           </li>
           <li className="flex items-center gap-1.5">
             <span className="inline-block w-4 border-t-2 border-dashed border-muted" aria-hidden /> {previousLabel}
@@ -102,9 +111,15 @@ export function TrendChart({
           </table>
         </div>
       ) : (
-        <div className="h-60" role="img" aria-label={`${title}: ${seriesLabel} ${bars ? "bar" : "line"} chart. Use the Table button for exact values.`}>
+        <div className="h-60" role="img" aria-label={`${title}: ${seriesLabel} ${kind === "bar" ? "bar" : kind === "area" ? "area" : "line"} chart. Use the Table button for exact values.`}>
           <ResponsiveContainer width="100%" height="100%">
             <ComposedChart data={data} margin={{ top: 4, right: 8, bottom: 0, left: 0 }} barCategoryGap="20%">
+              <defs>
+                <linearGradient id={gradient} x1="0" y1="0" x2="0" y2="1">
+                  <stop offset="0%" stopColor={color} stopOpacity={0.35} />
+                  <stop offset="100%" stopColor={color} stopOpacity={0.03} />
+                </linearGradient>
+              </defs>
               <CartesianGrid stroke="var(--border)" strokeDasharray="3 3" vertical={false} />
               <XAxis
                 dataKey="date" tickFormatter={shortDate} tick={{ fill: "var(--muted)", fontSize: 12 }}
@@ -116,7 +131,7 @@ export function TrendChart({
                 domain={reverseY ? ["auto", "auto"] : [0, "auto"]} allowDecimals={format !== "int"}
               />
               <Tooltip
-                cursor={bars ? { fill: "var(--surface-muted)" } : { stroke: "var(--muted)", strokeDasharray: "3 3" }}
+                cursor={kind === "bar" ? { fill: "var(--surface-muted)" } : { stroke: "var(--muted)", strokeDasharray: "3 3" }}
                 contentStyle={{
                   background: "var(--surface)", border: "1px solid var(--border)", borderRadius: 8, fontSize: 12, color: "var(--foreground)",
                 }}
@@ -129,13 +144,20 @@ export function TrendChart({
                   dot={false} activeDot={{ r: 4 }} isAnimationActive={false}
                 />
               )}
-              {bars ? (
-                <Bar dataKey="value" fill="var(--accent)" radius={[3, 3, 0, 0]} maxBarSize={22} isAnimationActive={false} />
-              ) : (
+              {kind === "bar" && (
+                <Bar dataKey="value" fill={color} radius={[3, 3, 0, 0]} maxBarSize={22} isAnimationActive={false} />
+              )}
+              {kind === "area" && (
+                <Area
+                  type="monotone" dataKey="value" stroke={color} strokeWidth={2.5} fill={`url(#${gradient})`}
+                  dot={false} activeDot={{ r: 4.5, stroke: "var(--surface)", strokeWidth: 2, fill: color }} isAnimationActive={false}
+                />
+              )}
+              {(kind === "line" || kind === "step") && (
                 <Line
-                  type="linear" dataKey="value" stroke="var(--accent)" strokeWidth={2}
-                  // ratios have gaps on days without data; show a dot so isolated days stay visible
-                  dot={{ r: 2.5, fill: "var(--accent)", strokeWidth: 0 }}
+                  type={kind === "step" ? "stepAfter" : "linear"} dataKey="value" stroke={color} strokeWidth={2}
+                  // gaps on days without data; dots keep isolated days visible
+                  dot={{ r: 2.5, fill: color, strokeWidth: 0 }}
                   activeDot={{ r: 4.5, stroke: "var(--surface)", strokeWidth: 2 }} isAnimationActive={false}
                 />
               )}
