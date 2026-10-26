@@ -24,6 +24,9 @@ export interface ReportData {
   gbpTrend: TrendData;
   /** Business Profile search keywords for the months overlapping the range */
   gbpKeywords: { keyword: string; impressions: number | null; impressions_threshold: number | null }[];
+  /** reviews and geogrid local-rank scans (Local Brand Manager); null when none stored */
+  gbpReviews: { total: number; average: number | null; newInRange: number; newAverage: number | null; replyRate: number | null } | null;
+  gbpRanks: { term: string; scannedAt: string | null; agr: number | null; atgr: number | null; solv: number | null; prevAtgr: number | null; prevSolv: number | null; url: string | null }[];
   gscTrend: TrendData;
   channels: ChannelRow[];
   devices: { value: string; sessions: number }[];
@@ -113,9 +116,38 @@ export async function loadReportData(
     topPages: ((pages.data as { rows?: Row[] } | null)?.rows ?? []),
     // a missing RPC (migration not yet applied) must not break the report
     opportunities: opps.error ? null : (opps.data as Opportunities),
+    ...(await loadGbpExtras(supabase, clientId, range)),
     ai: await loadAi(supabase, clientId),
     clarity: await loadClarity(supabase, clientId, range),
     errors: opps.error ? ["opportunities"] : [],
+  };
+}
+
+async function loadGbpExtras(supabase: SupabaseClient, clientId: string, range: { start: string; end: string }) {
+  const { data: res } = await supabase.from("integration_resources").select("id").eq("client_id", clientId).eq("provider", "gbp").eq("is_selected", true);
+  const ids = (res ?? []).map((r) => r.id);
+  if (!ids.length) return { gbpReviews: null, gbpRanks: [] };
+  const [{ data: rv, error: rvErr }, { data: gg }] = await Promise.all([
+    supabase.from("gbp_reviews").select("rating, reply_text, reviewed_at").in("resource_id", ids).limit(10000),
+    supabase.from("gbp_geogrids").select("search_term, scanned_at, agr, atgr, solv, state, public_url").in("resource_id", ids)
+      .neq("state", "error").order("scanned_at", { ascending: false }).limit(2000),
+  ]);
+  const reviews = rvErr ? [] : rv ?? [];
+  const rated = reviews.filter((r) => r.rating != null);
+  const fresh = rated.filter((r) => r.reviewed_at && r.reviewed_at.slice(0, 10) >= range.start && r.reviewed_at.slice(0, 10) <= range.end);
+  const mean = (xs: { rating: number | null }[]) => (xs.length ? xs.reduce((a, r) => a + (r.rating ?? 0), 0) / xs.length : null);
+  const byTerm = new Map<string, NonNullable<typeof gg>>();
+  for (const g of gg ?? []) byTerm.set(g.search_term, [...(byTerm.get(g.search_term) ?? []), g]);
+  const n = (v: unknown) => (v == null ? null : Number(v));
+  return {
+    gbpReviews: reviews.length ? {
+      total: reviews.length, average: mean(rated), newInRange: fresh.length, newAverage: mean(fresh),
+      replyRate: reviews.filter((r) => r.reply_text).length / reviews.length,
+    } : null,
+    gbpRanks: [...byTerm.entries()].map(([term, list]) => ({
+      term, scannedAt: list[0].scanned_at, agr: n(list[0].agr), atgr: n(list[0].atgr), solv: n(list[0].solv),
+      prevAtgr: n(list[1]?.atgr), prevSolv: n(list[1]?.solv), url: list[0].public_url,
+    })),
   };
 }
 

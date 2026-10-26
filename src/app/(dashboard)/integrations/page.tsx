@@ -3,6 +3,7 @@ import { IntegrationCard, type ProviderStatus } from "@/components/integrations/
 import { getSession } from "@/lib/analytics/client-context";
 import { gbpConfigured } from "@/lib/google/oauth";
 import { ConnectClarity, ReviewForm } from "../clarity/clarity-forms";
+import { LbmPanel } from "./lbm-panel";
 import { PROVIDER_META, type ProviderId } from "@/lib/integrations/providers";
 import { createClient } from "@/lib/supabase/server";
 
@@ -23,6 +24,19 @@ export default async function IntegrationsPage({
   const { data: clarity } = await supabase.from("integration_connections").select("status, last_synced_at, last_error")
     .eq("client_id", client.id).eq("provider", "clarity").maybeSingle();
   const clarityConnected = clarity?.status === "connected";
+
+  // Local Brand Manager: Business Profile locations synced through LBM's API instead of Google OAuth
+  const { data: lbm } = await supabase.from("integration_connections").select("id, status, last_synced_at, last_error")
+    .eq("client_id", client.id).eq("provider", "lbm").maybeSingle();
+  const lbmConnected = lbm?.status === "connected";
+  const { data: lbmResources } = lbm
+    ? await supabase.from("integration_resources").select("id, display_name, is_selected, metadata").eq("connection_id", lbm.id)
+    : { data: [] };
+  const lbmSelected = (lbmResources ?? []).filter((r) => r.is_selected)
+    .map((r) => ({ lbmId: String((r.metadata as { lbm_id?: string })?.lbm_id ?? ""), name: r.display_name ?? "" }));
+  // keep LBM-sourced locations out of the Google OAuth card
+  const lbmIds = new Set((lbmResources ?? []).map((r) => r.id));
+  if (status.gbp) status.gbp = { ...status.gbp, resources: status.gbp.resources.filter((r) => !lbmIds.has(r.id)) };
 
   return (
     <>
@@ -50,6 +64,27 @@ export default async function IntegrationsPage({
           <IntegrationCard key={p} provider={p} status={status[p] ?? EMPTY} canEdit={canEdit} available={p !== "gbp" || gbpConfigured()} />
         ))}
       </div>
+      <section className="mt-4 rounded-xl border border-border bg-surface p-5" aria-labelledby="lbm-title">
+        <div className="flex flex-wrap items-start justify-between gap-3">
+          <div>
+            <h2 id="lbm-title" className="text-base font-semibold">Local Brand Manager</h2>
+            <p className="text-sm text-muted">Google Business Profile performance, search keywords, reviews and geogrid rankings through Local Brand Manager&apos;s API.</p>
+          </div>
+          <span className={lbmConnected ? "text-sm font-medium text-positive" : "text-sm text-muted"}>{lbmConnected ? "Connected" : "Not connected"}</span>
+        </div>
+        <dl className="mt-2 grid grid-cols-[auto_1fr] gap-x-4 gap-y-1 text-sm">
+          <dt className="text-muted">Tracking</dt><dd className="truncate">{lbmSelected.length ? lbmSelected.map((s) => s.name).join(", ") : "Nothing selected"}</dd>
+          <dt className="text-muted">Last sync</dt><dd>{lbm?.last_synced_at ? new Date(lbm.last_synced_at).toLocaleString() : "Never"}</dd>
+        </dl>
+        {lbm?.last_error && lbmConnected && <p role="alert" className="mt-2 text-sm text-negative">{lbm.last_error}</p>}
+        <div className="mt-3">
+          <LbmPanel connected={lbmConnected} canEdit={canEdit} hasEnvToken={Boolean(process.env.LOCAL_BRAND_MANAGER_API_TOKEN?.trim())} selected={lbmSelected} />
+        </div>
+        <p className="mt-3 text-xs text-muted">
+          Local Brand Manager serves the most recent ~25 days of daily metrics and the latest months of keywords, so history builds up with each daily sync.
+          Data appears on the <a href="/business-profile" className="text-accent hover:underline">Google Business Profile</a> page, the Overview and the PDF report.
+        </p>
+      </section>
       <section className="mt-4 rounded-xl border border-border bg-surface p-5" aria-labelledby="clarity-title">
         <div className="flex flex-wrap items-start justify-between gap-3">
           <h2 id="clarity-title" className="text-base font-semibold">Microsoft Clarity</h2>

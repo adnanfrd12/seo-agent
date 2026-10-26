@@ -193,6 +193,26 @@ export function ReportBody({ d, opts }: { d: ReportData; opts: ReportOptions }) 
                 { label: "Impressions", align: "right", render: (x) => (x.impressions != null ? fmtInt(num(x.impressions)) : "< " + fmtInt(num(x.impressions_threshold))) },
               ]} />
           )}
+          {d.gbpReviews && (
+            <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
+              <StatTile label="Average Google rating" icon={Trophy} color={CHAPTER_COLORS[2]} source="GBP" format={(v) => (v == null ? "—" : `${v.toFixed(2)} ★`)} value={d.gbpReviews.average} />
+              <StatTile label="Total reviews" icon={Users} color={CHAPTER_COLORS[2]} source="GBP" format={fmtInt} value={d.gbpReviews.total} />
+              <StatTile label="New reviews this period" icon={TrendingUp} color={CHAPTER_COLORS[2]} source="GBP" format={fmtInt} value={d.gbpReviews.newInRange}
+                hint={d.gbpReviews.newAverage != null ? `Average ${d.gbpReviews.newAverage.toFixed(1)}★` : undefined} />
+              <StatTile label="Owner reply rate" icon={Target} color={CHAPTER_COLORS[2]} source="GBP" format={(v) => fmtPercent(v, 0)} value={d.gbpReviews.replyRate} />
+            </div>
+          )}
+          {d.gbpRanks.length > 0 && (
+            <ReportTable<ReportData["gbpRanks"][number]> title="Local map rankings (latest geogrid scan per search term)" source="Local Brand Manager" empty="" rows={d.gbpRanks}
+              columns={[
+                { label: "Search term", render: (x) => x.term },
+                { label: "Scanned", render: (x) => (x.scannedAt ? x.scannedAt.slice(0, 10) : "—") },
+                { label: "AGR", align: "right", render: (x) => (x.agr == null ? "—" : x.agr.toFixed(1)) },
+                { label: "ATGR", align: "right", render: (x) => (x.atgr == null ? "—" : `${x.atgr.toFixed(1)}${x.prevAtgr != null ? ` (was ${x.prevAtgr.toFixed(1)})` : ""}`) },
+                { label: "SoLV", align: "right", render: (x) => (x.solv == null ? "—" : `${x.solv}%${x.prevSolv != null ? ` (was ${x.prevSolv}%)` : ""}`) },
+              ]} />
+          )}
+          {d.gbpRanks.length > 0 && <p className="text-xs text-muted">AGR: average rank where the business appears. ATGR: average over every grid point, counting &quot;not in top 20&quot; as 21 (lower is better). SoLV: share of grid points in the top 3 (higher is better).</p>}
           {detail("/business-profile", "Full Business Profile analysis")}
         </>}
       </Chapter>

@@ -86,6 +86,16 @@ export async function buildEvidence(
     d.gbpKeywords.slice(0, 15).forEach((k, i) => add(`gbp.keyword.${i + 1}`, "Business Profile", `Search term "${k.keyword}" showed the profile`,
       k.impressions != null ? `${k.impressions} impressions` : `fewer than ${k.impressions_threshold} impressions`, "monthly figure, months overlapping the period"));
   }
+  if (d.gbpReviews) {
+    add("gbp.reviews.total", "Business Profile", "Total Google reviews", String(d.gbpReviews.total));
+    add("gbp.reviews.average", "Business Profile", "Average Google rating (all reviews)", d.gbpReviews.average?.toFixed(2) ?? "n/a");
+    add("gbp.reviews.new", "Business Profile", "New reviews in this period", String(d.gbpReviews.newInRange),
+      d.gbpReviews.newAverage != null ? `average ${d.gbpReviews.newAverage.toFixed(1)} stars` : undefined);
+    add("gbp.reviews.reply_rate", "Business Profile", "Share of reviews with an owner reply", pct(d.gbpReviews.replyRate));
+  }
+  d.gbpRanks.forEach((g, i) => add(`gbp.rank.${i + 1}`, "Local Brand Manager geogrid", `Local map rank for "${g.term}" (${g.scannedAt?.slice(0, 10) ?? "?"})`,
+    `ATGR ${g.atgr ?? "n/a"}, AGR ${g.agr ?? "n/a"}, SoLV ${g.solv ?? "n/a"}%`,
+    g.prevAtgr != null ? `previous scan ATGR ${g.prevAtgr}, SoLV ${g.prevSolv}%; lower ATGR and higher SoLV are better` : "lower ATGR and higher SoLV are better"));
   monthlyWins(d).forEach((w, i) => add(`derived.win.${i + 1}`, w.source, "Calculated improvement", w.text));
   notableDeclines(d).forEach((w, i) => add(`derived.decline.${i + 1}`, w.source, "Calculated decline", w.text));
 

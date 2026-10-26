@@ -5,6 +5,7 @@ import { syncGa4 } from "./ga4";
 import { GSC_TIME_ZONE, syncGsc } from "./gsc";
 import { syncClarity } from "./clarity";
 import { syncGbp } from "./gbp";
+import { syncLbm } from "./lbm";
 
 const DAY = 86_400_000;
 const LOOKBACK_DAYS = { initial: 90, daily: 7, manual: 14, backfill: 90 } as const;
@@ -75,12 +76,12 @@ export async function processQueue(opts: { budgetMs?: number } = {}): Promise<Qu
     try {
       const { data: resource } = await admin
         .from("integration_resources")
-        .select("external_id, timezone, is_selected, connection_id")
+        .select("external_id, timezone, is_selected, connection_id, metadata")
         .eq("id", job.resource_id ?? "")
         .maybeSingle();
       const { data: conn } = await admin
         .from("integration_connections")
-        .select("status, composio_connected_account_id, composio_entity_id")
+        .select("provider, status, composio_connected_account_id, composio_entity_id")
         .eq("id", job.connection_id ?? "")
         .maybeSingle();
 
@@ -91,6 +92,8 @@ export async function processQueue(opts: { budgetMs?: number } = {}): Promise<Qu
       }
       // Clarity (API token) and Business Profile (direct Google OAuth) don't use Composio
       const viaComposio = job.provider === "ga4" || job.provider === "gsc";
+      // Business Profile locations can come from Local Brand Manager instead of Google OAuth
+      const viaLbm = conn?.provider === "lbm";
       if (!conn || conn.status !== "connected" || (viaComposio && (!conn.composio_connected_account_id || !conn.composio_entity_id))) {
         await finish("failed", "Connection is not active. Reconnect the integration.", {}, true);
         tally("auth");
@@ -104,6 +107,11 @@ export async function processQueue(opts: { budgetMs?: number } = {}): Promise<Qu
       const run =
         job.provider === "clarity"
           ? await syncClarity(admin, { ...target, connectionId: job.connection_id! })
+          : viaLbm
+            ? await syncLbm(admin, {
+                ...target, connectionId: job.connection_id!, gbpId: resource.external_id.replace(/^locations\//, ""),
+                lbmId: String((resource.metadata as { lbm_id?: string } | null)?.lbm_id ?? ""),
+              })
           : job.provider === "gbp"
             ? await syncGbp(admin, { ...target, connectionId: job.connection_id!, location: resource.external_id }, { start, end })
           : job.provider === "ga4"
@@ -114,16 +122,16 @@ export async function processQueue(opts: { budgetMs?: number } = {}): Promise<Qu
       const failed = Object.keys(run.failures).length;
       const ok = Object.keys(run.written).length;
       if (run.authError) {
-        await finish("failed", "Google authorization failed. Reconnect the integration.", stats, true);
+        await finish("failed", `${viaLbm ? "Local Brand Manager" : "Google"} authorization failed. Reconnect the integration.`, stats, true);
         tally("auth");
       } else if (failed === 0) {
         await finish("succeeded", null, stats);
         tally("succeeded");
-        await queueOlderChunk(admin, job, start, run.written);
+        if (!viaLbm) await queueOlderChunk(admin, job, start, run.written);
       } else if (ok > 0) {
         await finish("partial", `${failed} report(s) failed: ${Object.entries(run.failures).map(([k, v]) => `${k}: ${v}`).join("; ").slice(0, 900)}`, stats);
         tally("partial");
-        await queueOlderChunk(admin, job, start, run.written);
+        if (!viaLbm) await queueOlderChunk(admin, job, start, run.written);
       } else if (Object.values(run.failures).some((m) => /quota 0|is not enabled|not enabled in the Google Cloud|cannot access the profile/i.test(m))) {
         // retrying can't fix missing API approval or permissions: fail once with Google's reason
         await finish("failed", Object.values(run.failures)[0]!.slice(0, 900), stats);

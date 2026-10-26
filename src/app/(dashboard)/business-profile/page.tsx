@@ -10,6 +10,7 @@ import { resolveRange } from "@/lib/analytics/range";
 import { resourceOptions, resourceScope } from "@/lib/analytics/resource-scope";
 import { dailySeries, type TrendData } from "@/lib/analytics/trend";
 import { first, type SearchParams } from "@/lib/analytics/url";
+import { LbmSections } from "./lbm-sections";
 
 const PATH = "/business-profile";
 
@@ -53,13 +54,14 @@ export default async function BusinessProfilePage({ searchParams }: { searchPara
     supabase.rpc("get_gbp_summary", { ...args, p_resource_id: scope.gbpPick?.id ?? null }),
     supabase.rpc("get_analytics_trends", { ...args, p_provider: "gbp", p_granularity: "day", p_compare: compare }),
     supabase.rpc("get_gbp_locations", args),
-    supabase.from("integration_connections").select("last_synced_at, last_error, status").eq("client_id", client.id).eq("provider", "gbp").maybeSingle(),
+    supabase.from("integration_connections").select("last_synced_at, last_error, status").eq("client_id", client.id).in("provider", ["gbp", "lbm"])
+      .eq("status", "connected").order("last_synced_at", { ascending: false, nullsFirst: false }).limit(1).maybeSingle(),
   ]);
 
   const lastSync = conn.data?.last_synced_at ? new Date(conn.data.last_synced_at).toLocaleString() : "never";
   const header = (
     <PageHeader title={title}
-      description={`Location: ${scope.label(scope.gbp, scope.gbpPick)} · last synced ${lastSync} · Google reports these metrics with a delay of a few days`} />
+      description={`Location: ${scope.label(scope.gbp, scope.gbpPick)} · last synced ${lastSync} · metrics arrive with a delay of a few days`} />
   );
   const locationOptions = resourceOptions(scope.gbp, "All locations (combined)");
   const filters = locationOptions && (
@@ -67,6 +69,8 @@ export default async function BusinessProfilePage({ searchParams }: { searchPara
       <FilterSelect label="Location" name="location" value={scope.gbpPick?.id ?? ""} path={PATH} sp={sp} options={locationOptions} />
     </div>
   );
+
+  const more = <LbmSections supabase={supabase} resourceIds={(scope.gbpPick ? [scope.gbpPick] : scope.gbp).map((r) => r.id)} range={range} />;
 
   if ([summary, trend, locations].some((r) => r.error)) {
     return (
@@ -92,6 +96,7 @@ export default async function BusinessProfilePage({ searchParams }: { searchPara
           body="Either the first import hasn't finished, Google hasn't approved API access for the project yet (see Integrations for the exact error), or this range has no data."
           action={{ href: "/integrations", label: "Open Integrations" }}
         />
+        {more}
       </>
     );
   }
@@ -108,7 +113,8 @@ export default async function BusinessProfilePage({ searchParams }: { searchPara
     { label: "Direction requests", k: "direction_requests" },
   ];
   const extras: { label: string; k: string; hint?: string }[] = [
-    { label: "Bookings", k: "bookings" }, { label: "Messaging clicks", k: "messaging_clicks" }, { label: "Menu clicks", k: "food_menu_clicks" },
+    { label: "Bookings", k: "bookings" }, { label: "Messaging clicks", k: "messaging_clicks" }, { label: "Message conversations", k: "conversations" },
+    { label: "Menu clicks", k: "food_menu_clicks" },
   ].filter((m) => pick(cur, m.k));
   const b = s.breakdown;
   const split = [
@@ -218,6 +224,7 @@ export default async function BusinessProfilePage({ searchParams }: { searchPara
           )}
         </section>
       )}
+      {more}
     </>
   );
 }

@@ -20,6 +20,7 @@ const schema = z.object({
   GOOGLE_GBP_CLIENT_ID: z.string().min(1).optional(),
   GOOGLE_GBP_CLIENT_SECRET: z.string().min(1).optional(),
   GOOGLE_GBP_REDIRECT_URI: z.url().optional(),
+  LOCAL_BRAND_MANAGER_API_TOKEN: z.string().optional(),
 });
 
 export type ServerEnv = z.infer<typeof schema>;
