@@ -52,14 +52,15 @@ export function ReportBody({ d, opts }: { d: ReportData; opts: ReportOptions }) 
   const ga4Ok = d.connected.ga4 && g.current?.has_data;
   const gscOk = d.connected.gsc && s.current?.has_data;
   const b = d.gbp, gbpOk = d.connected.gbp && b?.current?.has_data;
+  const gbpExtrasOk = Boolean(d.gbpReviews || d.gbpRanks.length);
 
   return (
     <div className="space-y-14">
       {/* ---------------------------------------------------------------- 01 */}
       <Chapter n={1} id="ch-01" icon={Flag} title="Overall Performance & Monthly Wins"
         subtitle="Headline website, search and local visibility results at a glance"
-        sources={[ga4Ok && "Google Analytics 4", gscOk && "Google Search Console", gbpOk && "Google Business Profile"].filter(Boolean) as string[]}>
-        {!ga4Ok && !gscOk && !gbpOk ? (
+        sources={[ga4Ok && "Google Analytics 4", gscOk && "Google Search Console", gbpOk && "Google Business Profile", gbpExtrasOk && "Local Brand Manager"].filter(Boolean) as string[]}>
+        {!ga4Ok && !gscOk && !gbpOk && !gbpExtrasOk ? (
           <Unavailable title="No connected data for this period" body="Connect Google Analytics 4 or Search Console on the Integrations page, then run a sync." />
         ) : (
           <TileGrid>
@@ -92,6 +93,8 @@ export function ReportBody({ d, opts }: { d: ReportData; opts: ReportOptions }) 
             </>}
             {gbpOk && <StatTile label="Business Profile views" icon={MapPin} color={CHAPTER_COLORS[0]} source="GBP" format={fmtInt}
               value={pick(b, "impressions")} previous={prevOf(b, "impressions")} mom={momOf(b, "impressions")} yoy={yoyOf(b, "impressions")} spark={spark(d.gbpTrend, "impressions")} />}
+            {d.gbpReviews && <StatTile label="Google rating" icon={Trophy} color={CHAPTER_COLORS[0]} source="GBP" format={(v) => (v == null ? "—" : `${v.toFixed(2)} ★`)}
+              value={d.gbpReviews.average} hint={`${d.gbpReviews.total} reviews, ${d.gbpReviews.newInRange} new in this period`} />}
           </TileGrid>
         )}
         <div className="grid gap-4 lg:grid-cols-2">
@@ -145,7 +148,14 @@ export function ReportBody({ d, opts }: { d: ReportData; opts: ReportOptions }) 
 
       {/* ---------------------------------------------------------------- 03 */}
       <Chapter n={3} id="ch-03" icon={MapPin} title="Google Business Profile Performance"
-        subtitle="Local visibility, calls, website visits and direction requests" sources={gbpOk ? ["Google Business Profile"] : []}>
+        subtitle="Local visibility, reviews, map rankings, calls, website visits and direction requests"
+        sources={[gbpOk && "Google Business Profile", gbpExtrasOk && "Local Brand Manager"].filter(Boolean) as string[]}>
+        {d.gbpCoverage && (
+          <p className="text-xs text-muted">
+            Daily profile metrics stored from {d.gbpCoverage.first} to {d.gbpCoverage.last}. Google reports them a few days late, and
+            history before the first stored day isn&apos;t available from the API.
+          </p>
+        )}
         {!gbpOk ? (
           <Unavailable title={d.connected.gbp ? "No Business Profile data for this period" : "Google Business Profile isn't connected"}
             body={d.connected.gbp
@@ -193,6 +203,7 @@ export function ReportBody({ d, opts }: { d: ReportData; opts: ReportOptions }) 
                 { label: "Impressions", align: "right", render: (x) => (x.impressions != null ? fmtInt(num(x.impressions)) : "< " + fmtInt(num(x.impressions_threshold))) },
               ]} />
           )}
+        </>}
           {d.gbpReviews && (
             <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
               <StatTile label="Average Google rating" icon={Trophy} color={CHAPTER_COLORS[2]} source="GBP" format={(v) => (v == null ? "—" : `${v.toFixed(2)} ★`)} value={d.gbpReviews.average} />
@@ -213,8 +224,21 @@ export function ReportBody({ d, opts }: { d: ReportData; opts: ReportOptions }) 
               ]} />
           )}
           {d.gbpRanks.length > 0 && <p className="text-xs text-muted">AGR: average rank where the business appears. ATGR: average over every grid point, counting &quot;not in top 20&quot; as 21 (lower is better). SoLV: share of grid points in the top 3 (higher is better).</p>}
-          {detail("/business-profile", "Full Business Profile analysis")}
-        </>}
+          {d.gbpRecentReviews.length > 0 && (
+            <div>
+              <h3 className="mb-2 text-sm font-bold">Latest reviews</h3>
+              <ul className="grid gap-3 md:grid-cols-2">
+                {d.gbpRecentReviews.map((r, i) => (
+                  <li key={i} className="report-avoid-break rounded-lg border border-border p-3 text-sm">
+                    <p className="text-xs text-muted">{r.rating != null ? "★".repeat(r.rating) + "☆".repeat(5 - r.rating) : ""} · {r.reviewer ?? "Google user"} · {r.date ?? ""}</p>
+                    <p className="mt-1">{r.text.length > 320 ? `${r.text.slice(0, 320)}…` : r.text}</p>
+                    {r.reply && <p className="mt-1 text-xs text-muted">Owner replied.</p>}
+                  </li>
+                ))}
+              </ul>
+            </div>
+          )}
+        {(gbpOk || gbpExtrasOk) && detail("/business-profile", "Full Business Profile analysis")}
       </Chapter>
 
       {/* ---------------------------------------------------------------- 04 */}
@@ -374,7 +398,7 @@ export function ReportBody({ d, opts }: { d: ReportData; opts: ReportOptions }) 
       <footer className="border-t border-border pt-6 text-xs text-muted">
         <p className="flex items-center gap-1.5"><Trophy className="size-3.5" aria-hidden /> Figures come directly from connected Google APIs and are never estimated. Unavailable data is labelled, never shown as zero.</p>
         <p className="mt-1 flex items-center gap-1.5"><Globe className="size-3.5" aria-hidden /> GA4 dates use the property&apos;s time zone; Search Console dates are Pacific Time. GA4 users are summed daily active users.</p>
-        <div className="mt-2 flex flex-wrap gap-1.5">{ga4Ok && <SourceTag>Google Analytics 4 API</SourceTag>}{gscOk && <SourceTag>Google Search Console API</SourceTag>}{gbpOk && <SourceTag>Business Profile Performance API</SourceTag>}{d.clarity && <SourceTag>Microsoft Clarity Data Export API</SourceTag>}</div>
+        <div className="mt-2 flex flex-wrap gap-1.5">{ga4Ok && <SourceTag>Google Analytics 4 API</SourceTag>}{gscOk && <SourceTag>Google Search Console API</SourceTag>}{gbpOk && <SourceTag>Business Profile Performance API</SourceTag>}{gbpExtrasOk && <SourceTag>Local Brand Manager API</SourceTag>}{d.clarity && <SourceTag>Microsoft Clarity Data Export API</SourceTag>}</div>
       </footer>
     </div>
   );
