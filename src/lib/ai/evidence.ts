@@ -94,8 +94,8 @@ export async function buildEvidence(
     add("gbp.reviews.reply_rate", "Business Profile", "Share of reviews with an owner reply", pct(d.gbpReviews.replyRate));
   }
   d.gbpRanks.forEach((g, i) => add(`gbp.rank.${i + 1}`, "Local Brand Manager geogrid", `Local map rank for "${g.term}" (${g.scannedAt?.slice(0, 10) ?? "?"})`,
-    `ATGR ${g.atgr ?? "n/a"}, AGR ${g.agr ?? "n/a"}, SoLV ${g.solv ?? "n/a"}%`,
-    g.prevAtgr != null ? `previous scan ATGR ${g.prevAtgr}, SoLV ${g.prevSolv}%; lower ATGR and higher SoLV are better` : "lower ATGR and higher SoLV are better"));
+    `ATGR ${g.atgr ?? "n/a"}, AGR ${g.agr ?? "n/a"}, SoLV ${g.solv == null ? "n/a" : pct(g.solv)}`,
+    g.prevAtgr != null ? `previous scan ATGR ${g.prevAtgr}, SoLV ${g.prevSolv == null ? "n/a" : pct(g.prevSolv)}; lower ATGR and higher SoLV are better` : "lower ATGR and higher SoLV are better"));
   monthlyWins(d).forEach((w, i) => add(`derived.win.${i + 1}`, w.source, "Calculated improvement", w.text));
   notableDeclines(d).forEach((w, i) => add(`derived.decline.${i + 1}`, w.source, "Calculated decline", w.text));
 

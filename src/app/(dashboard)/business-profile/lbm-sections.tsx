@@ -23,6 +23,8 @@ type LbmLocation = {
 const card = "rounded-xl border border-border bg-surface p-4";
 const num = (v: unknown) => (v == null ? null : Number(v));
 const day = (iso: string | null) => (iso ? new Date(iso).toLocaleDateString("en-US", { year: "numeric", month: "short", day: "numeric" }) : "—");
+/** LBM reports SoLV as a fraction (0.93 = 93%). */
+const solvPct = (v: unknown) => (v == null ? "—" : `${(Number(v) * 100).toFixed(0)}%`);
 const safeUrl = (u: unknown) => (typeof u === "string" && u.startsWith("https://") ? u : null);
 
 /** Rank cell colour: top 3 green, 4-10 amber, 11-20 orange, not ranked grey. */
@@ -161,8 +163,8 @@ export async function LbmSections({ supabase, resourceIds, range }: {
                         return (
                           <div key={k} className="rounded-md bg-surface-muted p-1.5">
                             <dt className="text-[10px] font-semibold uppercase text-muted">{k}</dt>
-                            <dd className="font-bold tabular-nums">{cur == null ? "—" : k === "SoLV" ? `${cur}%` : cur.toFixed(1)}</dd>
-                            {better != null && <dd className={`text-[10px] ${better ? "text-positive" : "text-negative"}`}>{better ? "better" : "worse"} than {k === "SoLV" ? `${before}%` : before!.toFixed(1)}</dd>}
+                            <dd className="font-bold tabular-nums">{cur == null ? "—" : k === "SoLV" ? solvPct(cur) : cur.toFixed(1)}</dd>
+                            {better != null && <dd className={`text-[10px] ${better ? "text-positive" : "text-negative"}`}>{better ? "better" : "worse"} than {k === "SoLV" ? solvPct(before) : before!.toFixed(1)}</dd>}
                           </div>
                         );
                       })}
@@ -186,7 +188,7 @@ export async function LbmSections({ supabase, resourceIds, range }: {
                       <tr key={g.id} className="border-t border-border">
                         <td className="px-2 py-1">{g.search_term}</td><td className="px-2 py-1">{day(g.scanned_at)}</td>
                         <td className="px-2 py-1 tabular-nums">{num(g.agr)?.toFixed(1) ?? "—"}</td><td className="px-2 py-1 tabular-nums">{num(g.atgr)?.toFixed(1) ?? "—"}</td>
-                        <td className="px-2 py-1 tabular-nums">{g.solv == null ? "—" : `${g.solv}%`}</td>
+                        <td className="px-2 py-1 tabular-nums">{solvPct(g.solv)}</td>
                         <td className="px-2 py-1">{safeUrl(g.public_url) && <a href={safeUrl(g.public_url)!} target="_blank" rel="noopener noreferrer" className="text-accent hover:underline">view</a>}{g.state === "error" && <span className="text-negative">scan failed</span>}</td>
                       </tr>
                     ))}

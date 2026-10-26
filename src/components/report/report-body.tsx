@@ -209,7 +209,7 @@ export function ReportBody({ d, opts }: { d: ReportData; opts: ReportOptions }) 
                 { label: "Scanned", render: (x) => (x.scannedAt ? x.scannedAt.slice(0, 10) : "—") },
                 { label: "AGR", align: "right", render: (x) => (x.agr == null ? "—" : x.agr.toFixed(1)) },
                 { label: "ATGR", align: "right", render: (x) => (x.atgr == null ? "—" : `${x.atgr.toFixed(1)}${x.prevAtgr != null ? ` (was ${x.prevAtgr.toFixed(1)})` : ""}`) },
-                { label: "SoLV", align: "right", render: (x) => (x.solv == null ? "—" : `${x.solv}%${x.prevSolv != null ? ` (was ${x.prevSolv}%)` : ""}`) },
+                { label: "SoLV", align: "right", render: (x) => (x.solv == null ? "—" : `${fmtPercent(x.solv, 0)}${x.prevSolv != null ? ` (was ${fmtPercent(x.prevSolv, 0)})` : ""}`) },
               ]} />
           )}
           {d.gbpRanks.length > 0 && <p className="text-xs text-muted">AGR: average rank where the business appears. ATGR: average over every grid point, counting &quot;not in top 20&quot; as 21 (lower is better). SoLV: share of grid points in the top 3 (higher is better).</p>}
