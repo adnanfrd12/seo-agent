@@ -131,6 +131,7 @@ export async function buildEvidence(
   const unavailable = [
     !d.connected.ga4 && "Google Analytics 4",
     !d.connected.gsc && "Google Search Console",
+    !d.bing?.totals.current?.has_data && "Bing Webmaster Tools (not connected or no data for this period)",
     !(d.connected.gbp && d.gbp?.current?.has_data) && "Google Business Profile (not connected or no data: no local metrics)",
     !(clarity ?? []).length && "Microsoft Clarity behaviour metrics",
     !(reviews ?? []).length && "Session recording observations",

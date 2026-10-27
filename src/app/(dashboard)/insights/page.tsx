@@ -49,12 +49,13 @@ export default async function InsightsPage({ searchParams }: { searchParams: Pro
   const running = ((runs ?? []) as Run[]).some((r) => r.kind === "insights" && r.status === "running");
   // first visit with nothing generated yet: admins get one started automatically
   const autoStart = configured && canEdit && !migrationMissing && !latest && !running;
+  const sources = [...new Set((latest?.evidence?.items ?? []).map((i) => i.source))];
   const evidenceById = new Map((latest?.evidence?.items ?? []).map((i) => [i.id, i]));
   const current = ((insights ?? []) as Insight[]).filter((i) => !latest || i.run_id === latest.id);
 
   return (
     <div className="mx-auto max-w-5xl">
-      <PageHeader title="AI SEO Insights" description="Evidence-based interpretation of your GA4, Search Console, Business Profile, Clarity and imported data. The numbers are calculated by the app; the AI only interprets them." />
+      <PageHeader title="AI SEO Insights" description="Evidence-based interpretation of your GA4, Search Console, Bing, Business Profile (incl. reviews and local rankings), Clarity and imported data. The numbers are calculated by the app; the AI only interprets them." />
       <RangeSelector path="/insights" sp={sp} range={range} showCompare={false} />
 
       {migrationMissing ? (
@@ -76,6 +77,7 @@ export default async function InsightsPage({ searchParams }: { searchParams: Pro
           <div className="rounded-xl border border-border bg-surface p-5">
             <p className="text-xs font-semibold uppercase tracking-wider text-accent">Executive summary · {latest.range_start} → {latest.range_end}</p>
             <p className="mt-2 leading-relaxed">{latest.output?.executive_summary}</p>
+            {sources.length > 0 && <p className="mt-3 text-xs text-muted">Data sources in this analysis: {sources.join(" · ")}</p>}
           </div>
           <div className="grid gap-4 md:grid-cols-2">
             {[

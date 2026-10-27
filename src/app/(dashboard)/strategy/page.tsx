@@ -32,6 +32,10 @@ export default async function StrategyPage({ searchParams }: { searchParams: Pro
     ? await supabase.from("seo_strategy_tasks").select("*").eq("plan_id", plan.id).order("week").order("sort")
     : { data: [] as Task[] };
   const all = (tasks ?? []) as Task[];
+  const { data: planRun } = plan?.run_id
+    ? await supabase.from("ai_analysis_runs").select("evidence").eq("id", plan.run_id).maybeSingle()
+    : { data: null };
+  const sources = [...new Set((((planRun?.evidence ?? {}) as { items?: { source: string }[] }).items ?? []).map((i) => i.source))];
   const { data: runningRow } = await supabase.from("ai_analysis_runs").select("id").eq("client_id", client.id).eq("kind", "strategy").eq("status", "running").limit(1);
   const running = (runningRow ?? []).length > 0;
   const configured = Boolean(process.env.ANTHROPIC_API_KEY);
@@ -61,6 +65,7 @@ export default async function StrategyPage({ searchParams }: { searchParams: Pro
           <div className="mb-6 rounded-xl border border-border bg-surface p-5">
             <p className="text-xs font-semibold uppercase tracking-wider text-accent">Plan based on {plan.period_start} → {plan.period_end}</p>
             <p className="mt-2 leading-relaxed">{plan.summary}</p>
+            {sources.length > 0 && <p className="mt-2 text-xs text-muted">Data sources in this plan: {sources.join(" · ")}</p>}
             <p className="mt-3 text-sm text-muted">{done} of {all.length} tasks completed</p>
             <div className="mt-1 h-2 overflow-hidden rounded-full bg-surface-muted"><div className="h-full rounded-full bg-positive" style={{ width: `${all.length ? (done / all.length) * 100 : 0}%` }} /></div>
           </div>
