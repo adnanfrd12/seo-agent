@@ -4,9 +4,13 @@ import { getSession } from "@/lib/analytics/client-context";
 import { gbpConfigured } from "@/lib/google/oauth";
 import { ConnectClarity, ReviewForm } from "../clarity/clarity-forms";
 import { LbmPanel } from "./lbm-panel";
+import { LbmBulkSetup } from "./lbm-bulk";
 import { BingPanel } from "./bing-panel";
 import { PROVIDER_META, type ProviderId } from "@/lib/integrations/providers";
 import { createClient } from "@/lib/supabase/server";
+
+// bulk client setup runs inside a server action on this page
+export const maxDuration = 300;
 
 const ORDER: ProviderId[] = ["ga4", "gsc", "gbp"];
 const EMPTY: ProviderStatus = { connection: null, resources: [], last_job: null, syncing: false };
@@ -112,6 +116,9 @@ export default async function IntegrationsPage({
         <div className="mt-3">
           <LbmPanel connected={lbmConnected} canEdit={canEdit} hasEnvToken={Boolean(process.env.LOCAL_BRAND_MANAGER_API_TOKEN?.trim())} selected={lbmSelected} />
         </div>
+        {canEdit && (lbmConnected || process.env.LOCAL_BRAND_MANAGER_API_TOKEN?.trim()) && (
+          <div className="mt-4 border-t border-border pt-4"><LbmBulkSetup /></div>
+        )}
         <p className="mt-3 text-xs text-muted">
           Local Brand Manager serves the most recent ~25 days of daily metrics and the latest months of keywords, so history builds up with each daily sync.
           Data appears on the <a href="/business-profile" className="text-accent hover:underline">Google Business Profile</a> page, the Overview and the PDF report.

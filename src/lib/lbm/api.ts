@@ -41,7 +41,7 @@ async function call<T>(token: string, path: string): Promise<{ body: T; headers:
 
 export type LbmLocation = {
   id: string; gbp_id: string | null; place_id: string | null; name: string; address: string | null; enabled: boolean; states: string[];
-  city?: string | null; phone_number?: string | null; primary_category?: string | null; website_url?: string | null;
+  city?: string | null; administrative_area?: string | null; country?: string | null; phone_number?: string | null; primary_category?: string | null; website_url?: string | null;
   gmb_url?: string | null; description?: string | null; lat?: number | null; lng?: number | null; store_code?: string | null;
 };
 
