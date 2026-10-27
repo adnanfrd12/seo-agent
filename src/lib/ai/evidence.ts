@@ -86,6 +86,17 @@ export async function buildEvidence(
     d.gbpKeywords.slice(0, 15).forEach((k, i) => add(`gbp.keyword.${i + 1}`, "Business Profile", `Search term "${k.keyword}" showed the profile`,
       k.impressions != null ? `${k.impressions} impressions` : `fewer than ${k.impressions_threshold} impressions`, "monthly figure, months overlapping the period"));
   }
+  if (d.bing?.totals.current?.has_data) {
+    kpis("bing", "Bing Webmaster Tools", d.bing.totals, [
+      ["clicks", "Bing organic clicks", "n"], ["impressions", "Bing impressions", "n"], ["ctr", "Bing CTR", "pct"],
+      ["position", "Bing average position (impression-weighted, weekly buckets)", "dec"],
+    ]);
+    d.bing.queries.slice(0, 10).forEach((q, i) => add(`bing.query.${i + 1}`, "Bing Webmaster Tools", `Bing query "${q.query}"`,
+      `${q.clicks} clicks, ${q.impressions} impressions, position ${f(toNum(q.position), 1)}`));
+    d.bing.pages.slice(0, 10).forEach((p, i) => add(`bing.page.${i + 1}`, "Bing Webmaster Tools", `Bing page ${p.page}`, `${p.clicks} clicks, ${p.impressions} impressions`));
+    if (d.bing.crawl) add("bing.crawl", "Bing Webmaster Tools", "Bing index and crawl", `${d.bing.crawl.inIndex ?? "n/a"} pages indexed, ${d.bing.crawl.inLinks ?? "n/a"} inbound links`,
+      `${d.bing.crawl.crawled} pages crawled and ${d.bing.crawl.errors} crawl errors over ${d.bing.crawl.days} days`);
+  }
   if (d.gbpReviews) {
     add("gbp.reviews.total", "Business Profile", "Total Google reviews", String(d.gbpReviews.total));
     add("gbp.reviews.average", "Business Profile", "Average Google rating (all reviews)", d.gbpReviews.average?.toFixed(2) ?? "n/a");

@@ -1,6 +1,6 @@
 import type { Metadata } from "next";
 import { BrandLockup } from "@/components/brand/brand-mark";
-import { ReportBody } from "@/components/report/report-body";
+import { ReportBody, reportChapters } from "@/components/report/report-body";
 import { CHAPTER_COLORS } from "@/components/report/report-ui";
 import { getSession } from "@/lib/analytics/client-context";
 import { isMonth, monthLabel, monthRange, resolveRange } from "@/lib/analytics/range";
@@ -11,14 +11,6 @@ import { PrintControls } from "./print-controls";
 
 export const metadata: Metadata = { title: "SEO Performance Report" };
 
-const FULL = [
-  "Overall Performance & Monthly Wins", "Website Traffic & Sources", "Google Business Profile Performance",
-  "Search Console & Keyword Performance", "User Behavior & Conversion Analysis", "AI SEO Insights", "30-Day SEO Strategy",
-];
-const EXEC = [
-  "Overall Performance & Monthly Wins", "Website Traffic & Sources", "Google Business Profile Performance",
-  "Search Console & Keyword Performance", "AI SEO Insights", "30-Day SEO Strategy",
-];
 
 /**
  * Report-only rendering: no sidebar, navigation, header controls, profile or admin UI.
@@ -42,7 +34,7 @@ export default async function ReportPage({ searchParams }: { searchParams: Promi
   const scope = await resourceScope(client.id, sp);
   const data = await loadReportData(scope.supabase, client.id, { start: range.start, end: range.end }, true);
   const generated = new Date().toLocaleDateString("en-US", { year: "numeric", month: "long", day: "numeric" });
-  const toc = executive && !data.clarity ? EXEC : executive ? [...EXEC.slice(0, 4), FULL[4], ...EXEC.slice(4)] : FULL;
+  const toc = reportChapters(data, executive);
   const properties = [scope.label(scope.ga4, scope.ga4Pick), scope.label(scope.gsc, scope.gscPick)].filter(Boolean).join(" · ");
 
   return (
@@ -63,7 +55,7 @@ export default async function ReportPage({ searchParams }: { searchParams: Promi
           </div>
           <div className="flex items-end justify-between text-sm text-muted">
             <p>Generated {generated}</p>
-            <p>Sources: connected Google APIs · figures are never estimated</p>
+            <p>Sources: connected Google, Microsoft and partner APIs · figures are never estimated</p>
           </div>
         </section>
 

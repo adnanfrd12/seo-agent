@@ -1,5 +1,5 @@
 import {
-  BarChart3, CalendarCheck, CalendarRange, FileUp, History, LayoutDashboard, Lightbulb, MapPin, MousePointerClick, Plug,
+  BarChart3, CalendarCheck, Globe, CalendarRange, FileUp, History, LayoutDashboard, Lightbulb, MapPin, MousePointerClick, Plug,
   Search, Settings, Sparkles, type LucideIcon,
 } from "lucide-react";
 
@@ -14,6 +14,7 @@ export const NAV: NavGroup[] = [
       { href: "/analytics", label: "Google Analytics 4", icon: BarChart3 },
       { href: "/search-console", label: "Google Search Console", icon: Search },
       { href: "/business-profile", label: "Google Business Profile", icon: MapPin },
+      { href: "/bing", label: "Bing Webmaster", icon: Globe },
       { href: "/clarity", label: "Microsoft Clarity", icon: MousePointerClick },
     ],
   },

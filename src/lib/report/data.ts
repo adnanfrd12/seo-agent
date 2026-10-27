@@ -24,6 +24,12 @@ export interface ReportData {
   gbpTrend: TrendData;
   /** Business Profile search keywords for the months overlapping the range */
   gbpKeywords: { keyword: string; impressions: number | null; impressions_threshold: number | null }[];
+  /** Bing Webmaster Tools; null when Bing isn't connected (or migration 15 isn't applied) */
+  bing: {
+    totals: Compared; trend: TrendData; queries: Row[]; pages: Row[];
+    crawl: { inIndex: number | null; inLinks: number | null; crawled: number; errors: number; days: number } | null;
+    coverage: { first: string | null; last: string | null } | null;
+  } | null;
   /** reviews and geogrid local-rank scans (Local Brand Manager); null when none stored */
   gbpReviews: { total: number; average: number | null; newInRange: number; newAverage: number | null; replyRate: number | null } | null;
   /** latest reviews with text (newest first) and the stored daily-metric coverage */
@@ -120,9 +126,32 @@ export async function loadReportData(
     // a missing RPC (migration not yet applied) must not break the report
     opportunities: opps.error ? null : (opps.data as Opportunities),
     ...(await loadGbpExtras(supabase, clientId, range)),
+    bing: await loadBing(supabase, clientId, range, compare),
     ai: await loadAi(supabase, clientId),
     clarity: await loadClarity(supabase, clientId, range),
     errors: opps.error ? ["opportunities"] : [],
+  };
+}
+
+async function loadBing(supabase: SupabaseClient, clientId: string, range: { start: string; end: string }, compare: boolean): Promise<ReportData["bing"]> {
+  const { data, error } = await supabase.rpc("get_bing_summary", { p_client_id: clientId, p_start: range.start, p_end: range.end });
+  if (error || !data) return null;
+  const s = data as {
+    current: Totals; previous: Totals; mom: Totals; yoy: Totals; daily: TrendData["current"]; daily_previous: TrendData["previous"];
+    queries: Row[]; pages: Row[]; crawl: Record<string, unknown>[]; coverage: { first: string | null; last: string | null } | null;
+  };
+  if (!s.coverage?.first) return null; // not connected / nothing imported
+  const last = s.crawl.at(-1);
+  return {
+    totals: { current: s.current, previous: s.previous, mom: s.mom, yoy: s.yoy },
+    trend: { current: s.daily, previous: compare ? s.daily_previous : [] },
+    queries: s.queries.slice(0, 15), pages: s.pages.slice(0, 15),
+    crawl: s.crawl.length ? {
+      inIndex: toNum(last?.in_index), inLinks: toNum(last?.in_links), days: s.crawl.length,
+      crawled: s.crawl.reduce((a, c) => a + (toNum(c.crawled_pages) ?? 0), 0),
+      errors: s.crawl.reduce((a, c) => a + (toNum(c.crawl_errors) ?? 0), 0),
+    } : null,
+    coverage: s.coverage,
   };
 }
 
@@ -282,6 +311,10 @@ export function monthlyWins(d: ReportData, basis: "previous" | "mom" = "previous
     consider("Search impressions", "GSC", d.gsc, "impressions", 100);
     consider("Average position", "GSC", d.gsc, "position", 0, false, (n) => n.toFixed(1));
   }
+  if (d.bing) {
+    consider("Bing clicks", "Bing", d.bing.totals, "clicks", 10);
+    consider("Bing impressions", "Bing", d.bing.totals, "impressions", 100);
+  }
   if (d.connected.gbp) {
     consider("Business Profile views", "GBP", d.gbp, "impressions", 100);
     consider("Profile website clicks", "GBP", d.gbp, "website_clicks", 10);
@@ -313,6 +346,7 @@ export function notableDeclines(d: ReportData, minPct = 10): Win[] {
   };
   if (d.connected.ga4) { consider("Users", "GA4", d.ga4, "users", 50); consider("Sessions", "GA4", d.ga4, "sessions", 50); consider("Engagement rate", "GA4", d.ga4, "engagement_rate", 0); }
   if (d.connected.gsc) { consider("Organic clicks", "GSC", d.gsc, "clicks", 10); consider("Search impressions", "GSC", d.gsc, "impressions", 100); consider("Average position", "GSC", d.gsc, "position", 0, false); }
+  if (d.bing) { consider("Bing clicks", "Bing", d.bing.totals, "clicks", 10); consider("Bing impressions", "Bing", d.bing.totals, "impressions", 100); }
   if (d.connected.gbp) {
     consider("Business Profile views", "GBP", d.gbp, "impressions", 100); consider("Profile website clicks", "GBP", d.gbp, "website_clicks", 10);
     consider("Call button clicks", "GBP", d.gbp, "call_clicks", 5); consider("Direction requests", "GBP", d.gbp, "direction_requests", 5);

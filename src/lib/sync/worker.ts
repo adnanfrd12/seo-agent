@@ -6,6 +6,7 @@ import { GSC_TIME_ZONE, syncGsc } from "./gsc";
 import { syncClarity } from "./clarity";
 import { syncGbp } from "./gbp";
 import { syncLbm } from "./lbm";
+import { syncBing } from "./bing";
 
 const DAY = 86_400_000;
 const LOOKBACK_DAYS = { initial: 90, daily: 7, manual: 14, backfill: 90 } as const;
@@ -27,7 +28,7 @@ type Job = {
   client_id: string;
   connection_id: string | null;
   resource_id: string | null;
-  provider: "ga4" | "gsc" | "gbp" | "clarity";
+  provider: "ga4" | "gsc" | "gbp" | "clarity" | "bing";
   job_type: keyof typeof LOOKBACK_DAYS;
   range_start: string | null;
   range_end: string | null;
@@ -107,6 +108,8 @@ export async function processQueue(opts: { budgetMs?: number } = {}): Promise<Qu
       const run =
         job.provider === "clarity"
           ? await syncClarity(admin, { ...target, connectionId: job.connection_id! })
+          : job.provider === "bing"
+            ? await syncBing(admin, { ...target, connectionId: job.connection_id!, siteUrl: resource.external_id })
           : viaLbm
             ? await syncLbm(admin, {
                 ...target, connectionId: job.connection_id!, gbpId: resource.external_id.replace(/^locations\//, ""),
@@ -122,7 +125,7 @@ export async function processQueue(opts: { budgetMs?: number } = {}): Promise<Qu
       const failed = Object.keys(run.failures).length;
       const ok = Object.keys(run.written).length;
       if (run.authError) {
-        await finish("failed", `${viaLbm ? "Local Brand Manager" : "Google"} authorization failed. Reconnect the integration.`, stats, true);
+        await finish("failed", `${job.provider === "bing" ? "Bing" : viaLbm ? "Local Brand Manager" : "Google"} authorization failed. Reconnect the integration.`, stats, true);
         tally("auth");
       } else if (failed === 0) {
         await finish("succeeded", null, stats);
@@ -157,7 +160,8 @@ export async function processQueue(opts: { budgetMs?: number } = {}): Promise<Qu
 
 /** Chains the next-older history chunk after a successful initial/backfill import. */
 async function queueOlderChunk(admin: ReturnType<typeof createAdminClient>, job: Job, start: string, written: Record<string, number>) {
-  if (job.provider === "clarity" || (job.job_type !== "initial" && job.job_type !== "backfill")) return;
+  // Clarity and Bing return everything they have on every call; there is nothing older to page back to
+  if (job.provider === "clarity" || job.provider === "bing" || (job.job_type !== "initial" && job.job_type !== "backfill")) return;
   // an empty older chunk means there is no earlier data
   if (job.job_type === "backfill" && Object.values(written).every((n) => !n)) return;
   const { maxDays, chunk } = BACKFILL[job.provider];

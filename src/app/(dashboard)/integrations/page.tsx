@@ -4,6 +4,7 @@ import { getSession } from "@/lib/analytics/client-context";
 import { gbpConfigured } from "@/lib/google/oauth";
 import { ConnectClarity, ReviewForm } from "../clarity/clarity-forms";
 import { LbmPanel } from "./lbm-panel";
+import { BingPanel } from "./bing-panel";
 import { PROVIDER_META, type ProviderId } from "@/lib/integrations/providers";
 import { createClient } from "@/lib/supabase/server";
 
@@ -34,6 +35,16 @@ export default async function IntegrationsPage({
     : { data: [] };
   const lbmSelected = (lbmResources ?? []).filter((r) => r.is_selected)
     .map((r) => ({ lbmId: String((r.metadata as { lbm_id?: string })?.lbm_id ?? ""), name: r.display_name ?? "" }));
+  // Bing Webmaster Tools (API key)
+  const { data: bing } = await supabase.from("integration_connections").select("id, status, last_synced_at, last_error")
+    .eq("client_id", client.id).eq("provider", "bing").maybeSingle();
+  const bingConnected = bing?.status === "connected";
+  const { data: bingResources } = bing
+    ? await supabase.from("integration_resources").select("external_id, is_selected").eq("connection_id", bing.id)
+    : { data: [] };
+  const bingSelected = (bingResources ?? []).filter((r) => r.is_selected).map((r) => r.external_id);
+  const siteHints = [...(status.gsc?.resources ?? []).map((r) => r.external_id.replace(/^sc-domain:/, "")), ...(status.ga4?.resources ?? []).map((r) => r.display_name ?? "")];
+
   // keep LBM-sourced locations out of the Google OAuth card
   const lbmIds = new Set((lbmResources ?? []).map((r) => r.id));
   if (status.gbp) status.gbp = { ...status.gbp, resources: status.gbp.resources.filter((r) => !lbmIds.has(r.id)) };
@@ -64,6 +75,27 @@ export default async function IntegrationsPage({
           <IntegrationCard key={p} provider={p} status={status[p] ?? EMPTY} canEdit={canEdit} available={p !== "gbp" || gbpConfigured()} />
         ))}
       </div>
+      <section className="mt-4 rounded-xl border border-border bg-surface p-5" aria-labelledby="bing-title">
+        <div className="flex flex-wrap items-start justify-between gap-3">
+          <div>
+            <h2 id="bing-title" className="text-base font-semibold">Bing Webmaster Tools</h2>
+            <p className="text-sm text-muted">Bing search clicks, impressions, queries, pages, positions, crawl health, sitemaps and keyword volumes.</p>
+          </div>
+          <span className={bingConnected ? "text-sm font-medium text-positive" : "text-sm text-muted"}>{bingConnected ? "Connected" : "Not connected"}</span>
+        </div>
+        <dl className="mt-2 grid grid-cols-[auto_1fr] gap-x-4 gap-y-1 text-sm">
+          <dt className="text-muted">Tracking</dt><dd className="truncate">{bingSelected.length ? bingSelected.join(", ") : "Nothing selected"}</dd>
+          <dt className="text-muted">Last sync</dt><dd>{bing?.last_synced_at ? new Date(bing.last_synced_at).toLocaleString() : "Never"}</dd>
+        </dl>
+        {bing?.last_error && bingConnected && <p role="alert" className="mt-2 text-sm text-negative">{bing.last_error}</p>}
+        <div className="mt-3">
+          <BingPanel connected={bingConnected} canEdit={canEdit} hasEnvKey={Boolean(process.env.BING_WEBMASTER_API_KEY?.trim())} selected={bingSelected} suggest={siteHints} />
+        </div>
+        <p className="mt-3 text-xs text-muted">
+          Bing serves about 16 months of daily clicks and impressions and weekly query and page statistics; each daily sync refreshes all of it.
+          Data appears on the <a href="/bing" className="text-accent hover:underline">Bing Webmaster</a> page, the Overview and the PDF report.
+        </p>
+      </section>
       <section className="mt-4 rounded-xl border border-border bg-surface p-5" aria-labelledby="lbm-title">
         <div className="flex flex-wrap items-start justify-between gap-3">
           <div>

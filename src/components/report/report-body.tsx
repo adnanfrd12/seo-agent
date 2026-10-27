@@ -31,6 +31,22 @@ function changeText(label: string, cur: Num, base: Num, opts: { lowerIsBetter?: 
   return `${label} ${dir}${Math.abs(pct) >= 1 ? ` ${Math.abs(pct).toFixed(0)}%` : ""} ${opts.basisLabel} (${f(base)} → ${f(cur)}).`;
 }
 
+const CH = {
+  overall: "Overall Performance & Monthly Wins", traffic: "Website Traffic & Sources", gbp: "Google Business Profile Performance",
+  gsc: "Search Console & Keyword Performance", bing: "Bing Search Performance", behavior: "User Behavior & Conversion Analysis",
+  ai: "AI SEO Insights", strategy: "30-Day SEO Strategy",
+} as const;
+
+/** Chapter titles in order for this report (used for numbering and the PDF contents page). */
+export function reportChapters(d: ReportData, executive: boolean): string[] {
+  return [
+    CH.overall, CH.traffic, CH.gbp, CH.gsc,
+    ...(d.bing ? [CH.bing] : []),
+    ...(!executive || d.clarity ? [CH.behavior] : []),
+    CH.ai, CH.strategy,
+  ];
+}
+
 export interface ReportOptions {
   /** "dashboard" shows links to detail pages; "print" omits interactive affordances */
   variant: "dashboard" | "print";
@@ -51,16 +67,19 @@ export function ReportBody({ d, opts }: { d: ReportData; opts: ReportOptions }) 
   const organic = d.channels.find((c) => c.channel === "Organic Search");
   const ga4Ok = d.connected.ga4 && g.current?.has_data;
   const gscOk = d.connected.gsc && s.current?.has_data;
+  const chapters = reportChapters(d, Boolean(opts.executive));
+  const no = (t: string) => chapters.indexOf(t) + 1;
+  const bg = d.bing;
   const b = d.gbp, gbpOk = d.connected.gbp && b?.current?.has_data;
   const gbpExtrasOk = Boolean(d.gbpReviews || d.gbpRanks.length);
 
   return (
     <div className="space-y-14">
       {/* ---------------------------------------------------------------- 01 */}
-      <Chapter n={1} id="ch-01" icon={Flag} title="Overall Performance & Monthly Wins"
+      <Chapter n={no(CH.overall)} id="ch-01" icon={Flag} title="Overall Performance & Monthly Wins"
         subtitle="Headline website, search and local visibility results at a glance"
-        sources={[ga4Ok && "Google Analytics 4", gscOk && "Google Search Console", gbpOk && "Google Business Profile", gbpExtrasOk && "Local Brand Manager"].filter(Boolean) as string[]}>
-        {!ga4Ok && !gscOk && !gbpOk && !gbpExtrasOk ? (
+        sources={[ga4Ok && "Google Analytics 4", gscOk && "Google Search Console", gbpOk && "Google Business Profile", gbpExtrasOk && "Local Brand Manager", bg && "Bing Webmaster Tools"].filter(Boolean) as string[]}>
+        {!ga4Ok && !gscOk && !gbpOk && !gbpExtrasOk && !bg?.totals.current?.has_data ? (
           <Unavailable title="No connected data for this period" body="Connect Google Analytics 4 or Search Console on the Integrations page, then run a sync." />
         ) : (
           <TileGrid>
@@ -91,6 +110,8 @@ export function ReportBody({ d, opts }: { d: ReportData; opts: ReportOptions }) 
               {o && <StatTile label="Keywords declining" icon={TrendingDown} color={CHAPTER_COLORS[0]} source="GSC" format={fmtInt} higherIsBetter={false}
                 value={o.declining_keywords.length} />}
             </>}
+            {bg?.totals.current?.has_data && <StatTile label="Bing clicks" icon={Globe} color={CHAPTER_COLORS[0]} source="Bing" format={fmtInt}
+              value={pick(bg.totals, "clicks")} previous={prevOf(bg.totals, "clicks")} mom={momOf(bg.totals, "clicks")} yoy={yoyOf(bg.totals, "clicks")} spark={spark(bg.trend, "clicks")} />}
             {gbpOk && <StatTile label="Business Profile views" icon={MapPin} color={CHAPTER_COLORS[0]} source="GBP" format={fmtInt}
               value={pick(b, "impressions")} previous={prevOf(b, "impressions")} mom={momOf(b, "impressions")} yoy={yoyOf(b, "impressions")} spark={spark(d.gbpTrend, "impressions")} />}
             {d.gbpReviews && <StatTile label="Google rating" icon={Trophy} color={CHAPTER_COLORS[0]} source="GBP" format={(v) => (v == null ? "—" : `${v.toFixed(2)} ★`)}
@@ -110,7 +131,7 @@ export function ReportBody({ d, opts }: { d: ReportData; opts: ReportOptions }) 
       </Chapter>
 
       {/* ---------------------------------------------------------------- 02 */}
-      <Chapter n={2} id="ch-02" icon={BarChart3} title="Website Traffic & Sources"
+      <Chapter n={no(CH.traffic)} id="ch-02" icon={BarChart3} title="Website Traffic & Sources"
         subtitle="How people arrive at the website and what they do first" sources={ga4Ok ? ["Google Analytics 4"] : []}>
         {!ga4Ok ? (
           <Unavailable title="Google Analytics 4 isn't connected or has no data for this period" body="Connect GA4 to see traffic by source, device and landing page." />
@@ -147,7 +168,7 @@ export function ReportBody({ d, opts }: { d: ReportData; opts: ReportOptions }) 
       </Chapter>
 
       {/* ---------------------------------------------------------------- 03 */}
-      <Chapter n={3} id="ch-03" icon={MapPin} title="Google Business Profile Performance"
+      <Chapter n={no(CH.gbp)} id="ch-03" icon={MapPin} title="Google Business Profile Performance"
         subtitle="Local visibility, reviews, map rankings, calls, website visits and direction requests"
         sources={[gbpOk && "Google Business Profile", gbpExtrasOk && "Local Brand Manager"].filter(Boolean) as string[]}>
         {d.gbpCoverage && (
@@ -242,7 +263,7 @@ export function ReportBody({ d, opts }: { d: ReportData; opts: ReportOptions }) 
       </Chapter>
 
       {/* ---------------------------------------------------------------- 04 */}
-      <Chapter n={4} id="ch-04" icon={Search} title="Search Console & Keyword Performance"
+      <Chapter n={no(CH.gsc)} id="ch-04" icon={Search} title="Search Console & Keyword Performance"
         subtitle="Organic visibility, keyword movement and SEO opportunities" sources={gscOk ? ["Google Search Console"] : []}>
         {!gscOk ? (
           <Unavailable title="Search Console isn't connected or has no data for this period" body="Connect Search Console to see clicks, impressions, CTR, position and keyword opportunities." />
@@ -351,9 +372,75 @@ export function ReportBody({ d, opts }: { d: ReportData; opts: ReportOptions }) 
         </>}
       </Chapter>
 
+
+      {/* ---------------------------------------------------------------- Bing */}
+      {bg && (
+        <Chapter n={no(CH.bing)} id="ch-bing" icon={Globe} title={CH.bing}
+          subtitle="Clicks, impressions, rankings and crawl health in Bing search" sources={["Bing Webmaster Tools"]}>
+          {!bg.totals.current?.has_data ? (
+            <Unavailable title="No Bing data for this period" body={`Bing data is stored from ${bg.coverage?.first ?? "?"} to ${bg.coverage?.last ?? "?"}.`} />
+          ) : <>
+            <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
+              <StatTile label="Bing clicks" icon={MousePointerClick} color={CHAPTER_COLORS[4]} source="Bing" format={fmtInt}
+                value={pick(bg.totals, "clicks")} previous={prevOf(bg.totals, "clicks")} mom={momOf(bg.totals, "clicks")} yoy={yoyOf(bg.totals, "clicks")} spark={spark(bg.trend, "clicks")} />
+              <StatTile label="Bing impressions" icon={Eye} color={CHAPTER_COLORS[4]} source="Bing" format={fmtInt}
+                value={pick(bg.totals, "impressions")} previous={prevOf(bg.totals, "impressions")} mom={momOf(bg.totals, "impressions")} yoy={yoyOf(bg.totals, "impressions")} spark={spark(bg.trend, "impressions")} />
+              <StatTile label="Bing CTR" icon={Target} color={CHAPTER_COLORS[4]} source="Bing" format={pct2}
+                value={pick(bg.totals, "ctr")} previous={prevOf(bg.totals, "ctr")} mom={momOf(bg.totals, "ctr")} yoy={yoyOf(bg.totals, "ctr")} />
+              <StatTile label="Bing average position" icon={TrendingUp} color={CHAPTER_COLORS[4]} source="Bing" format={fmtDecimal} higherIsBetter={false}
+                value={pick(bg.totals, "position")} previous={prevOf(bg.totals, "position")} mom={momOf(bg.totals, "position")} yoy={yoyOf(bg.totals, "position")}
+                hint="Impression-weighted average of Bing's weekly query positions. Lower is better." />
+            </div>
+            {!opts.executive && (
+              <MetricTrend title="Bing search over time" source="Bing" expanded={opts.variant === "print"} options={[
+                { key: "clicks", label: "Clicks", data: dailySeries(bg.trend, "clicks", r) },
+                { key: "impressions", label: "Impressions", data: dailySeries(bg.trend, "impressions", r) },
+                { key: "ctr", label: "CTR", format: "percent", data: dailySeries(bg.trend, "ctr", r, "ratio") },
+              ]} />
+            )}
+            {gscOk && (
+              <ReportTable<{ metric: string; google: string; bing: string }> title="Google vs Bing (this period)" source="GSC · Bing" empty="" rows={[
+                { metric: "Clicks", google: fmtInt(pick(s, "clicks")), bing: fmtInt(pick(bg.totals, "clicks")) },
+                { metric: "Impressions", google: fmtInt(pick(s, "impressions")), bing: fmtInt(pick(bg.totals, "impressions")) },
+                { metric: "CTR", google: pct2(pick(s, "ctr")), bing: pct2(pick(bg.totals, "ctr")) },
+                { metric: "Average position", google: fmtDecimal(pick(s, "position")), bing: fmtDecimal(pick(bg.totals, "position")) },
+              ]} columns={[
+                { label: "Metric", render: (x) => x.metric }, { label: "Google", align: "right", render: (x) => x.google }, { label: "Bing", align: "right", render: (x) => x.bing },
+              ]} />
+            )}
+            <Findings items={[
+              changeText("Bing clicks", pick(bg.totals, "clicks"), prevOf(bg.totals, "clicks"), { basisLabel: opts.basisLabel }),
+              changeText("Bing impressions", pick(bg.totals, "impressions"), prevOf(bg.totals, "impressions"), { basisLabel: opts.basisLabel }),
+              bg.crawl ? `Bing has ${fmtInt(bg.crawl.inIndex)} pages in its index and counts ${fmtInt(bg.crawl.inLinks)} inbound links; it crawled ${fmtInt(bg.crawl.crawled)} pages with ${fmtInt(bg.crawl.errors)} crawl errors in this period.` : null,
+            ].filter((x): x is string => Boolean(x))} />
+            {!opts.executive && (
+              <ReportTable<Row> title="Top Bing queries" source="Bing" empty="No query data for this period." rows={bg.queries}
+                columns={[
+                  { label: "Query", render: (x) => <span className="break-words">{str(x.query)}</span> },
+                  { label: "Clicks", align: "right", render: (x) => fmtInt(num(x.clicks)) },
+                  { label: "Impressions", align: "right", render: (x) => fmtInt(num(x.impressions)) },
+                  { label: "CTR", align: "right", render: (x) => pct2(num(x.ctr)) },
+                  { label: "Position", align: "right", render: (x) => fmtDecimal(num(x.position)) },
+                ]} />
+            )}
+            {!opts.executive && (
+              <ReportTable<Row> title="Top Bing pages" source="Bing" empty="No page data for this period." rows={bg.pages}
+                columns={[
+                  { label: "Page", render: (x) => <span className="break-all">{urlLabel(x.page)}</span> },
+                  { label: "Clicks", align: "right", render: (x) => fmtInt(num(x.clicks)) },
+                  { label: "Impressions", align: "right", render: (x) => fmtInt(num(x.impressions)) },
+                  { label: "Position", align: "right", render: (x) => fmtDecimal(num(x.position)) },
+                ]} />
+            )}
+            <p className="text-xs text-muted">Bing reports query and page statistics in weekly buckets; weeks starting inside the period are included.</p>
+          </>}
+          {detail("/bing", "Full Bing analysis")}
+        </Chapter>
+      )}
+
       {/* ---------------------------------------------------------------- 05 */}
       {(!opts.executive || d.clarity) && (
-        <Chapter n={5} id="ch-05" icon={Activity} title="User Behavior & Conversion Analysis"
+        <Chapter n={no(CH.behavior)} id="ch-05" icon={Activity} title="User Behavior & Conversion Analysis"
           subtitle="Landing page engagement, key events and behavioural evidence"
           sources={[ga4Ok && !opts.executive && "Google Analytics 4", d.clarity && "Microsoft Clarity"].filter(Boolean) as string[]}>
           {ga4Ok && !opts.executive && (
@@ -374,11 +461,11 @@ export function ReportBody({ d, opts }: { d: ReportData; opts: ReportOptions }) 
       )}
 
       {/* ---------------------------------------------------------------- 06/07 */}
-      <Chapter n={opts.executive && !d.clarity ? 5 : 6} id="ch-06" icon={Sparkles} title="AI SEO Insights"
+      <Chapter n={no(CH.ai)} id="ch-06" icon={Sparkles} title="AI SEO Insights"
         subtitle="Evidence-based interpretation of the data above">
         <AiInsightsBlock d={d} linked={opts.variant === "dashboard"} />
       </Chapter>
-      <Chapter n={opts.executive && !d.clarity ? 6 : 7} id="ch-07" icon={CalendarCheck} title="30-Day SEO Strategy"
+      <Chapter n={no(CH.strategy)} id="ch-07" icon={CalendarCheck} title="30-Day SEO Strategy"
         subtitle="Prioritised plan for the next month">
         <StrategyBlock d={d} linked={opts.variant === "dashboard"} fallback={<>
         {o && o.quick_wins.length + o.declining_keywords.length + o.decaying_pages.length > 0 ? (
@@ -398,7 +485,7 @@ export function ReportBody({ d, opts }: { d: ReportData; opts: ReportOptions }) 
       <footer className="border-t border-border pt-6 text-xs text-muted">
         <p className="flex items-center gap-1.5"><Trophy className="size-3.5" aria-hidden /> Figures come directly from connected Google APIs and are never estimated. Unavailable data is labelled, never shown as zero.</p>
         <p className="mt-1 flex items-center gap-1.5"><Globe className="size-3.5" aria-hidden /> GA4 dates use the property&apos;s time zone; Search Console dates are Pacific Time. GA4 users are summed daily active users.</p>
-        <div className="mt-2 flex flex-wrap gap-1.5">{ga4Ok && <SourceTag>Google Analytics 4 API</SourceTag>}{gscOk && <SourceTag>Google Search Console API</SourceTag>}{gbpOk && <SourceTag>Business Profile Performance API</SourceTag>}{gbpExtrasOk && <SourceTag>Local Brand Manager API</SourceTag>}{d.clarity && <SourceTag>Microsoft Clarity Data Export API</SourceTag>}</div>
+        <div className="mt-2 flex flex-wrap gap-1.5">{ga4Ok && <SourceTag>Google Analytics 4 API</SourceTag>}{gscOk && <SourceTag>Google Search Console API</SourceTag>}{gbpOk && <SourceTag>Business Profile Performance API</SourceTag>}{gbpExtrasOk && <SourceTag>Local Brand Manager API</SourceTag>}{bg && <SourceTag>Bing Webmaster Tools API</SourceTag>}{d.clarity && <SourceTag>Microsoft Clarity Data Export API</SourceTag>}</div>
       </footer>
     </div>
   );
