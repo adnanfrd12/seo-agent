@@ -4,8 +4,10 @@ import { activeClientIds } from "@/lib/activity";
 import { generateAlerts } from "@/lib/alerts";
 import { AUTO_SHARE, BudgetError, getSettings, spend } from "@/lib/dataforseo/budget";
 import { dfsConfigured } from "@/lib/dataforseo/client";
+import { runAiChecks } from "@/lib/ai/visibility";
 import { DEFAULT_AUDIT_PAGES, auditEstimate, pollAudit, startAudit, type AuditTask } from "@/lib/dataforseo/audit";
 import { runCompetitorAnalysis } from "@/lib/dataforseo/competitors";
+import { runRankChecks } from "@/lib/dataforseo/rank";
 import { refreshCore, resolveTarget, trackLinkChanges } from "@/lib/dataforseo/research";
 import { serverEnv } from "@/lib/env";
 import { loggedRun } from "@/lib/jobs/log";
@@ -27,6 +29,8 @@ const LINK_SHARE = 0.45;
 /** Cumulative share of the daily cap after which weekly site audits stop starting. */
 const AUDIT_SHARE = 0.55;
 const AUDIT_EVERY_DAYS = 7;
+/** Cumulative share of the daily cap after which weekly rank checks stop. */
+const RANK_SHARE = 0.58;
 
 /**
  * Daily. Order of work, all inside the automatic budget (60% of the daily cap set on the Integrations page):
@@ -119,6 +123,22 @@ async function handle(request: NextRequest) {
             }
             out.audits = { started, stopped: auditStopped };
 
+            // 1d. weekly rank checks for the keywords each active client tracks (a few cents per client)
+            let ranked = 0, rankedCost = 0;
+            let rankStopped: string | null = null;
+            for (const id of ids.filter((x) => active.has(x))) {
+              if (Date.now() > deadline) { rankStopped = "time"; break; }
+              if ((await spentNow()) >= cap * RANK_SHARE) { rankStopped = "budget"; break; }
+              const target = await resolveTarget(admin, id);
+              if (!target || !target.auto_refresh) continue;
+              try {
+                const r = await runRankChecks({ admin, clientId: id, source: "auto" }, target, { deadline });
+                ranked += r.checked; rankedCost += r.cost;
+                if (r.stopped === "budget") { rankStopped = "budget"; break; }
+              } catch { /* tables not created yet, or one client failing, never stops the rest */ }
+            }
+            out.rankChecks = { keywordsChecked: ranked, cost: Number(rankedCost.toFixed(4)), stopped: rankStopped };
+
             // 2. weekly core refresh, stalest first
             const { data: cached } = await admin.from("dfs_cache").select("client_id, fetched_at").eq("endpoint", "summary");
             const lastCore = new Map((cached ?? []).map((r) => [r.client_id as string, Date.parse(r.fetched_at as string)]));
@@ -140,6 +160,25 @@ async function handle(request: NextRequest) {
         }
       } else {
         out.skipped = "DataForSEO not configured";
+      }
+
+      // 2b. weekly AI visibility checks (your Anthropic key, not DataForSEO) for active clients that track questions
+      if (process.env.ANTHROPIC_API_KEY && Date.now() < deadline) {
+        try {
+          const active = await activeClientIds(admin);
+          const { data: withPrompts } = await admin.from("ai_prompts").select("client_id");
+          const wanted = new Set((withPrompts ?? []).map((r) => r.client_id as string));
+          let aiChecked = 0, aiCost = 0;
+          for (const id of ids.filter((x) => active.has(x) && wanted.has(x))) {
+            if (Date.now() > deadline) break;
+            const target = await resolveTarget(admin, id);
+            if (!target) continue;
+            const { data: s } = await admin.from("clients").select("settings").eq("id", id).maybeSingle();
+            const r = await runAiChecks(admin, id, target.domain, { deadline, search: (s?.settings as { ai_search?: boolean } | null)?.ai_search !== false });
+            aiChecked += r.checked; aiCost += r.cost;
+          }
+          out.aiVisibility = { questionsChecked: aiChecked, cost: Number(aiCost.toFixed(3)) };
+        } catch { /* tables not created yet */ }
       }
 
       // 3. alerts for every client (reads stored data only)

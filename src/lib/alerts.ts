@@ -4,6 +4,8 @@ import { shiftDays, todayIn } from "@/lib/analytics/range";
 import { loadCompetitors } from "@/lib/dataforseo/competitors";
 import { detectLinkSpike, type LinkChange, type LinkChanges } from "@/lib/dataforseo/research";
 import type { AuditResult } from "@/lib/dataforseo/audit";
+import { loadAi } from "@/lib/ai/visibility";
+import { loadRanks, movers, RANK_DEPTH } from "@/lib/dataforseo/rank";
 import { emailClientAlerts } from "@/lib/notify";
 
 /**
@@ -89,6 +91,20 @@ export async function generateAlerts(admin: SupabaseClient, clientId: string, ti
     if (p && errs - p.errors >= 3) await put("audit_errors", "warning", `Site audit found ${errs - p.errors} new errors`, `${p.errors} → ${errs} error instances since the audit on ${p.date}. Open Site Audit → Errors to see the pages.`, `audit_errors:${day}`, { errs, prev: p.errors });
     else if (p && p.score !== null && audit.score !== null && p.score - audit.score >= 5) await put("audit_score", "warning", `Site on-page score dropped ${p.score - audit.score} points`, `${p.score} → ${audit.score} since the audit on ${p.date}. Open Site Audit to see what changed.`, `audit_score:${day}`, { score: audit.score, prev: p.score });
     else if (!p && errs >= 5) await put("audit_errors", "info", `First site audit found ${errs} errors`, "Open Site Audit → Errors for the pages and how to fix them.", `audit_errors:${day}`, { errs });
+  }
+
+  // 3d. tracked keywords that moved a lot since the previous weekly check
+  const rk = await loadRanks(admin, clientId);
+  if (rk.ok && rk.lastChecked) {
+    const { dropped, gained } = movers(rk.rows);
+    if (dropped.length) await put("rank_drop", "warning", `${dropped.length} tracked keyword${dropped.length > 1 ? "s" : ""} dropped in Google`, dropped.slice(0, 3).map((r) => `"${r.keyword}" ${r.previous ?? `${RANK_DEPTH}+`} → ${r.position ?? `not in top ${RANK_DEPTH}`}`).join("; ") + ". Open Rank Tracking for the details.", `rank_drop:${rk.lastChecked}`, { count: dropped.length });
+    if (gained.length) await put("rank_gain", "positive", `${gained.length} tracked keyword${gained.length > 1 ? "s" : ""} moved up in Google`, gained.slice(0, 3).map((r) => `"${r.keyword}" ${r.previous ?? `${RANK_DEPTH}+`} → ${r.position}`).join("; ") + ".", `rank_gain:${rk.lastChecked}`, { count: gained.length });
+  }
+
+  // 3e. AI visibility fell since the previous weekly check
+  const av = await loadAi(admin, clientId);
+  if (av.ok && av.lastChecked && av.score !== null && av.previousScore !== null && av.previousScore - av.score >= 15) {
+    await put("ai_visibility", "warning", `AI visibility fell from ${av.previousScore}% to ${av.score}%`, "Fewer tracked questions name or cite the business in AI answers. Open AI Visibility to see which ones and who is cited instead.", `ai_visibility:${av.lastChecked}`, { score: av.score, prev: av.previousScore });
   }
 
   // 4. competitors gaining ground
