@@ -2,7 +2,7 @@ import "server-only";
 import type { SupabaseClient } from "@supabase/supabase-js";
 import { decryptSecret } from "@/lib/crypto";
 import {
-  BingError, bingDate, crawlStats, keywordStats, pageQueryStats, pageStats, queryStats, rankAndTraffic, siteDetails, type BingQueryStat,
+  BingError, bingDate, crawlStats, userSites, keywordStats, pageQueryStats, pageStats, queryStats, rankAndTraffic, siteDetails, type BingQueryStat,
 } from "@/lib/bing/api";
 import type { SyncResult } from "./types";
 
@@ -123,11 +123,18 @@ export async function syncBing(
     }],
   ];
 
+  let keyChecked: boolean | null = null; // is the API key itself valid? (one free call, made only when a step is refused)
   for (const [name, run] of steps) {
     try {
       written[name] = await run();
     } catch (e) {
-      if (e instanceof BingError && e.kind === "auth") return { written, failures: { ...failures, [name]: e.message }, authError: e };
+      if (e instanceof BingError && e.kind === "auth") {
+        if (keyChecked === null) keyChecked = await userSites(key).then(() => true, () => false);
+        if (!keyChecked) return { written, failures: { ...failures, [name]: e.message }, authError: e };
+        // the key works, so Bing only refused this report for this site: keep going with the rest
+        failures[name] = `Bing didn't allow the ${name} report for this site (the API key itself is valid).`;
+        continue;
+      }
       failures[name] = (e instanceof Error ? e.message : "failed").slice(0, 300);
     }
   }

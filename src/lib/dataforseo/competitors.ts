@@ -195,7 +195,8 @@ export async function loadCompetitors(supabase: SupabaseClient, clientId: string
   const target = t as TargetFull | null;
   const rows = cache ?? [];
   const autoRow = rows.find((r) => r.endpoint === "competitors_auto");
-  const auto = autoRow ? { data: autoRow.data as AutoCompetitor[], fetchedAt: autoRow.fetched_at as string } : null;
+  const own = target?.domain.toLowerCase();
+  const auto = autoRow ? { data: (autoRow.data as AutoCompetitor[]).filter((a) => a.domain.toLowerCase() !== own), fetchedAt: autoRow.fetched_at as string } : null;
   const list = (endpoint: string) => {
     const seen = new Set<string>();
     return rows.filter((r) => r.endpoint === endpoint).flatMap((r) => {

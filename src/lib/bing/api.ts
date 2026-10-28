@@ -81,10 +81,9 @@ const SITE_METHODS = {
 export async function siteDetails(key: string, siteUrl: string): Promise<Record<string, unknown>> {
   const out: Record<string, unknown> = {};
   await Promise.all(Object.entries(SITE_METHODS).map(async ([name, method]) => {
-    try { out[name] = await call<unknown>(key, method, { siteUrl }); } catch (e) {
-      if (e instanceof BingError && e.kind === "auth") throw e;
-      out[name] = null;
-    }
+    // optional reports: Bing may refuse some of them for a site (roles, plan) even though the key is fine,
+    // so any failure here just leaves that block empty instead of marking the whole connection broken
+    try { out[name] = await call<unknown>(key, method, { siteUrl }); } catch { out[name] = null; }
   }));
   try { out.home_index = await call<unknown>(key, "GetUrlInfo", { siteUrl, url: siteUrl }); } catch { out.home_index = null; }
   // inbound links: pages of the site that have links pointing at them (paged)
