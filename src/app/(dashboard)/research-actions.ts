@@ -3,7 +3,7 @@
 import { revalidatePath } from "next/cache";
 import { z } from "zod";
 import { getSession } from "@/lib/analytics/client-context";
-import { BudgetError } from "@/lib/dataforseo/budget";
+import { BudgetError, DEFAULT_DAILY_BUDGET } from "@/lib/dataforseo/budget";
 import { DfsError, dfsConfigured } from "@/lib/dataforseo/client";
 import { marketByCode } from "@/lib/dataforseo/locations";
 import {
@@ -123,6 +123,19 @@ export async function researchKeywords(kind: KwKind, seed: string, location: num
     revalidatePath("/integrations");
     return { ok: true, data };
   } catch (e) { return { ok: false, error: fail(e).error }; }
+}
+
+/** Agency-wide spending settings: the daily limit and the automatic weekly refresh switch. */
+export async function saveDfsSettings(input: { dailyBudget: number; autoRefresh: boolean }): Promise<Result> {
+  const { client } = await getSession();
+  if (!client || !["owner", "admin"].includes(client.role)) return { ok: false, error: "Only owners and admins can change the spending limit." };
+  const parsed = z.object({ dailyBudget: z.number().min(0.1, "The limit must be at least $0.10").max(100, "The limit can't be more than $100"), autoRefresh: z.boolean() }).safeParse(input);
+  if (!parsed.success) return { ok: false, error: parsed.error.issues[0]?.message ?? "Invalid settings" };
+  const { error } = await createAdminClient().from("dfs_settings").upsert(
+    { id: 1, daily_budget: Math.round(parsed.data.dailyBudget * 100) / 100, auto_refresh: parsed.data.autoRefresh, updated_at: new Date().toISOString() }, { onConflict: "id" });
+  if (error) return { ok: false, error: "Could not save (has migration 20261028000017 been applied?)." };
+  refresh();
+  return { ok: true, message: `Saved: daily limit $${parsed.data.dailyBudget.toFixed(2)}${parsed.data.dailyBudget === DEFAULT_DAILY_BUDGET ? " (default)" : ""}.`, cost: 0 };
 }
 
 /** Estimated cost labels for the buttons (kept in one place with the real specs). */

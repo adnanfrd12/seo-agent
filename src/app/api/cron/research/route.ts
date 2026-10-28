@@ -1,6 +1,6 @@
 import { timingSafeEqual } from "node:crypto";
 import { NextResponse, type NextRequest } from "next/server";
-import { dailyBudget, AUTO_SHARE, spend } from "@/lib/dataforseo/budget";
+import { AUTO_SHARE, getSettings, spend } from "@/lib/dataforseo/budget";
 import { dfsConfigured } from "@/lib/dataforseo/client";
 import { refreshCore, resolveTarget } from "@/lib/dataforseo/research";
 import { serverEnv } from "@/lib/env";
@@ -24,9 +24,10 @@ const STALE_DAYS = 7;
 async function handle(request: NextRequest) {
   if (!authorized(request)) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   if (!dfsConfigured()) return NextResponse.json({ skipped: "DataForSEO not configured" });
-  // kill switch: set DATAFORSEO_AUTO_REFRESH=off to stop all scheduled spending without a code change
-  if (process.env.DATAFORSEO_AUTO_REFRESH?.trim().toLowerCase() === "off") return NextResponse.json({ skipped: "DATAFORSEO_AUTO_REFRESH is off" });
   const admin = createAdminClient();
+  // both come from the Integrations page: the daily budget and the automatic-refresh switch
+  const settings = await getSettings(admin);
+  if (!settings.autoRefresh) return NextResponse.json({ skipped: "Automatic refresh is turned off on the Integrations page" });
   const deadline = Date.now() + 270_000;
 
   const { data: clients } = await admin.from("clients").select("id");
@@ -42,7 +43,7 @@ async function handle(request: NextRequest) {
     if (Date.now() > deadline) { stopped = "time"; break; }
     let spentNow: number;
     try { spentNow = await spend(admin); } catch (e) { return NextResponse.json({ skipped: e instanceof Error ? e.message : "spend tracking unavailable" }); }
-    if (spentNow >= dailyBudget() * AUTO_SHARE) { stopped = "budget"; break; }
+    if (spentNow >= settings.dailyBudget * AUTO_SHARE) { stopped = "budget"; break; }
     const target = await resolveTarget(admin, id); // derives the domain from Bing / Search Console / Business Profile
     if (!target || !target.auto_refresh) continue;
     const rep = await refreshCore({ admin, clientId: id, source: "auto" }, target);

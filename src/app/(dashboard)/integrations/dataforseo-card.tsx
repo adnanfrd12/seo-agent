@@ -1,7 +1,8 @@
 import Link from "next/link";
-import { AUTO_SHARE, dailyBudget, PER_CLIENT_DAILY, spendHistory, spendOrZero } from "@/lib/dataforseo/budget";
+import { AUTO_SHARE, DEFAULT_DAILY_BUDGET, getSettings, PER_CLIENT_SHARE, spendHistory, spendOrZero } from "@/lib/dataforseo/budget";
 import { dfsBalance, dfsConfigured } from "@/lib/dataforseo/client";
 import { createAdminClient } from "@/lib/supabase/admin";
+import { DataForSeoSettings } from "./dataforseo-settings";
 
 /** DataForSEO status: credentials, balance, today's spend against the cap, and the last 7 days. */
 export async function DataForSeoCard({ canEdit, clientId }: { canEdit: boolean; clientId: string }) {
@@ -13,7 +14,8 @@ export async function DataForSeoCard({ canEdit, clientId }: { canEdit: boolean; 
         admin.from("research_targets").select("client_id", { count: "exact", head: true }).eq("auto_refresh", true),
       ])
     : [null, 0, 0, [], null];
-  const cap = dailyBudget();
+  const settings = admin ? await getSettings(admin) : { dailyBudget: DEFAULT_DAILY_BUDGET, autoRefresh: true };
+  const cap = settings.dailyBudget;
   const pct = Math.min(100, (today / cap) * 100);
 
   return (
@@ -37,9 +39,10 @@ export async function DataForSeoCard({ canEdit, clientId }: { canEdit: boolean; 
             <dd>${today.toFixed(2)} of ${cap.toFixed(2)} daily cap
               <span className="ml-2 inline-block h-1.5 w-24 overflow-hidden rounded-full bg-surface-muted align-middle"><span className="block h-full rounded-full bg-accent" style={{ width: `${pct}%` }} /></span>
             </dd>
-            <dt className="text-muted">This client today</dt><dd>${mine.toFixed(2)} of ${Math.min(PER_CLIENT_DAILY, cap).toFixed(2)} per-client cap</dd>
-            <dt className="text-muted">Automatic refresh</dt><dd>{targets?.count ?? 0} clients, weekly, using at most ${(cap * AUTO_SHARE).toFixed(2)}/day of the cap</dd>
+            <dt className="text-muted">This client today</dt><dd>${mine.toFixed(2)} of ${(cap * PER_CLIENT_SHARE).toFixed(2)} per-client cap</dd>
+            <dt className="text-muted">Automatic refresh</dt><dd>{settings.autoRefresh ? `${targets?.count ?? 0} clients, weekly, using at most $${(cap * AUTO_SHARE).toFixed(2)}/day of the limit` : "Off"}</dd>
           </dl>
+          <DataForSeoSettings dailyBudget={cap} autoRefresh={settings.autoRefresh} defaultBudget={DEFAULT_DAILY_BUDGET} />
           {history.length > 0 && (
             <details className="mt-3 text-sm">
               <summary className="cursor-pointer font-medium text-accent">Last 7 days</summary>
@@ -55,7 +58,7 @@ export async function DataForSeoCard({ canEdit, clientId }: { canEdit: boolean; 
       )}
       <p className="mt-3 text-xs text-muted">
         Open <Link href="/backlinks" className="text-accent hover:underline">Backlinks</Link>, <Link href="/organic-keywords" className="text-accent hover:underline">Organic Keywords</Link> or{" "}
-        <Link href="/keyword-research" className="text-accent hover:underline">Keyword Research</Link>. Opening pages never spends credit. Raise or lower the cap with DATAFORSEO_DAILY_BUDGET_USD.
+        <Link href="/keyword-research" className="text-accent hover:underline">Keyword Research</Link>. Opening pages never spends credit.
       </p>
     </section>
   );

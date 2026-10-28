@@ -25,7 +25,6 @@ const schema = z.object({
   // DataForSEO (backlinks, organic keywords, keyword research) and its spending guard
   DATAFORSEO_LOGIN: z.string().optional(),
   DATAFORSEO_PASSWORD: z.string().optional(),
-  DATAFORSEO_DAILY_BUDGET_USD: z.string().optional(),
 });
 
 export type ServerEnv = z.infer<typeof schema>;

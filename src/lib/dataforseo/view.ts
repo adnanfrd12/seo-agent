@@ -1,6 +1,6 @@
 import "server-only";
 import { getSession } from "@/lib/analytics/client-context";
-import { dailyBudget, spendOrZero } from "./budget";
+import { getSettings, spendOrZero } from "./budget";
 import { dfsBalance, dfsConfigured } from "./client";
 import { loadCache, resolveTarget } from "./research";
 import { createAdminClient } from "@/lib/supabase/admin";
@@ -21,7 +21,7 @@ export async function researchPage() {
   if (configured && canEdit) await resolveTarget(createAdminClient(), client.id);
   const cache = await loadCache(supabase, client.id);
   let budget: { spent: number; cap: number; balance: number | null } | null = null;
-  if (configured && canEdit) budget = { spent: await spendOrZero(createAdminClient()), cap: dailyBudget(), balance: await dfsBalance() };
+  if (configured && canEdit) budget = { spent: await spendOrZero(createAdminClient()), cap: (await getSettings(createAdminClient())).dailyBudget, balance: await dfsBalance() };
   return { client, canEdit, configured, cache, budget };
 }
 

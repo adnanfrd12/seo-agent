@@ -3,19 +3,24 @@ import type { SupabaseClient } from "@supabase/supabase-js";
 
 /**
  * Spending guard. Every paid call is logged in dfs_spend and checked here first:
- *  - total spend per UTC day can't pass DATAFORSEO_DAILY_BUDGET_USD (default 1.50)
+ *  - total spend per UTC day can't pass the daily budget set on the Integrations page (default $1.50)
  *  - scheduled (auto) refreshes may only use AUTO_SHARE of that, leaving room for button clicks
- *  - one client can't use more than PER_CLIENT_DAILY of the cap on its own
+ *  - one client can't use more than PER_CLIENT_SHARE (40%) of the cap on its own
  */
 export type SpendSource = "auto" | "manual";
 export const AUTO_SHARE = 0.6;
-export const PER_CLIENT_DAILY = 0.6;
+export const PER_CLIENT_SHARE = 0.4;
+export const DEFAULT_DAILY_BUDGET = 1.5;
 
 export class BudgetError extends Error {}
 
-export function dailyBudget(): number {
-  const v = Number(process.env.DATAFORSEO_DAILY_BUDGET_USD);
-  return Number.isFinite(v) && v > 0 ? v : 1.5;
+export interface DfsSettings { dailyBudget: number; autoRefresh: boolean }
+
+/** The agency-wide spending settings (Integrations page). Falls back to $1.50 / on if the row is unavailable. */
+export async function getSettings(admin: SupabaseClient): Promise<DfsSettings> {
+  const { data } = await admin.from("dfs_settings").select("daily_budget, auto_refresh").eq("id", 1).maybeSingle();
+  const b = Number(data?.daily_budget);
+  return { dailyBudget: Number.isFinite(b) && b > 0 ? b : DEFAULT_DAILY_BUDGET, autoRefresh: data?.auto_refresh ?? true };
 }
 
 const today = () => new Date().toISOString().slice(0, 10);
@@ -48,16 +53,16 @@ export async function spendHistory(admin: SupabaseClient, days = 7) {
 
 /** Throws BudgetError when a call of roughly `estimate` dollars would break a cap. */
 export async function assertBudget(admin: SupabaseClient, clientId: string, estimate: number, source: SpendSource) {
-  const cap = dailyBudget();
+  const cap = (await getSettings(admin)).dailyBudget;
   const total = await spend(admin);
   const limit = source === "auto" ? cap * AUTO_SHARE : cap;
   if (total + estimate > limit) {
     throw new BudgetError(source === "auto"
       ? `Scheduled refresh paused: today's automatic budget ($${(cap * AUTO_SHARE).toFixed(2)}) is used. It resumes tomorrow.`
-      : `Daily API budget reached ($${total.toFixed(2)} of $${cap.toFixed(2)} spent today). Try again tomorrow, or raise DATAFORSEO_DAILY_BUDGET_USD.`);
+      : `Daily API budget reached ($${total.toFixed(2)} of $${cap.toFixed(2)} spent today). Try again tomorrow, or raise the daily budget on the Integrations page.`);
   }
   const mine = await spend(admin, clientId);
-  if (mine + estimate > Math.min(PER_CLIENT_DAILY, cap)) {
+  if (mine + estimate > cap * PER_CLIENT_SHARE) {
     throw new BudgetError(`This client has reached its daily API limit ($${mine.toFixed(2)} spent today). Everything fetched so far is saved; try again tomorrow.`);
   }
 }
