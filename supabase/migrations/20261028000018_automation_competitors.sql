@@ -1,10 +1,11 @@
+-- Safe to run more than once (every statement is idempotent).
 -- Automation, observability, alerts and daily competitor intelligence.
 -- Writes happen in trusted server code (service role); members can READ their own client's rows.
 
 -- ------------------------------------------------------------ scheduled job log
 -- One row per scheduled run (sync, research, ai ...) so the app can show "last run / next run / errors".
 -- No client policy on purpose: only the server reads it (admin client), tenants never see it.
-create table public.cron_runs (
+create table if not exists public.cron_runs (
   id uuid primary key default gen_random_uuid(),
   job text not null,
   started_at timestamptz not null default now(),
@@ -13,14 +14,14 @@ create table public.cron_runs (
   summary jsonb not null default '{}'::jsonb,
   error text
 );
-create index cron_runs_job_idx on public.cron_runs (job, started_at desc);
+create index if not exists  on public.cron_runs (job, started_at desc);
 alter table public.cron_runs enable row level security;
 revoke all on public.cron_runs from anon, authenticated;
 
 -- ------------------------------------------------------------ client activity
 -- Which clients are actually used: daily competitor analysis and weekly AI refreshes are
 -- prioritised for clients opened in the last 14 days, so the API budget goes where it matters.
-create table public.client_activity (
+create table if not exists public.client_activity (
   client_id uuid primary key references public.clients(id) on delete cascade,
   last_seen_at timestamptz not null default now()
 );
@@ -28,7 +29,7 @@ alter table public.client_activity enable row level security;
 revoke all on public.client_activity from anon, authenticated;
 
 -- ------------------------------------------------------------ alerts
-create table public.client_alerts (
+create table if not exists public.client_alerts (
   id uuid primary key default gen_random_uuid(),
   client_id uuid not null references public.clients(id) on delete cascade,
   kind text not null,
@@ -41,12 +42,12 @@ create table public.client_alerts (
   seen_at timestamptz,
   unique (client_id, dedupe_key)
 );
-create index client_alerts_client_idx on public.client_alerts (client_id, created_at desc);
+create index if not exists  on public.client_alerts (client_id, created_at desc);
 
 -- ------------------------------------------------------------ competitor history
 -- One row per domain per day (the client's own domain has is_self = true), so visibility trends
 -- and "emerging threat" detection come from our own history, not extra API calls.
-create table public.competitor_snapshots (
+create table if not exists public.competitor_snapshots (
   id uuid primary key default gen_random_uuid(),
   client_id uuid not null references public.clients(id) on delete cascade,
   domain text not null,
@@ -58,7 +59,7 @@ create table public.competitor_snapshots (
   created_at timestamptz not null default now(),
   unique (client_id, domain, snapshot_date)
 );
-create index competitor_snapshots_client_idx on public.competitor_snapshots (client_id, snapshot_date desc);
+create index if not exists  on public.competitor_snapshots (client_id, snapshot_date desc);
 
 -- competitor management: how competitors are chosen, and which are hidden or pinned
 alter table public.research_targets
@@ -73,6 +74,7 @@ begin
     execute format('revoke all on public.%I from anon', t);
     execute format('revoke insert, update, delete, truncate on public.%I from authenticated', t);
     execute format('grant select on public.%I to authenticated', t);
+    execute format('drop policy if exists %I on public.%I', t || '_select', t);
     execute format('create policy %I on public.%I for select to authenticated using (public.is_client_member(client_id))', t || '_select', t);
   end loop;
 end $$;
