@@ -1,6 +1,6 @@
 import {
   BarChart3, CalendarCheck, Globe, Link2, ListOrdered, SearchCheck, Swords, CalendarRange, FileUp, History, LayoutDashboard, Lightbulb, MapPin, MousePointerClick, Plug,
-  Bot, ScanSearch, Search, Settings, Sparkles, TrendingUp, type LucideIcon,
+  Bot, GraduationCap, ScanSearch, Search, Settings, Sparkles, TrendingUp, type LucideIcon,
 } from "lucide-react";
 
 export interface NavItem { href: string; label: string; icon: LucideIcon }
@@ -33,6 +33,7 @@ export const NAV: NavGroup[] = [
   {
     title: "AI Intelligence",
     items: [
+      { href: "/coach", label: "SEO Coach", icon: GraduationCap },
       { href: "/insights", label: "AI SEO Insights", icon: Sparkles },
       { href: "/opportunities", label: "SEO Opportunities", icon: Lightbulb },
       { href: "/strategy", label: "30-Day Strategy", icon: CalendarCheck },
