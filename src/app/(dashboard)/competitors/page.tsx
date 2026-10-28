@@ -1,6 +1,8 @@
+import Link from "next/link";
 import { AlertTriangle, Info, TrendingUp } from "lucide-react";
 import { KpiCard } from "@/components/dashboard/kpi-card";
-import { EmptyState, PageHeader } from "@/components/dashboard/page-header";
+import { EmptyState } from "@/components/dashboard/page-header";
+import { TabHeader } from "@/components/dashboard/tab-header";
 import { CompareTrend } from "@/components/research/compare-trend";
 import { CompetitorManager, DiscoveredActions, ReanalyzeButton } from "@/components/research/competitor-controls";
 import { SpendLine } from "@/components/research/chrome";
@@ -32,7 +34,13 @@ export default async function CompetitorsPage() {
   const page = await researchPage();
   if (!page) return null;
   const { client, canEdit, configured, budget } = page;
-  const header = <PageHeader title="Competitor Intelligence" description="How your organic visibility compares with the sites that compete for the same searches. Analysed automatically every 24 hours; this page shows the latest stored analysis." />;
+  const header = <TabHeader source="dfs" title="Competitor Intelligence" description="How your organic visibility compares with the sites that compete for the same searches. Analysed automatically every 24 hours; this page shows the latest stored analysis." guide={[
+    { term: "Ranking keywords", text: "Google keywords a site ranks for in the top 100. A modelled estimate from DataForSEO's index." },
+    { term: "Estimated traffic", text: "Visits the rankings would bring, based on search volume and position. A consistent yardstick, not measured visits." },
+    { term: "Keyword gap", text: "Keywords a competitor ranks top-20 for that you don't rank for at all: content you could create." },
+    { term: "Head to head", text: "Keywords you both rank for, with both positions. Where they outrank you is the fastest place to gain." },
+    { term: "Relative change", text: "Each site's ranking keywords indexed to the first snapshot (100), so a small site and a big brand can be compared by direction." },
+  ]} />;
   if (!configured) {
     return <>{header}<EmptyState title="DataForSEO isn't configured" body="Add DATAFORSEO_LOGIN and DATAFORSEO_PASSWORD to the environment, then redeploy." action={{ href: "/integrations", label: "Open Integrations" }} /></>;
   }
@@ -42,6 +50,9 @@ export default async function CompetitorsPage() {
     return <>{header}<EmptyState title="No website to analyse yet" body="Connect Bing, Search Console or Business Profile so the website can be detected. If you just updated the app, ask an admin to confirm the latest database migration is applied." action={{ href: "/integrations", label: "Open Integrations" }} /></>;
   }
   const { target } = comp;
+  const { data: aiRecs } = await supabase.from("analytics_insights")
+    .select("id, title, summary, priority, confidence, estimated_effort, recommended_action, expected_impact_hypothesis, success_metric, category, implementation_status")
+    .eq("client_id", client.id).in("category", ["competitor", "link_building"]).neq("implementation_status", "dismissed").order("created_at", { ascending: false }).limit(6);
   const next = nextRun("research");
   const today = todayIn("UTC");
   const analysedToday = comp.latestAt === today;
@@ -194,6 +205,25 @@ export default async function CompetitorsPage() {
                   initialSort={{ key: "volume", dir: "desc" }} note={`${fmtInt(g.total)} keywords in total; the top ${g.rows.length} by search volume are stored. Updated ${g.fetchedAt.slice(0, 10)}.`} />,
               })),
             ]} />
+          )}
+        </section>
+
+        <section className="rounded-xl border border-border bg-surface p-4" aria-label="AI competitor recommendations">
+          <h2 className="mb-1 text-sm font-semibold">AI recommendations from this data <span className="ml-1 rounded bg-accent-soft px-1.5 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-accent">ai interpretation</span></h2>
+          <p className="mb-3 text-xs text-muted">Written by AI from the competitor data above. They are hypotheses to test, never guaranteed outcomes.</p>
+          {(aiRecs ?? []).length === 0 ? (
+            <p className="text-sm text-muted">No competitor-specific recommendations yet. They are added to the next AI analysis, which refreshes weekly for active clients once new data is available. <Link href="/insights" className="text-accent hover:underline">Open AI Insights</Link></p>
+          ) : (
+            <ul className="space-y-3">
+              {(aiRecs ?? []).map((r) => (
+                <li key={r.id} className="rounded-lg border border-border p-3 text-sm">
+                  <p className="flex flex-wrap items-center gap-2 font-semibold">{r.title}<span className="rounded bg-surface-muted px-1.5 py-0.5 text-[10px] font-semibold uppercase text-muted">{r.priority} priority · {r.confidence} confidence · {r.estimated_effort} effort</span></p>
+                  <p className="mt-1 text-muted">{r.summary}</p>
+                  <p className="mt-2"><span className="font-medium">Next step: </span>{r.recommended_action}</p>
+                  <p className="mt-1 text-xs text-muted"><span className="font-medium">Hypothesis: </span>{r.expected_impact_hypothesis} <span className="font-medium">Measure: </span>{r.success_metric}</p>
+                </li>
+              ))}
+            </ul>
           )}
         </section>
 

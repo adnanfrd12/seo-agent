@@ -25,6 +25,10 @@ const schema = z.object({
   // DataForSEO (backlinks, organic keywords, keyword research) and its spending guard
   DATAFORSEO_LOGIN: z.string().optional(),
   DATAFORSEO_PASSWORD: z.string().optional(),
+  // optional notifications (off until set): ops webhook for failed jobs, email for critical client alerts
+  ALERT_WEBHOOK_URL: z.string().optional(),
+  RESEND_API_KEY: z.string().optional(),
+  ALERT_EMAIL_FROM: z.string().optional(),
 });
 
 export type ServerEnv = z.infer<typeof schema>;

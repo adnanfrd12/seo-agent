@@ -1,5 +1,5 @@
 import Link from "next/link";
-import { PageHeader } from "@/components/dashboard/page-header";
+import { TabHeader } from "@/components/dashboard/tab-header";
 import { Unavailable } from "@/components/report/report-ui";
 import { getSession } from "@/lib/analytics/client-context";
 import { fmtDecimal, fmtInt, fmtPercent, toNum } from "@/lib/analytics/format";
@@ -48,7 +48,7 @@ export default async function ImportsPage({ searchParams }: { searchParams: Prom
 
   return (
     <div className="mx-auto max-w-5xl space-y-8">
-      <PageHeader title="Import PDF Reports" description="Upload an existing SEO report. Figures are extracted for your review and kept separately from live API data." />
+      <TabHeader source={null} eyebrow="Reporting" title="Import PDF Reports" description="Upload an existing SEO report. Figures are extracted for your review and kept separately from live API data." />
       {error ? <Unavailable title="Database update needed" body="Apply migration 20261021000011 in Supabase to enable report imports." />
         : !process.env.ANTHROPIC_API_KEY ? <Unavailable title="AI isn't configured" body="Report extraction needs ANTHROPIC_API_KEY." />
         : canEdit ? <UploadForm /> : <p className="text-sm text-muted">Only owners and admins can import reports.</p>}

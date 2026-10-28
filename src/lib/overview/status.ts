@@ -1,5 +1,7 @@
 import "server-only";
+import { cache } from "react";
 import type { SupabaseClient } from "@supabase/supabase-js";
+import { createClient } from "@/lib/supabase/server";
 import { nextRun } from "@/lib/jobs/log";
 
 export type SourceHealth = "ok" | "stale" | "error" | "pending";
@@ -45,3 +47,6 @@ export async function loadDataStatus(supabase: SupabaseClient, clientId: string)
   const order = ["ga4", "gsc", "gbp", "lbm", "bing", "clarity", "dfs"];
   return out.sort((a, b) => order.indexOf(a.key) - order.indexOf(b.key));
 }
+
+/** Same data, de-duplicated within one request so a page header and the Overview can both ask for it. */
+export const getDataStatus = cache(async (clientId: string) => loadDataStatus(await createClient(), clientId));

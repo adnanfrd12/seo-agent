@@ -1,7 +1,10 @@
 import { MetricTrend } from "@/components/charts/metric-trend";
 import { FilterSelect } from "@/components/dashboard/filter-select";
 import { KpiCard } from "@/components/dashboard/kpi-card";
-import { EmptyState, PageHeader } from "@/components/dashboard/page-header";
+import { EmptyState } from "@/components/dashboard/page-header";
+import { Highlights } from "@/components/dashboard/highlights";
+import { TabHeader } from "@/components/dashboard/tab-header";
+import { movement, pickHighlights } from "@/lib/overview/highlights";
 import { RangeSelector } from "@/components/dashboard/range-selector";
 import { getSession } from "@/lib/analytics/client-context";
 import { fmtDecimal, fmtInt, fmtPercent, toNum } from "@/lib/analytics/format";
@@ -84,7 +87,7 @@ export default async function BingPage({ searchParams }: { searchParams: Promise
   if (scope.bing.length === 0) {
     return (
       <>
-        <PageHeader title={title} description="Bing organic search performance and crawl health." />
+        <TabHeader source="bing" title={title} description="How your website performs in Bing search, and how healthy it looks to Bing." />
         <EmptyState title="Bing isn't connected" body="Connect Bing Webmaster Tools with an API key and choose this client's site on the Integrations page."
           action={{ href: "/integrations", label: "Go to Integrations" }} />
       </>
@@ -99,8 +102,14 @@ export default async function BingPage({ searchParams }: { searchParams: Promise
   ]);
   const siteOptions = resourceOptions(scope.bing, "All sites (combined)");
   const header = (
-    <PageHeader title={title}
-      description={`Site: ${scope.label(scope.bing, scope.bingPick)} · last synced ${conn.data?.last_synced_at ? new Date(conn.data.last_synced_at).toLocaleString() : "never"} · Bing dates in UTC`} />
+    <TabHeader source="bing" title={title}
+      description={`How your website performs in Bing search, and how healthy it looks to Bing. Site: ${scope.label(scope.bing, scope.bingPick)} · Bing dates in UTC`}
+      guide={[
+          { term: "Clicks and impressions", text: "How often your site appeared in Bing results (impressions) and how often it was clicked." },
+          { term: "Average position", text: "Where you typically appear in Bing (1 = top). It is an impression-weighted average of Bing's weekly figures." },
+          { term: "Index and crawl", text: "Pages Bing has stored (index) and how often it visits (crawl). Crawl errors mean pages Bing couldn't read." },
+          { term: "Weekly data", text: "Bing reports queries and pages in weekly buckets, so they are less exact than daily Google data." },
+        ]} />
   );
   const filters = siteOptions && (
     <div className="mb-5 flex flex-wrap items-end gap-3"><FilterSelect label="Site" name="bsite" value={scope.bingPick?.id ?? ""} path={PATH} sp={sp} options={siteOptions} /></div>
@@ -121,6 +130,13 @@ export default async function BingPage({ searchParams }: { searchParams: Promise
     ["Other codes", "all_other_codes"], ["Blocked by robots.txt", "blocked_by_robots"], ["DNS failures", "dns_failures"], ["Timeouts", "connection_timeout"], ["Malware", "contains_malware"]] as const;
 
   const resources = (res.data ?? []) as { id: string; display_name: string | null; external_id: string; metadata: { bing?: BingMeta; keyword_volume?: Volume } | null }[];
+  const crawlErrPct = latest && Number(latest.crawled_pages) > 0 ? (Number(latest.crawl_errors) / Number(latest.crawled_pages)) * 100 : null;
+  const hl = pickHighlights([
+    movement("Bing clicks", pick(s.current, "clicks"), pick(s.previous, "clicks"), { fmt: fmtInt, minBase: 10, actionWhenBad: "Check the Queries table for terms that lost visibility." }),
+    movement("Bing impressions", pick(s.current, "impressions"), pick(s.previous, "impressions"), { fmt: fmtInt, minBase: 100 }),
+    movement("Average position", pick(s.current, "position"), pick(s.previous, "position"), { fmt: (n) => n.toFixed(1), lowerIsBetter: true, minPct: 5 }),
+    crawlErrPct != null && crawlErrPct >= 5 && { tone: "bad" as const, title: `${crawlErrPct.toFixed(0)}% of pages Bing crawled had errors`, detail: "Pages Bing can't read can't rank.", action: "Open Crawl health below and fix broken pages (4xx) or server errors (5xx)." },
+  ]);
   const pq = new Map<string, Summary["page_queries"]>();
   for (const r of s.page_queries) pq.set(r.page, [...(pq.get(r.page) ?? []), r]);
 
@@ -136,6 +152,7 @@ export default async function BingPage({ searchParams }: { searchParams: Promise
           action={{ href: "/integrations", label: "Open Integrations" }} />
       ) : (
         <>
+          <Highlights items={hl} />
           <section aria-label="Key metrics" className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
             {([
               { label: "Bing clicks", k: "clicks", format: fmtInt, higher: true },

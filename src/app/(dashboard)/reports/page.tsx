@@ -1,7 +1,7 @@
 import Link from "next/link";
 import { Printer } from "lucide-react";
 import { PdfDownloadButton } from "@/components/report/pdf-download";
-import { PageHeader } from "@/components/dashboard/page-header";
+import { TabHeader } from "@/components/dashboard/tab-header";
 import { getSession } from "@/lib/analytics/client-context";
 import { monthLabel, previousMonth, todayIn } from "@/lib/analytics/range";
 
@@ -18,7 +18,7 @@ export default async function ReportsPage() {
   if (!client) return null;
   return (
     <div className="mx-auto max-w-4xl">
-      <PageHeader title="Monthly Reports" description="Full monthly reports and executive summaries, rendered from stored data without the dashboard sidebar. Months with no connected data show unavailable sections, never zeros." />
+      <TabHeader source={null} eyebrow="Reporting" title="Monthly Reports" description="Full monthly reports and executive summaries, rendered from stored data without the dashboard sidebar. Months with no connected data show unavailable sections, never zeros." />
       <ul className="divide-y divide-border rounded-xl border border-border bg-surface">
         {months(client.timezone).map((m) => (
           <li key={m} className="flex flex-wrap items-center gap-3 px-4 py-3">

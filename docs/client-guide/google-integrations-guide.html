@@ -1,0 +1,364 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Connecting Your Google Accounts: Client Setup Guide</title>
+<style>
+  @page { size: A4; margin: 18mm 16mm 20mm;
+    @bottom-left { content: "SEO Insights · Google integration setup guide"; font: 8.5pt "Segoe UI", Arial, sans-serif; color: #8a8a94; }
+    @bottom-right { content: "Page " counter(page) " of " counter(pages); font: 8.5pt "Segoe UI", Arial, sans-serif; color: #8a8a94; } }
+  @page :first { margin: 0; @bottom-left { content: none; } @bottom-right { content: none; } }
+
+  :root { --ink: #16161a; --muted: #5d5d68; --line: #e3e3e8; --soft: #f5f5f7; --accent: #e8452c; --accent2: #f2701e; --accent-soft: #fdeee9;
+          --blue: #1a73e8; --blue-soft: #e8f0fe; --green: #1e8e4e; --green-soft: #e6f4ea; --amber: #b06d00; --amber-soft: #fff4dc; }
+  * { box-sizing: border-box; -webkit-print-color-adjust: exact; print-color-adjust: exact; }
+  html { font-family: "Segoe UI", "Helvetica Neue", Arial, sans-serif; color: var(--ink); font-size: 10.2pt; line-height: 1.5; }
+  body { margin: 0; }
+  h1, h2, h3, h4 { margin: 0; line-height: 1.2; letter-spacing: -0.01em; }
+  p { margin: 0 0 8px; }
+  a { color: var(--blue); text-decoration: none; }
+  code, .mono { font-family: "Cascadia Mono", Consolas, "Courier New", monospace; font-size: 8.8pt; background: var(--soft); border: 1px solid var(--line); border-radius: 4px; padding: 1px 5px; word-break: break-all; }
+
+  /* ---------------------------------------------------------------- cover */
+  .cover { height: 297mm; display: flex; flex-direction: column; justify-content: space-between; padding: 26mm 22mm 22mm;
+           background: linear-gradient(160deg, #fff 0%, #fff 55%, #fdeee9 100%); break-after: page; position: relative; overflow: hidden; }
+  .cover::after { content: ""; position: absolute; right: -60mm; top: -50mm; width: 170mm; height: 170mm; border-radius: 50%;
+                  background: radial-gradient(circle, rgba(242,112,30,.16), rgba(232,69,44,0) 70%); }
+  .brand { display: flex; align-items: center; gap: 12px; position: relative; z-index: 1; }
+  .brand-name { font-size: 17pt; font-weight: 700; }
+  .brand-tag { font-size: 7.5pt; letter-spacing: .22em; text-transform: uppercase; color: var(--muted); }
+  .cover-kicker { font-size: 9pt; font-weight: 700; letter-spacing: .2em; text-transform: uppercase; color: var(--accent); }
+  .cover h1 { font-size: 34pt; font-weight: 800; margin-top: 10px; max-width: 150mm; }
+  .cover h1 span { background: linear-gradient(90deg, var(--accent2), var(--accent)); -webkit-background-clip: text; background-clip: text; color: transparent; }
+  .cover .lede { font-size: 12.5pt; color: var(--muted); margin-top: 14px; max-width: 140mm; }
+  .cover-services { display: flex; gap: 10px; margin-top: 22px; }
+  .chip { display: inline-flex; align-items: center; gap: 7px; border: 1px solid var(--line); background: #fff; border-radius: 999px; padding: 6px 13px 6px 8px; font-size: 9.5pt; font-weight: 600; }
+  .dot { width: 18px; height: 18px; border-radius: 50%; display: inline-grid; place-items: center; color: #fff; font-size: 8pt; font-weight: 800; }
+  .cover-meta { display: grid; grid-template-columns: repeat(3, 1fr); gap: 10px; position: relative; z-index: 1; }
+  .meta-box { border-top: 2px solid var(--ink); padding-top: 8px; font-size: 9pt; color: var(--muted); }
+  .meta-box b { display: block; color: var(--ink); font-size: 10.5pt; margin-bottom: 2px; }
+
+  /* -------------------------------------------------------------- content */
+  section.part { break-before: page; }
+  .eyebrow { font-size: 8pt; font-weight: 700; letter-spacing: .18em; text-transform: uppercase; color: var(--accent); margin-bottom: 4px; }
+  .part-head { display: flex; align-items: flex-end; gap: 14px; padding-bottom: 12px; border-bottom: 2px solid var(--ink); margin-bottom: 16px; }
+  .part-num { font-size: 44pt; font-weight: 800; line-height: .85; color: var(--accent); }
+  .part-head h2 { font-size: 20pt; font-weight: 800; }
+  .part-head p { color: var(--muted); margin: 3px 0 0; font-size: 10pt; }
+  h3 { font-size: 12.5pt; font-weight: 700; margin: 18px 0 8px; }
+  .muted { color: var(--muted); }
+
+  .grid2 { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
+  .grid3 { display: grid; grid-template-columns: repeat(3, 1fr); gap: 10px; }
+  .card { border: 1px solid var(--line); border-radius: 10px; padding: 12px 14px; background: #fff; break-inside: avoid; }
+  .card h4 { font-size: 10.5pt; margin-bottom: 5px; }
+  .card p { font-size: 9.3pt; color: var(--muted); margin: 0; }
+  .tag { display: inline-block; font-size: 7.5pt; font-weight: 700; letter-spacing: .08em; text-transform: uppercase; border-radius: 4px; padding: 2px 6px; margin-bottom: 6px; }
+  .tag.easy { background: var(--green-soft); color: var(--green); }
+  .tag.wait { background: var(--amber-soft); color: var(--amber); }
+
+  table { width: 100%; border-collapse: collapse; font-size: 9.3pt; margin: 6px 0 12px; break-inside: avoid; }
+  th { text-align: left; font-size: 7.8pt; letter-spacing: .1em; text-transform: uppercase; color: var(--muted); font-weight: 700;
+       border-bottom: 2px solid var(--ink); padding: 6px 8px; }
+  td { border-bottom: 1px solid var(--line); padding: 7px 8px; vertical-align: top; }
+  td:first-child { font-weight: 600; }
+
+  ol.steps { list-style: none; counter-reset: step; padding: 0; margin: 8px 0 12px; }
+  ol.steps > li { counter-increment: step; position: relative; padding: 0 0 12px 40px; break-inside: avoid; }
+  ol.steps > li::before { content: counter(step); position: absolute; left: 0; top: -1px; width: 26px; height: 26px; border-radius: 50%;
+       background: var(--ink); color: #fff; font-weight: 700; font-size: 9.5pt; display: grid; place-items: center; }
+  ol.steps > li::after { content: ""; position: absolute; left: 12.5px; top: 28px; bottom: 2px; width: 1px; background: var(--line); }
+  ol.steps > li:last-child::after { display: none; }
+  ol.steps > li b.step-title { display: block; font-size: 10.4pt; margin-bottom: 2px; }
+  ol.steps > li p { margin: 0 0 3px; }
+  .path { display: inline-block; font-size: 9pt; background: var(--soft); border: 1px solid var(--line); border-radius: 6px; padding: 2px 8px; margin: 2px 0; }
+  .path b { color: var(--ink); }
+
+  .callout { border-radius: 10px; padding: 11px 14px 11px 44px; position: relative; margin: 10px 0 14px; break-inside: avoid; font-size: 9.6pt; }
+  .callout::before { position: absolute; left: 14px; top: 10px; width: 20px; height: 20px; border-radius: 50%; display: grid; place-items: center;
+       font-weight: 800; font-size: 10pt; color: #fff; }
+  .callout b:first-child { display: block; margin-bottom: 2px; }
+  .callout p { margin: 0; }
+  .callout.info { background: var(--blue-soft); } .callout.info::before { content: "i"; background: var(--blue); }
+  .callout.tip { background: var(--green-soft); } .callout.tip::before { content: "✓"; background: var(--green); }
+  .callout.warn { background: var(--amber-soft); } .callout.warn::before { content: "!"; background: var(--amber); }
+  .callout.key { background: var(--accent-soft); } .callout.key::before { content: "★"; background: var(--accent); }
+
+  .checklist { list-style: none; padding: 0; margin: 6px 0 12px; }
+  .checklist li { position: relative; padding: 5px 0 5px 28px; border-bottom: 1px dashed var(--line); break-inside: avoid; }
+  .checklist li::before { content: ""; position: absolute; left: 2px; top: 7px; width: 14px; height: 14px; border: 1.6px solid var(--ink); border-radius: 3px; }
+
+  .timeline { display: grid; grid-template-columns: repeat(4, 1fr); gap: 0; margin: 10px 0 16px; break-inside: avoid; }
+  .tl { border-top: 3px solid var(--accent); padding: 9px 10px 0 0; position: relative; }
+  .tl::before { content: ""; position: absolute; top: -8px; left: 0; width: 13px; height: 13px; border-radius: 50%; background: #fff; border: 3px solid var(--accent); }
+  .tl b { display: block; font-size: 9.8pt; margin-top: 4px; }
+  .tl span { font-size: 8.8pt; color: var(--muted); }
+  .tl.done { border-color: var(--green); } .tl.done::before { border-color: var(--green); }
+
+  .summary-box { border: 2px solid var(--ink); border-radius: 12px; padding: 14px 16px; break-inside: avoid; }
+  .avoid { break-inside: avoid; }
+  .small { font-size: 8.8pt; }
+</style>
+</head>
+<body>
+
+<!-- ================================================================ COVER -->
+<section class="cover">
+  <div class="brand">
+    <svg viewBox="0 0 40 44" width="34" height="38" aria-hidden="true">
+      <rect x="0" y="24" width="11" height="20" rx="5.5" fill="#D93A2B"/><rect x="14.5" y="12" width="11" height="32" rx="5.5" fill="#F2701E"/><rect x="29" y="0" width="11" height="44" rx="5.5" fill="#EA4A2A"/>
+    </svg>
+    <div><div class="brand-name">SEO Insights</div><div class="brand-tag">Client Analytics Dashboard</div></div>
+  </div>
+
+  <div style="position:relative; z-index:1">
+    <div class="cover-kicker">Client setup guide</div>
+    <h1>Connecting your <span>Google accounts</span> to your SEO dashboard</h1>
+    <p class="lede">A step-by-step guide to giving us secure, read-only access to Google Analytics 4, Google Search Console and Google Business Profile, including the Business Profile API access request that Google must approve.</p>
+    <div class="cover-services">
+      <span class="chip"><span class="dot" style="background:#E37400">A</span>Google Analytics 4</span>
+      <span class="chip"><span class="dot" style="background:#4285F4">S</span>Search Console</span>
+      <span class="chip"><span class="dot" style="background:#1A73E8">B</span>Business Profile</span>
+    </div>
+  </div>
+
+  <div class="cover-meta">
+    <div class="meta-box"><b>Time needed</b>About 20–30 minutes of your time</div>
+    <div class="meta-box"><b>Who should do this</b>An owner or admin of each Google account</div>
+    <div class="meta-box"><b>Version</b>October 2026</div>
+  </div>
+</section>
+
+<!-- ============================================================== OVERVIEW -->
+<section class="part" style="break-before: auto">
+  <div class="part-head"><div><div class="eyebrow">Start here</div><h2>Overview: what we need and why</h2><p>Three Google services feed your dashboard. Two take a few minutes; one needs Google's approval.</p></div></div>
+
+  <p>Your SEO dashboard reads performance data directly from Google, so every figure in your monthly report comes from the original source and is never estimated. To do that, we need permission to <b>read</b> your data. We never change your website, your listings or your settings through these connections.</p>
+
+  <div class="grid3" style="margin: 12px 0 16px">
+    <div class="card"><span class="tag easy">~5 minutes</span><h4>Part A · Google Analytics 4</h4><p>Website visitors, sessions, engagement, traffic sources and key events.</p></div>
+    <div class="card"><span class="tag easy">~5 minutes</span><h4>Part B · Search Console</h4><p>Google search clicks, impressions, average position and the keywords people search.</p></div>
+    <div class="card"><span class="tag wait">Needs Google approval</span><h4>Part C · Business Profile</h4><p>Profile views on Search and Maps, calls, website clicks, direction requests and search terms.</p></div>
+  </div>
+
+  <h3>What you'll need before you start</h3>
+  <ul class="checklist">
+    <li>Access to the <b>Google account that owns or administers</b> each service (Analytics, Search Console, Business Profile).</li>
+    <li>The <b>email address we'll send you</b> for granting access (shown as <code>[agency email]</code> in this guide).</li>
+    <li>For Business Profile: a profile that is <b>verified and has been active for at least 60 days</b>, with your website listed on it.</li>
+  </ul>
+
+  <div class="callout info"><b>Why Business Profile takes longer</b><p>Unlike Analytics and Search Console, Google only allows Business Profile data to be read by software after it has reviewed and approved an access request. Part C walks through that request. Everything else can be connected the same day.</p></div>
+
+  <h3>How the connection works</h3>
+  <div class="timeline">
+    <div class="tl done"><b>1. You grant access</b><span>Add our email as a user on each Google service (Parts A–C).</span></div>
+    <div class="tl"><b>2. Google approves</b><span>For Business Profile only: Google reviews the API access request.</span></div>
+    <div class="tl"><b>3. We connect</b><span>We sign in through Google's secure screen and choose your property, site and locations.</span></div>
+    <div class="tl"><b>4. Data flows daily</b><span>The dashboard imports 90 days of history, then updates every day automatically.</span></div>
+  </div>
+</section>
+
+<!-- ================================================================ PART A -->
+<section class="part">
+  <div class="part-head"><div class="part-num">A</div><div><div class="eyebrow">About 5 minutes</div><h2>Google Analytics 4</h2><p>Give us read access to your GA4 property.</p></div></div>
+
+  <ol class="steps">
+    <li><b class="step-title">Open Google Analytics</b>
+      <p>Go to <a href="https://analytics.google.com">analytics.google.com</a> and sign in with the Google account that administers your website's analytics.</p></li>
+    <li><b class="step-title">Choose the right property</b>
+      <p>Use the account/property picker at the top left to select your website's <b>GA4 property</b>. Its ID is a number such as <code>438298996</code>; older "UA-" properties no longer collect data.</p></li>
+    <li><b class="step-title">Open access management</b>
+      <p>Click <b>Admin</b> (the gear icon, bottom left), then in the <b>Property</b> column choose:</p>
+      <span class="path"><b>Admin</b> › Property settings › <b>Property access management</b></span></li>
+    <li><b class="step-title">Add our email</b>
+      <p>Click the blue <b>+</b> button, choose <b>Add users</b>, and enter <code>[agency email]</code>.</p></li>
+    <li><b class="step-title">Choose the role "Viewer"</b>
+      <p>Select <b>Viewer</b> under "Standard roles". Viewer is read-only: we can see reports but cannot change settings, tracking or users. Leave "Notify new users by email" ticked.</p></li>
+    <li><b class="step-title">Click "Add"</b>
+      <p>That's it. Let us know which property you added so we connect the right one.</p></li>
+  </ol>
+
+  <div class="callout tip"><b>Optional: help us measure leads accurately</b><p>If you want the dashboard to report leads (form submissions, calls, bookings), those actions must be marked as <b>key events</b> in GA4 (Admin › Data display › Key events). We can do this for you if you grant the <b>Editor</b> role instead. Key events only count from the day they are marked.</p></div>
+
+  <div class="callout warn"><b>Can't see the Admin options?</b><p>You need the <b>Administrator</b> role on the property to add users. Ask whoever set up your analytics (often your web developer) to do this step, or to make you an Administrator first.</p></div>
+</section>
+
+<!-- ================================================================ PART B -->
+<section class="part">
+  <div class="part-head"><div class="part-num">B</div><div><div class="eyebrow">About 5 minutes</div><h2>Google Search Console</h2><p>Give us access to your website's search performance data.</p></div></div>
+
+  <ol class="steps">
+    <li><b class="step-title">Open Search Console</b>
+      <p>Go to <a href="https://search.google.com/search-console">search.google.com/search-console</a> and sign in as an <b>owner</b> of your website's property.</p></li>
+    <li><b class="step-title">Select your website</b>
+      <p>Pick your site from the property menu at the top left. If you see both a <b>Domain</b> property (e.g. <code>example.com</code>) and a <b>URL-prefix</b> property (e.g. <code>https://www.example.com/</code>), choose the <b>Domain</b> property: it covers all versions of your site.</p></li>
+    <li><b class="step-title">Open user management</b>
+      <span class="path"><b>Settings</b> (bottom of left menu) › <b>Users and permissions</b></span></li>
+    <li><b class="step-title">Add our email</b>
+      <p>Click <b>Add user</b>, enter <code>[agency email]</code>, and set permission to <b>Restricted</b>. Restricted access can view all performance data but cannot change anything.</p></li>
+    <li><b class="step-title">Click "Add"</b>
+      <p>Done. Search Console data is available immediately and includes up to 16 months of history.</p></li>
+  </ol>
+
+  <div class="callout info"><b>Good to know</b><p>Search Console data is typically 2–3 days behind and Google hides very rare searches for privacy, so keyword tables never show 100% of clicks. Your dashboard notes this wherever it applies.</p></div>
+
+  <div class="callout warn"><b>Don't see "Add user"?</b><p>Only a <b>verified owner</b> can add users. If your site isn't verified yet, Search Console will guide you through verification (usually a DNS record your domain provider or web developer can add).</p></div>
+</section>
+
+<!-- ================================================================ PART C -->
+<section class="part">
+  <div class="part-head"><div class="part-num">C</div><div><div class="eyebrow">Needs Google approval</div><h2>Google Business Profile</h2><p>Grant manager access and request Business Profile API access from Google.</p></div></div>
+
+  <p>Google requires an approved API access request before any software can read Business Profile performance data. There are two ways to do this. <b>We recommend Option 1</b>: you add us as a manager and we submit the request for you.</p>
+
+  <div class="grid2" style="margin: 10px 0 14px">
+    <div class="card" style="border:2px solid var(--accent)"><span class="tag easy">Recommended · ~5 min for you</span><h4>Option 1: We handle the request</h4><p>You complete steps C1 and C2 only. We submit Google's access request from our project and connect everything once approved.</p></div>
+    <div class="card"><span class="tag wait">~30–45 min for you</span><h4>Option 2: You request access yourself</h4><p>Use this if your company policy requires the API project to be owned by you. Complete C1, C2 and C3, then send us the credentials securely.</p></div>
+  </div>
+
+  <h3>C1 · Check that your profile qualifies</h3>
+  <p class="muted">Google only approves requests for profiles that meet these requirements:</p>
+  <ul class="checklist">
+    <li>The Business Profile is <b>verified</b> (it shows as verified in your Business Profile settings).</li>
+    <li>It has been <b>active for at least 60 days</b>.</li>
+    <li>It lists your <b>website</b>, and that website represents the business on the profile.</li>
+    <li>The profile is <b>complete and up to date</b> (hours, categories, contact details). This is recommended rather than strictly required.</li>
+  </ul>
+  <div class="callout warn"><b>Profile newer than 60 days, or not verified?</b><p>Complete verification first and let us know the date. We'll submit the request once the profile passes the 60-day mark; the rest of your dashboard works in the meantime.</p></div>
+
+  <h3>C2 · Add us as a manager of your Business Profile</h3>
+  <ol class="steps">
+    <li><b class="step-title">Open your Business Profile</b>
+      <p>Sign in to the Google account that owns the profile, then search Google for your business name, or open <a href="https://business.google.com">business.google.com</a> and choose your business.</p></li>
+    <li><b class="step-title">Open the managers list</b>
+      <span class="path">⋮ Menu › <b>Business Profile settings</b> › <b>People and access</b> (shown as <b>Managers</b> on some accounts)</span></li>
+    <li><b class="step-title">Add our email as a Manager</b>
+      <p>Click <b>Add</b>, enter <code>[agency email]</code>, choose the role <b>Manager</b>, then <b>Invite</b>. Google requires Manager (or Owner) access for the API request; we only read data and never edit your listing.</p></li>
+    <li><b class="step-title">Repeat for every location</b>
+      <p>If you have several locations, add us to each one, or to the <b>business group</b> that contains them.</p></li>
+  </ol>
+  <div class="callout key"><b>Option 1? You're finished.</b><p>Reply to let us know the invite is sent. We'll accept it, submit Google's "Application for Basic API Access", and confirm when Google approves. Skip C3.</p></div>
+</section>
+
+<!-- ============================================================ PART C3 -->
+<section class="part">
+  <div class="part-head"><div class="part-num">C3</div><div><div class="eyebrow">Option 2 only</div><h2>Request API access yourself</h2><p>Create a Google Cloud project, apply for access, then create sign-in credentials.</p></div></div>
+
+  <h3>Step 1 · Create a Google Cloud project</h3>
+  <ol class="steps">
+    <li><b class="step-title">Open Google Cloud Console</b>
+      <p>Go to <a href="https://console.cloud.google.com">console.cloud.google.com</a> with the Google account that manages your Business Profile. Accept the terms if prompted.</p></li>
+    <li><b class="step-title">Create a project</b>
+      <span class="path">Project picker (top bar) › <b>New project</b></span>
+      <p>Name it e.g. <code>SEO Dashboard - Business Profile</code> and click <b>Create</b>.</p></li>
+    <li><b class="step-title">Copy the Project number</b>
+      <p>On the project's <b>Dashboard</b>, the <b>Project info</b> card shows the <b>Project number</b> (digits only, e.g. <code>123456789012</code>). You'll need it for the request.</p></li>
+  </ol>
+
+  <h3>Step 2 · Submit Google's access request</h3>
+  <ol class="steps">
+    <li><b class="step-title">Open the Business Profile API contact form</b>
+      <p>Go to <a href="https://developers.google.com/my-business/content/prereqs">developers.google.com/my-business/content/prereqs</a> and follow the link to the <b>GBP API contact form</b>.</p></li>
+    <li><b class="step-title">Choose "Application for Basic API Access"</b>
+      <p>Fill in the form using an email address that is an <b>owner or manager</b> of the Business Profile. Include your <b>Project number</b>, business name and website.</p></li>
+    <li><b class="step-title">Wait for Google's email</b>
+      <p>Google reviews the request and replies by email. Review times vary; plan for several days to a few weeks.</p></li>
+    <li><b class="step-title">Confirm approval</b>
+      <span class="path">Cloud Console › <b>APIs &amp; Services</b> › search "Business Profile" › <b>Quotas</b></span>
+      <table>
+        <tr><th>Quota shown</th><th>Meaning</th></tr>
+        <tr><td>0 requests per minute</td><td>Not approved yet. Keep waiting, or check the request details.</td></tr>
+        <tr><td>300 requests per minute</td><td>Approved. Continue with Step 3.</td></tr>
+      </table></li>
+  </ol>
+</section>
+
+<section class="part">
+  <h3 style="margin-top:0">Step 3 · Enable the APIs (after approval)</h3>
+  <p><span class="path"><b>APIs &amp; Services</b> › <b>Library</b></span> then search for and <b>Enable</b> each of these:</p>
+  <table>
+    <tr><th>API</th><th>Used for</th></tr>
+    <tr><td>Business Profile Performance API</td><td>Impressions on Search and Maps, calls, website clicks, direction requests, search keywords</td></tr>
+    <tr><td>My Business Account Management API</td><td>Listing your accounts and the locations we're allowed to read</td></tr>
+    <tr><td>My Business Business Information API</td><td>Location names, addresses, categories and website for the report</td></tr>
+  </table>
+  <p class="small muted">Some Business Profile APIs only appear in the Library after Google has approved your request.</p>
+
+  <h3>Step 4 · Set up the Google sign-in screen</h3>
+  <ol class="steps">
+    <li><b class="step-title">Open the consent screen settings</b>
+      <span class="path"><b>APIs &amp; Services</b> › <b>OAuth consent screen</b> (called <b>Google Auth Platform</b> in newer consoles)</span></li>
+    <li><b class="step-title">Fill in the app details</b>
+      <p>User type <b>External</b>. App name <code>SEO Dashboard</code>, your support email, and your developer contact email.</p></li>
+    <li><b class="step-title">Add the scope</b>
+      <p>Under <b>Scopes / Data access</b>, add <code>https://www.googleapis.com/auth/business.manage</code>, the scope Google requires for Business Profile data.</p></li>
+    <li><b class="step-title">Add test users, then publish</b>
+      <p>Add <code>[agency email]</code> as a test user. When we confirm the connection works, set the publishing status to <b>In production</b>. If Google asks for app verification, we'll support you through it.</p></li>
+  </ol>
+
+  <h3>Step 5 · Create the sign-in credentials</h3>
+  <ol class="steps">
+    <li><b class="step-title">Create an OAuth client</b>
+      <span class="path"><b>APIs &amp; Services</b> › <b>Credentials</b> › <b>Create credentials</b> › <b>OAuth client ID</b></span></li>
+    <li><b class="step-title">Choose "Web application"</b>
+      <p>Name it <code>SEO Dashboard</code>. Under <b>Authorised redirect URIs</b>, add exactly the address we send you, for example <code>https://[your-dashboard-domain]/api/integrations/gbp/callback</code>.</p></li>
+    <li><b class="step-title">Send us the Client ID and Client secret securely</b>
+      <p>Click <b>Create</b>. Share the <b>Client ID</b> and <b>Client secret</b> through a password manager share or another secure channel we agree on, <b>never in a plain email or chat message</b>.</p></li>
+  </ol>
+  <div class="callout key"><b>That's everything.</b><p>Once we have the credentials, we'll sign in through Google's consent screen, select your locations, and your Business Profile chapter will start filling in.</p></div>
+</section>
+
+<!-- ======================================================= SECURITY + FAQ -->
+<section class="part">
+  <div class="part-head"><div><div class="eyebrow">Peace of mind</div><h2>Security, privacy and frequently asked questions</h2></div></div>
+
+  <div class="grid2">
+    <div class="card"><h4>Read-only use</h4><p>The dashboard only reads reporting data. It never edits your website, analytics settings, search settings or Business Profile listing.</p></div>
+    <div class="card"><h4>Secure sign-in</h4><p>Connections use Google's official sign-in (OAuth). We never ask for your Google password, and access tokens are stored encrypted on our servers.</p></div>
+    <div class="card"><h4>Your data stays separate</h4><p>Each client's data is isolated at the database level. Only people you or we invite can see your dashboard.</p></div>
+    <div class="card"><h4>You stay in control</h4><p>You can remove our access at any time from the same screens used in this guide, or at <a href="https://myaccount.google.com/permissions">myaccount.google.com/permissions</a>.</p></div>
+  </div>
+
+  <h3>Frequently asked questions</h3>
+  <table>
+    <tr><th style="width:38%">Question</th><th>Answer</th></tr>
+    <tr><td>Will you be able to change my listing or website?</td><td>The Business Profile request needs Manager access because that is what Google requires, but the dashboard only reads data. No changes are made through these connections.</td></tr>
+    <tr><td>How long does Business Profile approval take?</td><td>It's decided by Google and varies. Plan for several days to a few weeks. Analytics and Search Console work in the meantime.</td></tr>
+    <tr><td>What if Google rejects the request?</td><td>Usually the profile is under 60 days old, unverified, or missing a website. Fix that and the request can be resubmitted; we'll handle it under Option 1.</td></tr>
+    <tr><td>Is a "call click" a real phone call?</td><td>No. Google reports taps on the call button, not completed calls. Your report labels it as "call clicks".</td></tr>
+    <tr><td>How far back does the data go?</td><td>We import 90 days of history when we connect. Search Console keeps about 16 months; Business Profile metrics go back up to 18 months.</td></tr>
+    <tr><td>We have several locations or websites.</td><td>Add us to each one (or the business group). The dashboard lets you view each location or site separately, or all combined.</td></tr>
+  </table>
+</section>
+
+<!-- ========================================================== CHECKLIST -->
+<section class="part">
+  <div class="part-head"><div><div class="eyebrow">Before you reply</div><h2>Your completion checklist</h2><p>Tick these off, then reply to let us know you're done.</p></div></div>
+
+  <div class="summary-box">
+    <h3 style="margin-top:0">Part A · Google Analytics 4</h3>
+    <ul class="checklist">
+      <li>Added <code>[agency email]</code> as <b>Viewer</b> on the correct GA4 property</li>
+      <li>Told us the property name or ID</li>
+    </ul>
+    <h3>Part B · Search Console</h3>
+    <ul class="checklist">
+      <li>Added <code>[agency email]</code> with <b>Restricted</b> permission (on the Domain property, if you have one)</li>
+    </ul>
+    <h3>Part C · Google Business Profile</h3>
+    <ul class="checklist">
+      <li>Confirmed the profile is verified, 60+ days active, and lists your website</li>
+      <li>Invited <code>[agency email]</code> as <b>Manager</b> on every location</li>
+      <li><span class="muted">Option 2 only:</span> submitted the access request and shared the Project number</li>
+      <li><span class="muted">Option 2 only:</span> after approval, enabled the APIs and shared the Client ID and secret securely</li>
+    </ul>
+  </div>
+
+  <div class="callout info" style="margin-top:16px"><b>Questions or stuck on a step?</b><p>Reply to the email this guide came with, or send us a screenshot of the screen you're on and we'll guide you through it. Google occasionally renames menu items, so if a label doesn't match exactly, look for the closest equivalent or ask us.</p></div>
+
+  <p class="small muted" style="margin-top:18px">Requirements for Business Profile API access are set by Google and summarised from Google's developer documentation (developers.google.com/my-business) as of October 2026. Google may change menus, eligibility rules or review times without notice.</p>
+</section>
+
+</body>
+</html>

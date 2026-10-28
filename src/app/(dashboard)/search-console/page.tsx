@@ -2,7 +2,12 @@ import { ArrowDown, ArrowUp, Info } from "lucide-react";
 import { MetricTrend } from "@/components/charts/metric-trend";
 import { FilterSelect } from "@/components/dashboard/filter-select";
 import { KpiCard } from "@/components/dashboard/kpi-card";
-import { EmptyState, PageHeader } from "@/components/dashboard/page-header";
+import { EmptyState } from "@/components/dashboard/page-header";
+import { BrandSplit, type BrandSplitData } from "@/components/dashboard/brand-split";
+import { defaultBrandTerms } from "@/lib/brand";
+import { Highlights } from "@/components/dashboard/highlights";
+import { TabHeader } from "@/components/dashboard/tab-header";
+import { movement, pickHighlights } from "@/lib/overview/highlights";
 import { RangeSelector } from "@/components/dashboard/range-selector";
 import { SearchBox } from "@/components/dashboard/search-box";
 import { DataTable } from "@/components/tables/data-table";
@@ -101,7 +106,7 @@ export default async function SearchConsolePage({ searchParams }: { searchParams
   if (scope.gsc.length === 0) {
     return (
       <>
-        <PageHeader title={title} description="Organic search performance." />
+        <TabHeader source="gsc" title={title} description="How people find your website through Google search." />
         <EmptyState
           title="Search Console isn't connected"
           body="Connect your Google account and choose a Search Console site to start importing data."
@@ -130,9 +135,17 @@ export default async function SearchConsolePage({ searchParams }: { searchParams
   ]);
 
   const header = (
-    <PageHeader
-      title={title}
-      description={`Site: ${resources.map((r) => r.display_name).join(", ")} · dates in Pacific Time · the latest 2–3 days are preliminary`}
+    <TabHeader
+      source="gsc" title={title}
+      description={`How people find your website through Google search. Site: ${resources.map((r) => r.display_name).join(", ")} · dates in Pacific Time · the latest 2–3 days are preliminary`}
+      guide={[
+          { term: "Clicks", text: "Times someone clicked your result in Google search." },
+          { term: "Impressions", text: "Times your site appeared in results, whether or not it was clicked." },
+          { term: "CTR (click-through rate)", text: "Clicks divided by impressions. A low CTR on a well-ranked page usually means the title or description isn't compelling." },
+          { term: "Average position", text: "Where your pages typically appear (1 = top). Lower is better; position 1-10 is page one. It is an average, not a fixed rank." },
+          { term: "Branded vs non-branded", text: "Branded searches include your name; non-branded searches are new customers discovering you." },
+          { term: "Delay", text: "Google reports search data 2-3 days late, and the latest days can still change." },
+        ]}
     />
   );
   if ([summary, trend, keywords, pages].some((r) => r.error)) {
@@ -196,11 +209,31 @@ export default async function SearchConsolePage({ searchParams }: { searchParams
     { label: "Average Position", k: "position", format: fmtDecimal, higher: false, hint: "Impression-weighted average ranking position. Lower is better." },
   ];
 
+  const risers = [...kw.rows].filter((r) => toNum(r.position_change) != null);
+  const up = [...risers].sort((a, b) => toNum(b.position_change)! - toNum(a.position_change)!)[0];
+  const down = [...risers].sort((a, b) => toNum(a.position_change)! - toNum(b.position_change)!)[0];
+  const hl = pickHighlights([
+    movement("Search clicks", pick(cur, "clicks"), pick(prev, "clicks"), { fmt: fmtInt, minBase: 20, actionWhenBad: "Open SEO Opportunities to see which keywords and pages lost clicks.", action: "Open SEO Opportunities to build on what is working.", href: "/opportunities" }),
+    movement("Impressions", pick(cur, "impressions"), pick(prev, "impressions"), { fmt: fmtInt, minBase: 200, actionWhenBad: "Fewer impressions means fewer searches reached you: check the Keyword table for lost rankings." }),
+    movement("Click-through rate", pick(cur, "ctr"), pick(prev, "ctr"), { fmt: (n) => fmtPercent(n, 2), minBase: 0.001, minPct: 10, actionWhenBad: "Rewrite titles and descriptions on pages that rank well but get few clicks." }),
+    movement("Average position", pick(cur, "position"), pick(prev, "position"), { fmt: (n) => n.toFixed(1), lowerIsBetter: true, minPct: 5, actionWhenBad: "Rankings slipped: review recently changed pages and the declining keywords in SEO Opportunities.", href: "/opportunities" }),
+    up && (toNum(up.position_change) ?? 0) >= 3 && { tone: "good" as const, title: `“${up.query}” climbed ${(toNum(up.position_change) ?? 0).toFixed(0)} positions`, detail: `Now averaging position ${fmtDecimal(toNum(up.position))} with ${fmtInt(up.clicks)} clicks.`, action: "Build on it: add internal links and fresh content to the page ranking for it." },
+    down && (toNum(down.position_change) ?? 0) <= -3 && { tone: "bad" as const, title: `“${down.query}” dropped ${Math.abs(toNum(down.position_change) ?? 0).toFixed(0)} positions`, detail: `Now averaging position ${fmtDecimal(toNum(down.position))}.`, action: "Check the page that ranks for it: has it changed, or has a competitor overtaken it?" },
+  ]);
+  // branded vs non-branded: terms come from the client's saved list, else the site and client names
+  const { data: clientRow } = await supabase.from("clients").select("settings").eq("id", client.id).maybeSingle();
+  const savedTerms = ((clientRow?.settings as { brand_terms?: string[] } | null)?.brand_terms ?? []).filter(Boolean);
+  const brandTerms = savedTerms.length ? savedTerms : defaultBrandTerms(client.name, resources.map((r) => r.display_name));
+  const brandRes = await supabase.rpc("get_gsc_brand_split", { ...args, p_terms: brandTerms });
+  const brand = brandRes.error ? null : (brandRes.data as BrandSplitData | null);
+
   return (
     <>
       {header}
       <RangeSelector path={PATH} sp={sp} range={range} />
       {filters}
+
+      <Highlights items={hl} />
 
       <section aria-label="Key metrics" className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
         {kpis.map((m) => (
@@ -221,6 +254,8 @@ export default async function SearchConsolePage({ searchParams }: { searchParams
           { key: "position", label: "Avg position", format: "decimal", reverseY: true, data: dailySeries(t, "position", range, "ratio") },
         ]} />
       </div>
+
+      {brand && <div className="mt-6"><BrandSplit data={brand} terms={brandTerms} canEdit={["owner", "admin"].includes(client.role)} /></div>}
 
       <div className="mt-6 space-y-6">
         {tablesNarrowed && (

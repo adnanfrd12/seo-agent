@@ -1,4 +1,6 @@
-import { PageHeader } from "@/components/dashboard/page-header";
+import { TabHeader } from "@/components/dashboard/tab-header";
+import { Highlights } from "@/components/dashboard/highlights";
+import { pickHighlights } from "@/lib/overview/highlights";
 import { RangeSelector } from "@/components/dashboard/range-selector";
 import { ReportTable, Unavailable } from "@/components/report/report-ui";
 import { getSession } from "@/lib/analytics/client-context";
@@ -29,10 +31,22 @@ export default async function OpportunitiesPage({ searchParams }: { searchParams
     p_min_impressions: minImpr, p_min_pos_change: minPos, p_decay_pct: decay, p_limit: 50,
   });
   const o = data as Opportunities | null;
+  const topWin = o?.quick_wins[0];
+  const hl = o ? pickHighlights([
+    o.quick_wins.length > 0 && { tone: "good" as const, title: `${o.quick_wins.length} quick wins found`, detail: topWin ? `Biggest: “${String(topWin.query)}” (position ${String(topWin.position)}, ${String(topWin.impressions)} impressions).` : undefined, action: "Improve the title, description and on-page content for the top ones." },
+    o.declining_keywords.length > 0 && { tone: "bad" as const, title: `${o.declining_keywords.length} keywords are losing positions`, action: "Check whether the ranking pages changed or a competitor overtook them." },
+    o.decaying_pages.length > 0 && { tone: "bad" as const, title: `${o.decaying_pages.length} pages are losing clicks`, action: "Refresh outdated content and recheck internal links to these pages." },
+    o.improving_keywords.length > 0 && { tone: "good" as const, title: `${o.improving_keywords.length} keywords are moving up`, action: "Support them with internal links and fresh content." },
+  ]) : [];
 
   return (
     <div className="mx-auto max-w-6xl space-y-8">
-      <PageHeader title="SEO Opportunities" description="Deterministic Search Console analysis: current period vs the equal-length period before it, Web search, rates re-weighted from totals." />
+      <TabHeader source={null} eyebrow="Search Console" title="SEO Opportunities" description="Deterministic Search Console analysis: current period vs the equal-length period before it, Web search, rates re-weighted from totals." guide={[
+  { term: "Quick wins", text: "Keywords already on page one or two that get fewer clicks than they could. Improving the title, description and content is the cheapest traffic gain." },
+  { term: "Losing positions", text: "Keywords whose average position got worse versus the previous period." },
+  { term: "Decaying pages", text: "Pages whose clicks fell by more than the threshold. Usually outdated content, a new competitor, or a lost ranking." },
+  { term: "Cannibalization", text: "Several of your pages competing for the same search. Sometimes normal; consolidate only after checking intent." },
+]} />
       <RangeSelector path="/opportunities" sp={sp} range={range} showCompare={false} />
       <form className="flex flex-wrap items-end gap-3 text-xs text-muted" action="/opportunities">
         {["range", "start", "end", "site"].map((k) => first(sp[k]) && <input key={k} type="hidden" name={k} value={first(sp[k])} />)}
@@ -42,6 +56,7 @@ export default async function OpportunitiesPage({ searchParams }: { searchParams
         <button className="rounded-lg border border-border px-3 py-1.5 text-sm font-medium text-foreground hover:bg-surface-muted">Apply thresholds</button>
       </form>
 
+      {o && <Highlights items={hl} stableNote="No significant opportunities or losses above the thresholds." />}
       {error || !o ? (
         <Unavailable title="Opportunity analysis isn't available yet" body="Apply migration 20261021000010 in Supabase, then run a Search Console sync so query × page data is imported." />
       ) : (

@@ -1,7 +1,8 @@
 import { BarList } from "@/components/charts/bar-list";
 import { MetricTrend } from "@/components/charts/metric-trend";
 import { KpiCard } from "@/components/dashboard/kpi-card";
-import { EmptyState, PageHeader } from "@/components/dashboard/page-header";
+import { EmptyState } from "@/components/dashboard/page-header";
+import { TabHeader } from "@/components/dashboard/tab-header";
 import { SpendLine, TargetSettings } from "@/components/research/chrome";
 import { RefreshControls } from "@/components/research/controls";
 import { ResearchTable } from "@/components/research/research-table";
@@ -24,7 +25,14 @@ export default async function OrganicKeywordsPage() {
   const page = await researchPage();
   if (!page) return null;
   const { canEdit, configured, cache, budget } = page;
-  const header = <PageHeader title="Organic Keywords" description="Google keywords the website ranks for in the top 100: positions, search volume, estimated traffic and movement. Data from DataForSEO." />;
+  const header = <TabHeader source="dfs" title="Organic Keywords" description="Google keywords the website ranks for in the top 100: positions, search volume, estimated traffic and movement. Data from DataForSEO." guide={[
+          { term: "Position", text: "Where the page appears in Google for that keyword (1 = top). Page one is positions 1-10." },
+          { term: "Volume", text: "Estimated monthly searches for the keyword." },
+          { term: "Est. traffic", text: "Modelled visits from the ranking (volume × position). An estimate, not measured visits." },
+          { term: "Difficulty", text: "0-100: how hard it is to reach the top 10. Lower is easier." },
+          { term: "Intent", text: "What the searcher wants: information, a comparison, or to buy. Match the page to the intent." },
+          { term: "Quick wins", text: "Keywords on page two (positions 11-20) with real search demand: the cheapest traffic gains." },
+        ]} />;
   if (!configured) return <>{header}<EmptyState title="DataForSEO isn't configured" body="Add DATAFORSEO_LOGIN and DATAFORSEO_PASSWORD to the environment, then redeploy." action={{ href: "/integrations", label: "Open Integrations" }} /></>;
   if (!cache.target) return <>{header}<EmptyState title="No website to analyse yet" body="Connect Bing, Search Console or Business Profile for this client so the website can be detected, or ask an owner or admin to set it." action={{ href: "/integrations", label: "Open Integrations" }} /></>;
 

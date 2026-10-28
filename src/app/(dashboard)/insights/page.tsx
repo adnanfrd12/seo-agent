@@ -1,7 +1,9 @@
 import { CheckCircle2, CircleDot, XCircle } from "lucide-react";
 import { GenerateButton, InsightActions } from "@/components/ai/ai-controls";
 import { AutoAnalysis } from "@/components/ai/auto-analysis";
-import { PageHeader } from "@/components/dashboard/page-header";
+import { TabHeader } from "@/components/dashboard/tab-header";
+import { Highlights } from "@/components/dashboard/highlights";
+import { pickHighlights } from "@/lib/overview/highlights";
 import { RangeSelector } from "@/components/dashboard/range-selector";
 import { Unavailable } from "@/components/report/report-ui";
 import { getSession } from "@/lib/analytics/client-context";
@@ -53,10 +55,25 @@ export default async function InsightsPage({ searchParams }: { searchParams: Pro
   const evidenceById = new Map((latest?.evidence?.items ?? []).map((i) => [i.id, i]));
   const current = ((insights ?? []) as Insight[]).filter((i) => !latest || i.run_id === latest.id);
 
+  const open = current.filter((i) => !["implemented", "dismissed"].includes(i.implementation_status));
+  const done = current.filter((i) => i.implementation_status === "implemented").length;
+  const highOpen = open.filter((i) => i.priority === "high");
+  const hl = pickHighlights([
+    current.length > 0 && { tone: (done > 0 ? "good" : "info") as "good" | "info", title: `${done} of ${current.length} recommendations completed`, detail: `${open.length} still open.`, action: open.length ? "Work through the high-priority ones first, then mark each Done so progress is tracked." : "Generate a fresh analysis to find the next opportunities." },
+    highOpen.length > 0 && { tone: "bad" as const, title: `${highOpen.length} high-priority recommendation${highOpen.length > 1 ? "s" : ""} open`, detail: highOpen[0].title, action: "Start here: strongest evidence and impact." },
+    latest && { tone: "info" as const, title: "Analysis is kept up to date automatically", detail: `Latest: ${new Date(latest.created_at).toLocaleDateString("en-US", { month: "short", day: "numeric" })} for ${latest.range_start} → ${latest.range_end}. Active clients are refreshed weekly when the data changed.` },
+  ]);
+
   return (
     <div className="mx-auto max-w-5xl">
-      <PageHeader title="AI SEO Insights" description="Evidence-based interpretation of your GA4, Search Console, Bing, Business Profile (incl. reviews and local rankings), Clarity and imported data. The numbers are calculated by the app; the AI only interprets them." />
+      <TabHeader source={null} eyebrow="AI intelligence" title="AI SEO Insights" description="Evidence-based interpretation of your GA4, Search Console, Bing, Business Profile (incl. reviews and local rankings), Clarity and imported data. The numbers are calculated by the app; the AI only interprets them." guide={[
+  { term: "Evidence", text: "Every recommendation cites numbers from your connected data. The AI interprets them; it never invents metrics." },
+  { term: "Priority, confidence, effort", text: "Priority = expected importance, confidence = how strong the evidence is, effort = how much work it takes. Start with high priority and small effort." },
+  { term: "Hypothesis vs fact", text: "The impact shown is a testable hypothesis, never a guarantee. The success metric tells you what to measure." },
+  { term: "Status", text: "Mark recommendations Approved, Done or Dismissed so progress is tracked and the AI doesn't repeat finished work." },
+]} />
       <RangeSelector path="/insights" sp={sp} range={range} showCompare={false} />
+      {current.length > 0 && <Highlights items={hl} />}
 
       {migrationMissing ? (
         <Unavailable title="Database update needed" body="Apply migration 20261021000011 in Supabase to enable AI insights." />

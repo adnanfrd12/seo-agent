@@ -1,6 +1,8 @@
 import { MetricTrend } from "@/components/charts/metric-trend";
 import type { TrendPoint } from "@/components/charts/trend-chart";
-import { PageHeader } from "@/components/dashboard/page-header";
+import { TabHeader } from "@/components/dashboard/tab-header";
+import { Highlights } from "@/components/dashboard/highlights";
+import { movement, pickHighlights } from "@/lib/overview/highlights";
 import { ReportTable, Unavailable } from "@/components/report/report-ui";
 import { getSession } from "@/lib/analytics/client-context";
 import { fmtDecimal, fmtInt, fmtPercent, toNum } from "@/lib/analytics/format";
@@ -30,10 +32,20 @@ export default async function HistoryPage({ searchParams }: { searchParams: Prom
   const pts = (rows: Row[], k: string): TrendPoint[] => rows.map((r) => ({ date: String(r.date), value: toNum(r[k]) }));
   const months = [...new Set([...g, ...s].map((r) => String(r.date)))].sort().reverse();
   const at = (rows: Row[], m: string) => rows.find((r) => String(r.date) === m);
+  const [m0, m1] = months;
+  const hl = m0 && m1 ? pickHighlights([
+    movement(`Search clicks in ${monthLabel(m0.slice(0, 7))}`, toNum(at(s, m0)?.clicks), toNum(at(s, m1)?.clicks), { fmt: fmtInt, minBase: 20, minPct: 5 }),
+    movement(`Sessions in ${monthLabel(m0.slice(0, 7))}`, toNum(at(g, m0)?.sessions), toNum(at(g, m1)?.sessions), { fmt: fmtInt, minBase: 30, minPct: 5 }),
+    movement(`Average position in ${monthLabel(m0.slice(0, 7))}`, toNum(at(s, m0)?.position), toNum(at(s, m1)?.position), { fmt: (n) => n.toFixed(1), lowerIsBetter: true, minPct: 3 }),
+  ]) : [];
 
   return (
     <div className="mx-auto max-w-6xl space-y-6">
-      <PageHeader title="Historical Reports" description={`Complete months from ${monthLabel(firstM)} to ${monthLabel(last)}. History starts when each source was connected (GA4 and Search Console import 90 days at connection).`} />
+      <TabHeader source={null} eyebrow="Reporting" title="Historical Reports" description={`Complete months from ${monthLabel(firstM)} to ${monthLabel(last)}. History starts when each source was connected (GA4 and Search Console import 90 days at connection).`} guide={[
+  { term: "Complete months", text: "Only full calendar months are shown, so months are comparable." },
+  { term: "History starts at connection", text: "Each source's history begins when it was connected; the earliest month can be partial." },
+]} />
+      {months.length > 1 && <Highlights items={hl} stableNote={`${monthLabel(months[0].slice(0, 7))} was in line with ${monthLabel(months[1].slice(0, 7))}.`} />}
       {months.length === 0 ? (
         <Unavailable title="No historical data yet" body="Connect and sync Google Analytics 4 or Search Console." />
       ) : (

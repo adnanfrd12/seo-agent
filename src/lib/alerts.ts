@@ -3,6 +3,7 @@ import type { SupabaseClient } from "@supabase/supabase-js";
 import { shiftDays, todayIn } from "@/lib/analytics/range";
 import { loadCompetitors } from "@/lib/dataforseo/competitors";
 import { detectLinkSpike } from "@/lib/dataforseo/research";
+import { emailClientAlerts } from "@/lib/notify";
 
 /**
  * Daily change detection. Everything here reads stored data (no paid API calls); each alert has a
@@ -20,10 +21,14 @@ const weekKey = (iso: string) => {
 export async function generateAlerts(admin: SupabaseClient, clientId: string, timezone = "UTC"): Promise<number> {
   const today = todayIn(timezone);
   let created = 0;
+  const fresh: { severity: string; title: string; body: string }[] = []; // new critical/warning alerts, emailed once at the end
   const put = async (kind: string, severity: "info" | "warning" | "critical" | "positive", title: string, body: string, dedupe: string, data: Record<string, unknown> = {}) => {
     const { data: row } = await admin.from("client_alerts")
       .upsert({ client_id: clientId, kind, severity, title, body, dedupe_key: dedupe, data }, { onConflict: "client_id,dedupe_key", ignoreDuplicates: true }).select("id");
-    if (row?.length) created++;
+    if (row?.length) {
+      created++;
+      if (severity === "critical" || severity === "warning") fresh.push({ severity, title, body });
+    }
   };
 
   // 1. week-over-week movement in the main traffic metrics (GSC reports with a 2-3 day delay)
@@ -71,6 +76,10 @@ export async function generateAlerts(admin: SupabaseClient, clientId: string, ti
   const { data: lowRows } = await admin.from("gbp_reviews").select("remote_id, resource_id").eq("client_id", clientId).lte("rating", 2).gte("reviewed_at", `${since}T00:00:00Z`).limit(50);
   if (lowRows?.length) await put("negative_reviews", "warning", `${lowRows.length} new low-rated review${lowRows.length > 1 ? "s" : ""} (1–2 stars)`, "Replying promptly to unhappy customers protects your rating. See Business Profile → Google reviews.", `neg_reviews:${weekKey(today)}`, { count: lowRows.length });
 
+  if (fresh.length) {
+    const { data: c } = await admin.from("clients").select("name").eq("id", clientId).maybeSingle();
+    await emailClientAlerts(admin, clientId, c?.name ?? "Your client", fresh); // no-op unless email is configured
+  }
   return created;
 }
 

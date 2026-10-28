@@ -1,5 +1,6 @@
 import "server-only";
 import type { SupabaseClient } from "@supabase/supabase-js";
+import { notifyOps } from "@/lib/notify";
 
 /**
  * Wraps a scheduled job so every run is recorded in cron_runs (start, finish, outcome, error).
@@ -13,7 +14,9 @@ export async function loggedRun<T extends Record<string, unknown>>(admin: Supaba
     if (data) await admin.from("cron_runs").update({ finished_at: new Date().toISOString(), ok: true, summary }).eq("id", data.id);
     return summary;
   } catch (e) {
-    if (data) await admin.from("cron_runs").update({ finished_at: new Date().toISOString(), ok: false, error: (e instanceof Error ? e.message : "failed").slice(0, 500) }).eq("id", data.id);
+    const message = (e instanceof Error ? e.message : "failed").slice(0, 500);
+    if (data) await admin.from("cron_runs").update({ finished_at: new Date().toISOString(), ok: false, error: message }).eq("id", data.id);
+    await notifyOps(`Scheduled job "${job}" failed`, message); // optional webhook; never throws
     throw e;
   }
 }

@@ -2,7 +2,10 @@ import { BarList } from "@/components/charts/bar-list";
 import { MetricTrend } from "@/components/charts/metric-trend";
 import { FilterSelect } from "@/components/dashboard/filter-select";
 import { KpiCard } from "@/components/dashboard/kpi-card";
-import { EmptyState, PageHeader } from "@/components/dashboard/page-header";
+import { EmptyState } from "@/components/dashboard/page-header";
+import { Highlights } from "@/components/dashboard/highlights";
+import { TabHeader } from "@/components/dashboard/tab-header";
+import { movement, pickHighlights } from "@/lib/overview/highlights";
 import { RangeSelector } from "@/components/dashboard/range-selector";
 import { getSession } from "@/lib/analytics/client-context";
 import { fmtInt, fmtPercent, toNum } from "@/lib/analytics/format";
@@ -39,7 +42,7 @@ export default async function BusinessProfilePage({ searchParams }: { searchPara
   if (scope.gbp.length === 0) {
     return (
       <>
-        <PageHeader title={title} description="Local search visibility and customer actions." />
+        <TabHeader source="gbp" title={title} description="How customers find your business on Google Search and Maps, and what they do next." />
         <EmptyState
           title="Business Profile isn't connected"
           body="Connect the Google account that manages the Business Profile, then choose the locations to track."
@@ -60,8 +63,16 @@ export default async function BusinessProfilePage({ searchParams }: { searchPara
 
   const lastSync = conn.data?.last_synced_at ? new Date(conn.data.last_synced_at).toLocaleString() : "never";
   const header = (
-    <PageHeader title={title}
-      description={`Location: ${scope.label(scope.gbp, scope.gbpPick)} · last synced ${lastSync} · metrics arrive with a delay of a few days`} />
+    <TabHeader source="gbp" title={title}
+      description={`How customers find your business on Google Search and Maps, and what they do next. Location: ${scope.label(scope.gbp, scope.gbpPick)} · last synced ${lastSync}`}
+      guide={[
+          { term: "Profile views", text: "Times your Business Profile was shown on Google Search or Maps (unique viewers per day)." },
+          { term: "Search vs Maps", text: "Whether people found you by searching Google, or by browsing the map." },
+          { term: "Website clicks, calls, directions", text: "Customer actions taken from your profile. A call click is a tap on the button, not a completed call." },
+          { term: "Search terms", text: "What people typed before seeing your profile. Google reports them monthly, and shows low counts only as a threshold." },
+          { term: "Local rankings (grid)", text: "Your position on Google Maps at points around the business. Green = top 3, orange = 4-10, red = further down." },
+          { term: "Delay", text: "Business Profile performance data arrives a few days late." },
+        ]} />
   );
   const locationOptions = resourceOptions(scope.gbp, "All locations (combined)");
   const filters = locationOptions && (
@@ -104,6 +115,14 @@ export default async function BusinessProfilePage({ searchParams }: { searchPara
   const { current: cur, previous: prev, mom, yoy } = s;
   const actions = (pick(cur, "call_clicks") ?? 0) + (pick(cur, "website_clicks") ?? 0) + (pick(cur, "direction_requests") ?? 0);
   const impressions = pick(cur, "impressions");
+  const mobileShare = (pick(cur, "impressions_mobile") ?? 0) / Math.max(1, impressions ?? 0);
+  const hl = pickHighlights([
+    movement("Profile views", pick(cur, "impressions"), pick(prev, "impressions"), { fmt: fmtInt, minBase: 100, actionWhenBad: "Check your categories, hours and recent photos, and keep posting updates.", action: "Keep your profile fresh with photos and posts to hold this." }),
+    movement("Website clicks", pick(cur, "website_clicks"), pick(prev, "website_clicks"), { fmt: fmtInt, minBase: 10, actionWhenBad: "Make sure the website link and the call-to-action on your profile are current." }),
+    movement("Call button clicks", pick(cur, "call_clicks"), pick(prev, "call_clicks"), { fmt: fmtInt, minBase: 5, actionWhenBad: "Check that the phone number is correct and that opening hours are accurate." }),
+    movement("Direction requests", pick(cur, "direction_requests"), pick(prev, "direction_requests"), { fmt: fmtInt, minBase: 5 }),
+    Boolean(impressions) && mobileShare >= 0.6 && { tone: "info" as const, title: `${Math.round(mobileShare * 100)}% of profile views are on phones`, detail: "Most of your local customers are on the move.", action: "Make sure the call button, hours and address are correct, and the website loads fast on mobile." },
+  ]);
   const kpis: { label: string; k: string; hint?: string }[] = [
     { label: "Profile views", k: "impressions", hint: "Times the profile was shown on Google Search and Maps (unique viewers per day)." },
     { label: "Search views", k: "impressions_search" },
@@ -131,6 +150,8 @@ export default async function BusinessProfilePage({ searchParams }: { searchPara
       {header}
       <RangeSelector path={PATH} sp={sp} range={range} />
       {filters}
+
+      <Highlights items={hl} />
 
       <section aria-label="Key metrics" className="grid gap-4 sm:grid-cols-2 xl:grid-cols-3">
         {[...kpis, ...extras].map((m) => (

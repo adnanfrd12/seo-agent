@@ -1,5 +1,8 @@
 import Link from "next/link";
-import { EmptyState, PageHeader } from "@/components/dashboard/page-header";
+import { EmptyState } from "@/components/dashboard/page-header";
+import { Highlights } from "@/components/dashboard/highlights";
+import { TabHeader } from "@/components/dashboard/tab-header";
+import { pickHighlights } from "@/lib/overview/highlights";
 import { ReportTable, Unavailable } from "@/components/report/report-ui";
 import { getSession } from "@/lib/analytics/client-context";
 import { shiftDays, todayIn } from "@/lib/analytics/range";
@@ -36,7 +39,14 @@ export default async function ClarityPage() {
       .eq("client_id", client.id).gte("metric_date", since).order("metric_date", { ascending: false }).limit(10000),
     supabase.from("clarity_recording_reviews").select("*").eq("client_id", client.id).order("created_at", { ascending: false }).limit(50),
   ]);
-  const header = <PageHeader title="Microsoft Clarity" description="Visitor behaviour from Clarity's Data Export API: traffic, engagement, scroll depth and friction signals." />;
+  const header = <TabHeader source="clarity" title="Microsoft Clarity" description="How visitors actually use the site: where they get stuck, what doesn't work and how far they read." guide={[
+    { term: "Rage clicks", text: "Visitors clicking the same spot repeatedly: a sign something looks clickable but doesn't work." },
+    { term: "Dead clicks", text: "Clicks that did nothing. Often a button or image people expect to be a link." },
+    { term: "Quick backs", text: "Visitors who jumped straight back to the previous page: the page wasn't what they expected." },
+    { term: "Script errors", text: "Technical errors in the page's code that can break forms, menus and buttons." },
+    { term: "Scroll depth", text: "How far down visitors read, on average. Low numbers mean key content may be buried." },
+    { term: "History", text: "Clarity only shares the last 1-3 days at a time, so history builds up from each daily sync." },
+  ]} />;
   const connected = conn?.status === "connected";
 
   if (metrics.error) return <div className="mx-auto max-w-6xl">{header}<Unavailable title="Database update needed" body="Apply migration 20261021000011 in Supabase to enable Clarity." /></div>;
@@ -72,6 +82,17 @@ export default async function ClarityPage() {
     }),
   ];
 
+  const scriptPct = avg("ScriptErrorCount", "sessionsWithMetricPercentage");
+  const ragePct = avg("RageClickCount", "sessionsWithMetricPercentage");
+  const deadPct = avg("DeadClickCount", "sessionsWithMetricPercentage");
+  const scroll = avg("ScrollDepth", "averageScrollDepth");
+  const hl = pickHighlights([
+    scriptPct != null && scriptPct >= 10 && { tone: "bad" as const, title: `${scriptPct.toFixed(0)}% of sessions hit a script error`, detail: "Code errors can silently break forms, menus and buttons.", action: "Ask your developer to check the browser console on the most-visited pages and fix the errors." },
+    ragePct != null && ragePct > 0 && { tone: "bad" as const, title: `${ragePct.toFixed(1)}% of sessions had rage clicks`, detail: "Visitors clicked repeatedly on something that didn't respond.", action: "In Clarity, filter recordings by rage clicks and fix the element people keep clicking." },
+    deadPct != null && deadPct >= 5 && { tone: "bad" as const, title: `${deadPct.toFixed(0)}% of sessions had dead clicks`, detail: "People clicked things that did nothing.", action: "Make images and headings that look clickable into real links, or restyle them." },
+    scroll != null && scroll < 40 && { tone: "info" as const, title: `Visitors read ${scroll.toFixed(0)}% of the page on average`, detail: "Content below the fold may not be seen.", action: "Move the most important message and call-to-action higher up." },
+    scriptPct != null && scriptPct < 10 && (ragePct ?? 0) === 0 && { tone: "good" as const, title: "No rage clicks and few script errors", detail: "Visitors aren't hitting obvious friction in the stored days." },
+  ]);
   const daily = dates.map((d) => {
     const day = totals.filter((r) => r.metric_date === d && !r.value);
     const get = (m: string) => day.find((r) => r.metric === m);
@@ -118,6 +139,7 @@ export default async function ClarityPage() {
         <Link href="/integrations" className="font-medium text-accent hover:underline">Manage connection & recording reviews →</Link>
       </div>
       {conn?.last_error && <p role="alert" className="rounded-lg bg-accent-soft p-3 text-sm text-negative">{conn.last_error}</p>}
+      {rows.length > 0 && <Highlights items={hl} stableNote="Clarity only stores the most recent days; more history builds up daily." />}
 
       {rows.length === 0 ? (
         <Unavailable title="No Clarity data stored yet" body="The first import runs right after connecting (it can take a minute); then one day is added per daily sync. Clarity's API only serves the last 1–3 days, so history builds up over time." />

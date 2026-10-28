@@ -3,6 +3,7 @@ import { Printer } from "lucide-react";
 import { FilterSelect } from "@/components/dashboard/filter-select";
 import { RangeSelector } from "@/components/dashboard/range-selector";
 import { AlertsPanel } from "@/components/overview/alerts-panel";
+import { Onboarding } from "@/components/overview/onboarding";
 import { ChangesPanel, CompetitorSnapshot, HealthPanel, Hero, KpiBand, NextActions, TopAndOpportunities, type NextAction } from "@/components/overview/command-center";
 import { ReportBody } from "@/components/report/report-body";
 import { PdfDownloadButton } from "@/components/report/pdf-download";
@@ -107,6 +108,7 @@ export default async function OverviewPage({ searchParams }: { searchParams: Pro
       )}
       <div className="space-y-6">
         <Hero clientName={client.name} rangeLabel={`${range.start} → ${range.end}`} growth={growth} status={status} comp={comp} unseenAlerts={alerts.filter((a) => !a.seen_at).length} />
+        <Onboarding status={status} />
         <KpiBand d={data} />
         <div className="grid gap-6 lg:grid-cols-5">
           <div className="lg:col-span-3"><ChangesPanel d={data} /></div>

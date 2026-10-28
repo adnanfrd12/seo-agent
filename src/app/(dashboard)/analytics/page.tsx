@@ -4,7 +4,10 @@ import { BarList } from "@/components/charts/bar-list";
 import { MetricTrend } from "@/components/charts/metric-trend";
 import { KpiCard } from "@/components/dashboard/kpi-card";
 import { FilterSelect } from "@/components/dashboard/filter-select";
-import { EmptyState, PageHeader } from "@/components/dashboard/page-header";
+import { EmptyState } from "@/components/dashboard/page-header";
+import { Highlights } from "@/components/dashboard/highlights";
+import { TabHeader } from "@/components/dashboard/tab-header";
+import { movement, pickHighlights } from "@/lib/overview/highlights";
 import { RangeSelector } from "@/components/dashboard/range-selector";
 import { DataTable } from "@/components/tables/data-table";
 import { getSession } from "@/lib/analytics/client-context";
@@ -69,7 +72,7 @@ export default async function Ga4Page({ searchParams }: { searchParams: Promise<
   if (scope.ga4.length === 0) {
     return (
       <>
-        <PageHeader title="Google Analytics 4" description="Traffic, engagement and key events." />
+        <TabHeader source="ga4" title="Google Analytics 4" description="Who visits your website, how they behave and which actions they take." />
         <EmptyState
           title="Google Analytics 4 isn't connected"
           body="Connect your Google account and choose a GA4 property to start importing data."
@@ -97,9 +100,17 @@ export default async function Ga4Page({ searchParams }: { searchParams: Promise<
   ]);
 
   const header = (
-    <PageHeader
-      title="Google Analytics 4"
-      description={`Property: ${resources.map((r) => r.display_name).join(", ")}${resources[0]?.timezone ? ` · reporting time zone ${resources[0].timezone}` : ""}`}
+    <TabHeader
+      source="ga4" title="Google Analytics 4"
+      description={`Who visits your website, how they behave and which actions they take. Property: ${resources.map((r) => r.display_name).join(", ")}${resources[0]?.timezone ? ` · reporting time zone ${resources[0].timezone}` : ""}`}
+      guide={[
+        { term: "Active users", text: "People who visited and engaged with the site. A person active on several days is counted once per day." },
+        { term: "Sessions", text: "Visits to the site. One person can have several sessions." },
+        { term: "Engagement rate", text: "The share of sessions that lasted 10+ seconds, had a key event, or viewed 2+ pages. Higher means visitors found something worth their time." },
+        { term: "Key events", text: "The actions you decided matter (form sent, call tapped, purchase). Called conversions before." },
+        { term: "Traffic channel", text: "How visitors arrived: Organic Search (Google/Bing), Direct, Referral (other sites), Social, Paid, Email." },
+        { term: "Landing page", text: "The first page a visitor sees. Good landing pages match the search that brought people there." },
+      ]}
     />
   );
   if ([summary, trend, breakdown, sources, pages].some((r) => r.error)) {
@@ -168,6 +179,23 @@ export default async function Ga4Page({ searchParams }: { searchParams: Promise<
   ];
   const kpis = all;
 
+  // extra breakdowns (cities, new vs returning); absent until the latest migration is applied and a sync has run
+  const [cityRes, userTypeRes] = await Promise.all([
+    supabase.rpc("get_ga4_dimension", { ...args, p_dim: "city", p_limit: 15 }),
+    supabase.rpc("get_ga4_dimension", { ...args, p_dim: "user_type", p_limit: 5 }),
+  ]);
+  const cities = cityRes.error ? [] : ((cityRes.data ?? []) as { value: string; sessions: number }[]);
+  const userTypes = userTypeRes.error ? [] : ((userTypeRes.data ?? []) as { value: string; sessions: number }[]);
+  const topChannel = b.channels[0];
+  const totalSessions = b.channels.reduce((a, c) => a + Number(c.sessions), 0);
+  const hl = pickHighlights([
+    movement("Website sessions", pick(stats.current, "sessions"), pick(stats.previous, "sessions"), { fmt: fmtInt, minBase: 30, actionWhenBad: "See which channel dropped in Traffic by channel below.", action: "See which channel grew in Traffic by channel below." }),
+    movement("Engagement rate", pick(stats.current, "engagement_rate"), pick(stats.previous, "engagement_rate"), { fmt: (n) => fmtPercent(n, 1), minBase: 0.01, minPct: 5, actionWhenBad: "Check the top landing pages: low engagement usually means the page doesn't match what visitors expected." }),
+    movement("Key events", pick(stats.current, "key_events"), pick(stats.previous, "key_events"), { fmt: fmtInt, minBase: 3, actionWhenBad: "Check which page or channel stopped producing actions." }),
+    pick(stats.current, "key_events") === 0 && { tone: "info" as const, title: "No key events recorded", detail: "Without them, GA4 can't show which visits turn into leads or sales.", action: "Mark your goals (form submit, call tap, purchase) as key events in GA4." },
+    topChannel && totalSessions > 0 && Number(topChannel.sessions) / totalSessions >= 0.5 && { tone: "info" as const, title: `${topChannel.value} brings ${Math.round((Number(topChannel.sessions) / totalSessions) * 100)}% of visits`, detail: "Relying on one channel is risky if it changes.", action: "Build a second source (e.g. local listings, email, content) so one change can't cut traffic in half." },
+  ]);
+
   const src = sources.data as Table<SourceRow>;
   const pg = pages.data as Table<PageRow>;
   const exportBase = `/api/export/ga4?start=${range.start}&end=${range.end}${scope.ga4Pick ? `&property=${scope.ga4Pick.id}` : ""}`;
@@ -187,6 +215,8 @@ export default async function Ga4Page({ searchParams }: { searchParams: Promise<
           Top pages and key events below cover all traffic.
         </p>
       )}
+
+      <Highlights items={hl} />
 
       <section aria-label="Key metrics" className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
         {kpis.map((m) => (
@@ -219,6 +249,13 @@ export default async function Ga4Page({ searchParams }: { searchParams: Promise<
           emptyText="No key events recorded. Mark events as key events in GA4 to see them here."
           items={s.key_events.map((e) => ({ label: e.value, value: Number(e.key_events) }))} />
       </div>
+
+      {(cities.length > 0 || userTypes.length > 0) && (
+        <div className="mt-4 grid gap-4 md:grid-cols-2">
+          {cities.length > 0 && <BarList title="Top cities" valueLabel="Sessions" items={cities.map((c) => ({ label: c.value, value: Number(c.sessions) }))} />}
+          {userTypes.length > 0 && <BarList title="New vs returning visitors" valueLabel="Sessions" items={userTypes.map((c) => ({ label: c.value === "new" ? "New visitors" : c.value === "returning" ? "Returning visitors" : c.value, value: Number(c.sessions) }))} />}
+        </div>
+      )}
 
       <div className="mt-6 space-y-6">
         <DataTable<SourceRow>

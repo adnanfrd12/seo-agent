@@ -167,6 +167,9 @@ export async function syncGa4(
       [
         ["device", "deviceCategory"],
         ["country", "country"],
+        // local-SEO value: where visitors are, and whether they are new or returning
+        ["city", "city"],
+        ["user_type", "newVsReturning"],
       ] as const
     ).map(([dimension, ga4Dim]): ReportJob => ({
       name: dimension,

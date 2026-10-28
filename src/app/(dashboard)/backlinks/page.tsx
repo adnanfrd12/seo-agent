@@ -2,7 +2,8 @@ import { BarList } from "@/components/charts/bar-list";
 import { MetricTrend } from "@/components/charts/metric-trend";
 import type { TrendPoint } from "@/components/charts/trend-chart";
 import { KpiCard } from "@/components/dashboard/kpi-card";
-import { EmptyState, PageHeader } from "@/components/dashboard/page-header";
+import { EmptyState } from "@/components/dashboard/page-header";
+import { TabHeader } from "@/components/dashboard/tab-header";
 import { SpendLine, SpikeAlert, TargetSettings } from "@/components/research/chrome";
 import { LinkGapForm, RefreshControls } from "@/components/research/controls";
 import { ResearchTable, type Col } from "@/components/research/research-table";
@@ -40,7 +41,14 @@ export default async function BacklinksPage() {
   const page = await researchPage();
   if (!page) return null;
   const { canEdit, configured, cache, budget } = page;
-  const header = <PageHeader title="Backlinks" description="Who links to the website: authority, referring domains, new and lost links, anchors and link opportunities. Data from DataForSEO." />;
+  const header = <TabHeader source="dfs" title="Backlinks" description="Who links to the website: authority, referring domains, new and lost links, anchors and link opportunities. Data from DataForSEO." guide={[
+          { term: "Domain rank", text: "A 0-1000 strength score for the whole site's link profile. Higher means more authority." },
+          { term: "Backlinks and referring domains", text: "Links pointing to you, and the number of different websites they come from. Many links from few sites are worth less than links from many." },
+          { term: "Dofollow / nofollow", text: "Dofollow links pass ranking value; nofollow links don't (but still send visitors)." },
+          { term: "Spam score", text: "0-100 estimate of how spammy the link profile looks. Above 50 deserves a review; spam links can be disavowed in Google Search Console." },
+          { term: "Anchor text", text: "The clickable words of a link. A natural profile is mostly brand names and varied phrases." },
+          { term: "Link gap", text: "Websites that link to a competitor but not to you: the best outreach targets." },
+        ]} />;
 
   if (!configured) {
     return <>{header}<EmptyState title="DataForSEO isn't configured" body="Add DATAFORSEO_LOGIN and DATAFORSEO_PASSWORD to the environment, then redeploy." action={{ href: "/integrations", label: "Open Integrations" }} /></>;

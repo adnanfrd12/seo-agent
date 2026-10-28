@@ -1,5 +1,7 @@
 import { revalidatePath } from "next/cache";
+import { Suspense } from "react";
 import { after } from "next/server";
+import { RangeMemory } from "@/components/layout/range-memory";
 import { touchClient } from "@/lib/activity";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { getSession } from "@/lib/analytics/client-context";
@@ -54,6 +56,7 @@ export default async function DashboardLayout({ children }: { children: React.Re
     <AppShell
       header={<HeaderContent client={client} clients={clients} user={user} lastSyncedAt={lastSync?.last_synced_at ?? null} />}
     >
+      <Suspense fallback={null}><RangeMemory /></Suspense>
       {children}
     </AppShell>
   );

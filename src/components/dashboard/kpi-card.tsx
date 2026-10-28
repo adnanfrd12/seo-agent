@@ -41,7 +41,7 @@ function Delta({ label, current, base, higherIsBetter }: {
 
 export function KpiCard({ label, source, hint, value, previous, mom, yoy, format, higherIsBetter = true }: KpiProps) {
   return (
-    <div className="flex min-h-36 flex-col rounded-xl border border-border bg-surface p-4 shadow-sm transition-shadow hover:shadow-md">
+    <div className="lift flex min-h-36 flex-col rounded-xl border border-border bg-surface p-4 shadow-sm">
       <div className="flex items-start justify-between gap-2">
         <h3 className="text-sm font-medium text-muted" title={hint}>{label}</h3>
         <span className="rounded bg-accent-soft px-1.5 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-accent">

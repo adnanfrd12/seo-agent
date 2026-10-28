@@ -1,6 +1,8 @@
 import { GenerateButton, TaskStatusSelect } from "@/components/ai/ai-controls";
 import { AutoAnalysis } from "@/components/ai/auto-analysis";
-import { PageHeader } from "@/components/dashboard/page-header";
+import { TabHeader } from "@/components/dashboard/tab-header";
+import { Highlights } from "@/components/dashboard/highlights";
+import { pickHighlights } from "@/lib/overview/highlights";
 import { RangeSelector } from "@/components/dashboard/range-selector";
 import { Unavailable } from "@/components/report/report-ui";
 import { getSession } from "@/lib/analytics/client-context";
@@ -42,10 +44,22 @@ export default async function StrategyPage({ searchParams }: { searchParams: Pro
   const autoStart = configured && canEdit && !error && !plan && !running;
   const done = all.filter((t) => t.status === "completed").length;
 
+  const focusWeek = [1, 2, 3, 4].find((w) => all.some((t) => t.week === w && !["completed", "skipped"].includes(t.status)));
+  const openInFocus = focusWeek ? all.filter((t) => t.week === focusWeek && !["completed", "skipped"].includes(t.status)) : [];
+  const hl = pickHighlights([
+    all.length > 0 && { tone: (done > 0 ? "good" : "info") as "good" | "info", title: `${done} of ${all.length} tasks completed`, detail: all.length - done > 0 ? `${all.length - done} remaining across the four weeks.` : "The plan is complete.", action: all.length - done > 0 ? "Mark tasks as you finish them so the next plan builds on real progress." : "Generate a new plan from fresh data." },
+    Boolean(focusWeek) && openInFocus.length > 0 && { tone: "bad" as const, title: `Focus now: week ${focusWeek}`, detail: `${openInFocus.length} open task${openInFocus.length > 1 ? "s" : ""}, starting with “${openInFocus[0].title}”.`, action: "Finish the current week before starting the next." },
+  ]);
+
   return (
     <div className="mx-auto max-w-5xl">
-      <PageHeader title="30-Day SEO Strategy" description="A prioritised, week-by-week plan generated from this period's evidence. Track progress as you go; future reports compare before and after, without claiming cause and effect." />
+      <TabHeader source={null} eyebrow="AI intelligence" title="30-Day SEO Strategy" description="A prioritised, week-by-week plan generated from this period's evidence. Track progress as you go; future reports compare before and after, without claiming cause and effect." guide={[
+  { term: "Weekly plan", text: "Week 1 fixes and quick wins, week 2 keyword and content work, week 3 user experience and conversion, week 4 measurement and next steps." },
+  { term: "Evidence", text: "Each task cites the data behind it. Tasks without evidence are setup or measurement steps." },
+  { term: "Success metric", text: "What to check later to know whether the task worked. Results are compared before and after, without claiming cause and effect." },
+]} />
       <RangeSelector path="/strategy" sp={sp} range={range} showCompare={false} />
+      {plan && <Highlights items={hl} />}
       {error ? (
         <Unavailable title="Database update needed" body="Apply migration 20261021000011 in Supabase to enable the strategy planner." />
       ) : !process.env.ANTHROPIC_API_KEY ? (
