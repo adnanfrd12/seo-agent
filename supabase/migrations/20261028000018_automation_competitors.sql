@@ -14,7 +14,7 @@ create table if not exists public.cron_runs (
   summary jsonb not null default '{}'::jsonb,
   error text
 );
-create index if not exists  on public.cron_runs (job, started_at desc);
+create index if not exists cron_runs_job_idx on public.cron_runs (job, started_at desc);
 alter table public.cron_runs enable row level security;
 revoke all on public.cron_runs from anon, authenticated;
 
@@ -42,7 +42,7 @@ create table if not exists public.client_alerts (
   seen_at timestamptz,
   unique (client_id, dedupe_key)
 );
-create index if not exists  on public.client_alerts (client_id, created_at desc);
+create index if not exists client_alerts_client_idx on public.client_alerts (client_id, created_at desc);
 
 -- ------------------------------------------------------------ competitor history
 -- One row per domain per day (the client's own domain has is_self = true), so visibility trends
@@ -59,7 +59,7 @@ create table if not exists public.competitor_snapshots (
   created_at timestamptz not null default now(),
   unique (client_id, domain, snapshot_date)
 );
-create index if not exists  on public.competitor_snapshots (client_id, snapshot_date desc);
+create index if not exists competitor_snapshots_client_idx on public.competitor_snapshots (client_id, snapshot_date desc);
 
 -- competitor management: how competitors are chosen, and which are hidden or pinned
 alter table public.research_targets
