@@ -66,8 +66,8 @@ export function Hero({ clientName, rangeLabel, growth, status, comp, unseenAlert
   const strongest = comp ? [...new Set(comp.snapshots.filter((s) => !s.is_self).map((s) => s.domain))].map((d) => comp.snapshots.filter((s) => s.domain === d).at(-1)!).sort((a, b) => (b.traffic ?? 0) - (a.traffic ?? 0))[0] : null;
   void rivals;
   return (
-    <section className="rise relative overflow-hidden rounded-3xl border border-ink-border bg-ink p-6 text-ink-foreground sm:p-8" aria-label="Performance summary">
-      <div aria-hidden className="pointer-events-none absolute -right-24 -top-24 size-80 rounded-full opacity-30 blur-3xl" style={{ background: "radial-gradient(circle, var(--accent), transparent 65%)" }} />
+    <section className="rise relative overflow-hidden rounded-3xl border border-ink-border bg-ink p-6 text-ink-foreground shadow-sm sm:p-8" aria-label="Performance summary">
+      <div aria-hidden className="pointer-events-none absolute -right-24 -top-24 size-80 rounded-full opacity-[0.14] blur-3xl" style={{ background: "radial-gradient(circle, var(--accent), transparent 65%)" }} />
       <div className="relative flex flex-col gap-6 lg:flex-row lg:items-center lg:gap-10">
         {growth ? <Ring score={growth.score} band={growth.band} /> : <div className="flex size-36 shrink-0 items-center justify-center rounded-full border border-dashed border-ink-border text-center text-xs text-ink-muted">Growth Index appears once two metrics have a previous period</div>}
         <div className="min-w-0 flex-1">

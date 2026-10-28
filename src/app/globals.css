@@ -12,12 +12,12 @@
   --accent-foreground: #ffffff;
   --positive: #12805c;
   --negative: #c4301c;
-  /* "ink" is the dark command-centre surface used for the Overview hero */
-  --ink: #14141a;
-  --ink-soft: #1d1d26;
-  --ink-border: #2c2c38;
-  --ink-foreground: #f4f4f7;
-  --ink-muted: #a3a3b2;
+  /* the Overview hero uses the app's own surface colours, so it follows the light and dark themes */
+  --ink: var(--surface);
+  --ink-soft: var(--surface-muted);
+  --ink-border: var(--border);
+  --ink-foreground: var(--foreground);
+  --ink-muted: var(--muted);
 }
 
 @media (prefers-color-scheme: dark) {
