@@ -4,6 +4,7 @@ import { activeClientIds } from "@/lib/activity";
 import { generateAlerts } from "@/lib/alerts";
 import { AUTO_SHARE, BudgetError, getSettings, spend } from "@/lib/dataforseo/budget";
 import { dfsConfigured } from "@/lib/dataforseo/client";
+import { DEFAULT_AUDIT_PAGES, auditEstimate, pollAudit, startAudit, type AuditTask } from "@/lib/dataforseo/audit";
 import { runCompetitorAnalysis } from "@/lib/dataforseo/competitors";
 import { refreshCore, resolveTarget, trackLinkChanges } from "@/lib/dataforseo/research";
 import { serverEnv } from "@/lib/env";
@@ -23,6 +24,9 @@ const STALE_DAYS = 7;
 const COMPETITOR_SHARE = 0.35;
 /** Cumulative share of the daily cap after which the daily new/lost backlink check stops. */
 const LINK_SHARE = 0.45;
+/** Cumulative share of the daily cap after which weekly site audits stop starting. */
+const AUDIT_SHARE = 0.55;
+const AUDIT_EVERY_DAYS = 7;
 
 /**
  * Daily. Order of work, all inside the automatic budget (60% of the daily cap set on the Integrations page):
@@ -40,6 +44,17 @@ async function handle(request: NextRequest) {
       const out: Record<string, unknown> = {};
       const { data: clients } = await admin.from("clients").select("id, timezone");
       const ids = (clients ?? []).map((c) => c.id as string);
+
+      // 0. collect finished site-audit crawls (free status checks; runs even when automatic refresh is off)
+      if (dfsConfigured()) {
+        const { data: pending } = await admin.from("dfs_cache").select("client_id, data").eq("endpoint", "audit_task");
+        let collected = 0;
+        for (const p of pending ?? []) {
+          if ((p.data as AuditTask).status !== "crawling" || Date.now() > deadline) continue;
+          try { if ((await pollAudit(admin, p.client_id as string)).state === "done") collected++; } catch { /* retried tomorrow or when the page is opened */ }
+        }
+        out.auditsCollected = collected;
+      }
 
       if (dfsConfigured()) {
         const settings = await getSettings(admin);
@@ -87,6 +102,22 @@ async function handle(request: NextRequest) {
               } catch (e) { if (e instanceof BudgetError) { linksStopped = "budget"; break; } }
             }
             out.linkChanges = { checked: links, changesFound: linkChanges, stopped: linksStopped };
+
+            // 1c. weekly site audit for active clients (about 2 cents each); the result is collected by the next poll
+            const { data: audits } = await admin.from("dfs_cache").select("client_id, data, fetched_at").eq("endpoint", "audit_task");
+            const lastAudit = new Map((audits ?? []).map((r) => [r.client_id as string, r.data as AuditTask]));
+            let started = 0;
+            let auditStopped: string | null = null;
+            for (const id of ids.filter((x) => active.has(x))) {
+              const t = lastAudit.get(id);
+              if (t && (t.status === "crawling" || Date.now() - Date.parse(t.startedAt) < AUDIT_EVERY_DAYS * 86_400_000)) continue;
+              if (Date.now() > deadline) { auditStopped = "time"; break; }
+              if ((await spentNow()) + auditEstimate(DEFAULT_AUDIT_PAGES) > cap * AUDIT_SHARE) { auditStopped = "budget"; break; }
+              const target = await resolveTarget(admin, id);
+              if (!target || !target.auto_refresh) continue;
+              try { await startAudit({ admin, clientId: id, source: "auto" }, target, DEFAULT_AUDIT_PAGES); started++; } catch (e) { if (e instanceof BudgetError) { auditStopped = "budget"; break; } }
+            }
+            out.audits = { started, stopped: auditStopped };
 
             // 2. weekly core refresh, stalest first
             const { data: cached } = await admin.from("dfs_cache").select("client_id, fetched_at").eq("endpoint", "summary");

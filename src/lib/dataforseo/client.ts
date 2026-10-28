@@ -66,6 +66,43 @@ export async function dfsPost(path: string, body: Record<string, unknown>): Prom
   throw lastErr instanceof DfsError ? lastErr : new DfsError("Couldn't reach DataForSEO. Try again.", "other");
 }
 
+/**
+ * Posts an asynchronous task (the On-Page crawler) and returns its id. Unlike a Live call the answer
+ * arrives later, so the id is stored and the result is collected with dfsGet. Once DataForSEO has
+ * answered, the task exists and is billed, so a response is never retried.
+ */
+export async function dfsTaskPost(path: string, body: Record<string, unknown>): Promise<{ id: string; cost: number }> {
+  let res: Response | null = null;
+  for (let attempt = 0; attempt < 2 && !res; attempt++) {
+    try {
+      res = await fetch(`${BASE}${path}`, {
+        method: "POST", headers: { Authorization: authHeader(), "Content-Type": "application/json" },
+        body: JSON.stringify([body]), signal: AbortSignal.timeout(45_000), cache: "no-store",
+      });
+    } catch { await new Promise((r) => setTimeout(r, 1500)); }
+  }
+  if (!res) throw new DfsError("Couldn't reach DataForSEO. Try again.", "other");
+  if (res.status === 401) throw new DfsError("DataForSEO rejected the login. Check DATAFORSEO_LOGIN and the API password.", "auth");
+  if (res.status === 402) throw new DfsError("DataForSEO credit is used up. Top up the balance.", "payment");
+  if (res.status === 429 || res.status >= 500) throw new DfsError(`DataForSEO is busy (${res.status}). Try again shortly.`, "rate_limit");
+  const json = (await res.json().catch(() => null)) as (TaskResponse & { tasks?: { id?: string }[] }) | null;
+  const task = json?.tasks?.[0];
+  if (!json || !task) throw new DfsError("DataForSEO returned an unreadable response.", "other");
+  if (task.status_code === 40200 || json.status_code === 40200) throw new DfsError("DataForSEO credit is used up. Top up the balance.", "payment");
+  if (task.status_code !== 20100 || !task.id) throw new DfsError(`DataForSEO: ${task.status_message} (${task.status_code})`, "bad_request");
+  return { id: task.id, cost: Number(task.cost ?? json.cost ?? 0) || 0 };
+}
+
+/** A free GET (task status). Returns the task's own status code so callers can tell "not found" from "still running". */
+export async function dfsGet(path: string): Promise<{ status: number; result: Record<string, unknown> | null }> {
+  const res = await fetch(`${BASE}${path}`, { headers: { Authorization: authHeader() }, signal: AbortSignal.timeout(30_000), cache: "no-store" });
+  if (res.status === 401) throw new DfsError("DataForSEO rejected the login.", "auth");
+  const json = (await res.json().catch(() => null)) as TaskResponse | null;
+  const task = json?.tasks?.[0];
+  if (!task) throw new DfsError("DataForSEO returned an unreadable response.", "other");
+  return { status: task.status_code, result: task.result?.[0] ?? null };
+}
+
 let balanceCache: { at: number; value: number | null } | null = null;
 /** Account balance (a free endpoint). Cached for 5 minutes. */
 export async function dfsBalance(): Promise<number | null> {

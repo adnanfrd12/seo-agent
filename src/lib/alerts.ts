@@ -3,6 +3,7 @@ import type { SupabaseClient } from "@supabase/supabase-js";
 import { shiftDays, todayIn } from "@/lib/analytics/range";
 import { loadCompetitors } from "@/lib/dataforseo/competitors";
 import { detectLinkSpike, type LinkChange, type LinkChanges } from "@/lib/dataforseo/research";
+import type { AuditResult } from "@/lib/dataforseo/audit";
 import { emailClientAlerts } from "@/lib/notify";
 
 /**
@@ -76,6 +77,18 @@ export async function generateAlerts(admin: SupabaseClient, clientId: string, ti
     if (lostStrong.length) await put("links_lost", "warning", `Lost ${lostStrong.length} valuable backlink${lostStrong.length > 1 ? "s" : ""}`, `Including links from ${names(lostStrong)}. Check whether the linking pages were removed or changed, and consider reaching out to restore them.`, `links_lost:${today}`, { count: lostStrong.length });
     if (newStrong.length) await put("links_gained", "positive", `Gained ${newStrong.length} strong backlink${newStrong.length > 1 ? "s" : ""}`, `New links from ${names(newStrong)}.`, `links_gained:${today}`, { count: newStrong.length });
     if (newSpam.length >= 3) await put("links_spam", "warning", `${newSpam.length} new backlinks look spammy`, `Spam score 50 or higher, e.g. from ${names(newSpam)}. Review them under Backlinks → New links; spam links can be disavowed in Google Search Console.`, `links_spam:${today}`, { count: newSpam.length });
+  }
+
+  // 3c. site audit: more errors or a lower score than the previous crawl
+  const { data: au } = await admin.from("dfs_cache").select("data").eq("client_id", clientId).eq("endpoint", "audit").maybeSingle();
+  const audit = au?.data as AuditResult | undefined;
+  if (audit) {
+    const errs = audit.issues.filter((i) => i.severity === "error").reduce((a, i) => a + i.count, 0);
+    const p = audit.previous;
+    const day = audit.finishedAt.slice(0, 10);
+    if (p && errs - p.errors >= 3) await put("audit_errors", "warning", `Site audit found ${errs - p.errors} new errors`, `${p.errors} → ${errs} error instances since the audit on ${p.date}. Open Site Audit → Errors to see the pages.`, `audit_errors:${day}`, { errs, prev: p.errors });
+    else if (p && p.score !== null && audit.score !== null && p.score - audit.score >= 5) await put("audit_score", "warning", `Site on-page score dropped ${p.score - audit.score} points`, `${p.score} → ${audit.score} since the audit on ${p.date}. Open Site Audit to see what changed.`, `audit_score:${day}`, { score: audit.score, prev: p.score });
+    else if (!p && errs >= 5) await put("audit_errors", "info", `First site audit found ${errs} errors`, "Open Site Audit → Errors for the pages and how to fix them.", `audit_errors:${day}`, { errs });
   }
 
   // 4. competitors gaining ground
