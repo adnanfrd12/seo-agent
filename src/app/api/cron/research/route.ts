@@ -2,10 +2,10 @@ import { timingSafeEqual } from "node:crypto";
 import { NextResponse, type NextRequest } from "next/server";
 import { activeClientIds } from "@/lib/activity";
 import { generateAlerts } from "@/lib/alerts";
-import { AUTO_SHARE, getSettings, spend } from "@/lib/dataforseo/budget";
+import { AUTO_SHARE, BudgetError, getSettings, spend } from "@/lib/dataforseo/budget";
 import { dfsConfigured } from "@/lib/dataforseo/client";
 import { runCompetitorAnalysis } from "@/lib/dataforseo/competitors";
-import { refreshCore, resolveTarget } from "@/lib/dataforseo/research";
+import { refreshCore, resolveTarget, trackLinkChanges } from "@/lib/dataforseo/research";
 import { serverEnv } from "@/lib/env";
 import { loggedRun } from "@/lib/jobs/log";
 import { createAdminClient } from "@/lib/supabase/admin";
@@ -21,6 +21,8 @@ function authorized(request: NextRequest): boolean {
 const STALE_DAYS = 7;
 /** Share of the DAILY cap that daily competitor analysis may use before the weekly core refresh gets its turn. */
 const COMPETITOR_SHARE = 0.35;
+/** Cumulative share of the daily cap after which the daily new/lost backlink check stops. */
+const LINK_SHARE = 0.45;
 
 /**
  * Daily. Order of work, all inside the automatic budget (60% of the daily cap set on the Integrations page):
@@ -68,6 +70,23 @@ async function handle(request: NextRequest) {
               if (rep.stoppedByBudget) { compStopped = "budget"; break; }
             }
             out.competitors = { analysed: comp.length, waiting: Math.max(0, queue.length - comp.length), stopped: compStopped, activeClients: active.size };
+
+            // 1b. new / lost backlink check for active clients that already have a link profile
+            const { data: hasProfile } = await admin.from("dfs_cache").select("client_id").eq("endpoint", "summary");
+            const profiled = new Set((hasProfile ?? []).map((r) => r.client_id as string));
+            let links = 0, linkChanges = 0;
+            let linksStopped: string | null = null;
+            for (const id of ids.filter((x) => active.has(x) && profiled.has(x))) {
+              if (Date.now() > deadline) { linksStopped = "time"; break; }
+              if ((await spentNow()) >= cap * LINK_SHARE) { linksStopped = "budget"; break; }
+              const target = await resolveTarget(admin, id);
+              if (!target || !target.auto_refresh) continue;
+              try {
+                const r = await trackLinkChanges({ admin, clientId: id, source: "auto" }, target);
+                if (!r.fromCache) { links++; linkChanges += r.added; }
+              } catch (e) { if (e instanceof BudgetError) { linksStopped = "budget"; break; } }
+            }
+            out.linkChanges = { checked: links, changesFound: linkChanges, stopped: linksStopped };
 
             // 2. weekly core refresh, stalest first
             const { data: cached } = await admin.from("dfs_cache").select("client_id, fetched_at").eq("endpoint", "summary");

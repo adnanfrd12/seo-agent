@@ -3,7 +3,7 @@
 import { useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
 import { Loader2, RefreshCw } from "lucide-react";
-import { runCoreRefresh, runDeepDive, runLinkGap, saveResearchTarget, researchKeywords, type KeywordRows } from "@/app/(dashboard)/research-actions";
+import { checkLinkChanges, runCoreRefresh, runDeepDive, runLinkGap, saveResearchTarget, researchKeywords, type KeywordRows } from "@/app/(dashboard)/research-actions";
 import { MARKETS } from "@/lib/dataforseo/locations";
 import { ResearchTable, type Col } from "./research-table";
 import { Tabs } from "./tabs";
@@ -114,6 +114,20 @@ export function LinkGapForm({ canEdit, competitors }: { canEdit: boolean; compet
   );
 }
 
+/** Manual "look for new and lost links now"; the scheduled job already does this daily for active clients. */
+export function LinkChangeCheck({ canEdit }: { canEdit: boolean }) {
+  const { pending, run, note } = useRun();
+  if (!canEdit) return null;
+  return (
+    <div className="flex flex-wrap items-center gap-2">
+      <button className={btn2} disabled={pending} onClick={() => run(() => checkLinkChanges(false))}>
+        {pending ? <Loader2 className="size-4 animate-spin" /> : <RefreshCw className="size-4" />} Check for link changes <span className="opacity-70">(≈$0.05)</span>
+      </button>
+      {note}
+    </div>
+  );
+}
+
 const KW_COLS: Col[] = [
   { key: "keyword", label: "Keyword" }, { key: "volume", label: "Volume / mo", type: "int", hint: "Average monthly Google searches" },
   { key: "difficulty", label: "Difficulty", type: "int", hint: "0-100: how hard it is to rank in the top 10" },
@@ -178,6 +192,8 @@ export function KeywordResearch({ canEdit, defaultLocation }: { canEdit: boolean
                   {results[k.key].total > results[k.key].rows.length ? ` · showing the top ${results[k.key].rows.length} of ${results[k.key].total.toLocaleString("en-US")}` : ""}
                 </p>
                 <ResearchTable title={k.label} rows={results[k.key].rows} columns={KW_COLS} searchKeys={["keyword"]} presets={KW_PRESETS}
+                  ranges={[{ key: "volume", label: "Volume / mo" }, { key: "difficulty", label: "Difficulty" }, { key: "cpc", label: "CPC ($)" }]}
+                  facets={[{ key: "intent", label: "Intent" }, { key: "competition", label: "Ad competition" }]}
                   initialSort={{ key: "volume", dir: "desc" }} csvName={`keywords-${k.key}-${results[k.key].seed.replace(/\W+/g, "-")}`} />
               </>
             ) : (

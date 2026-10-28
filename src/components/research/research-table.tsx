@@ -2,6 +2,7 @@
 
 import { useMemo, useState } from "react";
 import { ArrowDown, ArrowUp, Download } from "lucide-react";
+import { toCsv } from "@/lib/analytics/csv";
 import { cn } from "@/lib/utils";
 
 export type ColType = "text" | "int" | "dec" | "usd" | "date" | "url" | "bool" | "badge" | "spark" | "change" | "spam" | "delta";
@@ -69,11 +70,17 @@ const passes = (row: Row, p: Preset) => p.where.every((w) => {
  * Client-side table for stored research data: search, sort, filter presets, "show more" and CSV export.
  * Everything is already in the page, so none of this ever calls an API.
  */
-export function ResearchTable({ title, rows, columns, searchKeys = [], presets = [], initialSort, pageSize = 25, empty = "No data yet.", csvName, note }: {
+export function ResearchTable({ title, rows, columns, searchKeys = [], presets = [], ranges = [], facets = [], initialSort, pageSize = 25, empty = "No data yet.", csvName, note }: {
   title: string; rows: Row[]; columns: Col[]; searchKeys?: string[]; presets?: Preset[];
+  /** numeric columns that get min / max inputs */
+  ranges?: { key: string; label: string }[];
+  /** text columns (intent, type...) that get a dropdown of the values present in the data */
+  facets?: { key: string; label: string }[];
   initialSort?: { key: string; dir: "asc" | "desc" }; pageSize?: number; empty?: string; csvName?: string; note?: string;
 }) {
   const [q, setQ] = useState("");
+  const [range, setRange] = useState<Record<string, { min: string; max: string }>>({});
+  const [facet, setFacet] = useState<Record<string, string>>({});
   const [preset, setPreset] = useState<number>(-1);
   const [sort, setSort] = useState(initialSort ?? null);
   const [shown, setShown] = useState(pageSize);
@@ -83,6 +90,12 @@ export function ResearchTable({ title, rows, columns, searchKeys = [], presets =
     let list = rows;
     if (preset >= 0) list = list.filter((r) => passes(r, presets[preset]));
     if (needle) list = list.filter((r) => searchKeys.some((k) => String(r[k] ?? "").toLowerCase().includes(needle)));
+    for (const [key, { min, max }] of Object.entries(range)) {
+      const lo = min.trim() === "" ? null : Number(min), hi = max.trim() === "" ? null : Number(max);
+      if (lo === null && hi === null) continue;
+      list = list.filter((r) => { const v = r[key]; return isNum(v) && (lo === null || Number.isNaN(lo) || v >= lo) && (hi === null || Number.isNaN(hi) || v <= hi); });
+    }
+    for (const [key, want] of Object.entries(facet)) if (want) list = list.filter((r) => String(r[key] ?? "") === want);
     if (sort) {
       const { key, dir } = sort, m = dir === "asc" ? 1 : -1;
       list = [...list].sort((a, b) => {
@@ -94,11 +107,14 @@ export function ResearchTable({ title, rows, columns, searchKeys = [], presets =
       });
     }
     return list;
-  }, [rows, q, preset, sort, presets, searchKeys]);
+  }, [rows, q, range, facet, preset, sort, presets, searchKeys]);
+  const facetValues = useMemo(() => Object.fromEntries(facets.map((f) => [f.key, [...new Set(rows.map((r) => r[f.key]).filter((v): v is string => typeof v === "string" && v !== ""))].sort()])), [rows, facets]);
+  const filtered = q.trim() !== "" || Object.values(range).some((r) => r.min !== "" || r.max !== "") || Object.values(facet).some(Boolean) || preset >= 0;
+  const reset = () => { setQ(""); setRange({}); setFacet({}); setPreset(-1); setShown(pageSize); };
 
   const exportCsv = () => {
-    const esc = (v: unknown) => `"${String(Array.isArray(v) ? v.join(" ") : v ?? "").replace(/"/g, '""')}"`;
-    const csv = [columns.map((c) => esc(c.label)).join(","), ...view.map((r) => columns.map((c) => esc(r[c.key])).join(","))].join("\n");
+    // toCsv defuses spreadsheet formulas (=, +, -, @) in untrusted text such as anchors and keywords
+    const csv = toCsv(columns.map((c) => c.label), view.map((r) => columns.map((c) => { const v = r[c.key]; return Array.isArray(v) ? v.join(" ") : v; })));
     const a = document.createElement("a");
     a.href = URL.createObjectURL(new Blob([csv], { type: "text/csv" }));
     a.download = `${csvName ?? title.toLowerCase().replace(/\W+/g, "-")}.csv`;
@@ -130,6 +146,32 @@ export function ResearchTable({ title, rows, columns, searchKeys = [], presets =
               {p.label}
             </button>
           ))}
+        </div>
+      )}
+      {(ranges.length > 0 || facets.length > 0) && rows.length > 0 && (
+        <div className="mb-3 flex flex-wrap items-end gap-x-4 gap-y-2" role="group" aria-label="Custom filters">
+          {ranges.map((f) => (
+            <fieldset key={f.key} className="text-xs text-muted">
+              <legend className="mb-0.5">{f.label}</legend>
+              <span className="flex items-center gap-1">
+                <input inputMode="decimal" aria-label={`${f.label} minimum`} placeholder="min" value={range[f.key]?.min ?? ""} onChange={(e) => { setRange({ ...range, [f.key]: { min: e.target.value, max: range[f.key]?.max ?? "" } }); setShown(pageSize); }}
+                  className="w-16 rounded-md border border-border bg-surface px-1.5 py-1 text-xs text-foreground outline-none focus-visible:ring-2 focus-visible:ring-accent" />
+                <span aria-hidden>–</span>
+                <input inputMode="decimal" aria-label={`${f.label} maximum`} placeholder="max" value={range[f.key]?.max ?? ""} onChange={(e) => { setRange({ ...range, [f.key]: { min: range[f.key]?.min ?? "", max: e.target.value } }); setShown(pageSize); }}
+                  className="w-16 rounded-md border border-border bg-surface px-1.5 py-1 text-xs text-foreground outline-none focus-visible:ring-2 focus-visible:ring-accent" />
+              </span>
+            </fieldset>
+          ))}
+          {facets.filter((f) => (facetValues[f.key] ?? []).length > 1).map((f) => (
+            <label key={f.key} className="text-xs text-muted">{f.label}
+              <select value={facet[f.key] ?? ""} onChange={(e) => { setFacet({ ...facet, [f.key]: e.target.value }); setShown(pageSize); }}
+                className="mt-0.5 block rounded-md border border-border bg-surface px-1.5 py-1 text-xs capitalize text-foreground outline-none focus-visible:ring-2 focus-visible:ring-accent">
+                <option value="">All</option>
+                {facetValues[f.key].map((v) => <option key={v} value={v}>{v}</option>)}
+              </select>
+            </label>
+          ))}
+          {filtered && <button onClick={reset} className="pb-1 text-xs font-medium text-accent hover:underline">Clear filters</button>}
         </div>
       )}
       {rows.length === 0 ? <p className="py-8 text-center text-sm text-muted">{empty}</p> : view.length === 0 ? (

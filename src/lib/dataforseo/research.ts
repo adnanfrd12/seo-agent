@@ -252,7 +252,7 @@ export interface CacheEntry { endpoint: string; data: unknown; fetched_at: strin
 
 /** Everything stored for a client, newest first. Pages and reports read only this. */
 export async function loadCache(supabase: SupabaseClient, clientId: string): Promise<{
-  get: <T = unknown>(endpoint: SpecKey) => { data: T; fetchedAt: string } | null;
+  get: <T = unknown>(endpoint: SpecKey | "link_changes") => { data: T; fetchedAt: string } | null;
   gaps: { competitor: string; data: { total: number; rows: Row[] }; fetchedAt: string }[];
   snapshots: Row[];
   target: (Target & { auto_refresh: boolean; competitors: string[] }) | null;
@@ -264,7 +264,7 @@ export async function loadCache(supabase: SupabaseClient, clientId: string): Pro
   ]);
   const list = (rows ?? []) as CacheEntry[];
   return {
-    get: <T,>(endpoint: SpecKey) => {
+    get: <T,>(endpoint: SpecKey | "link_changes") => {
       const r = list.find((x) => x.endpoint === endpoint);
       return r ? { data: r.data as T, fetchedAt: r.fetched_at } : null;
     },
@@ -297,6 +297,68 @@ export function detectLinkSpike(months: Month[]): LinkSpike | null {
     }
   }
   return worst;
+}
+
+/* ------------------------------------------------------------------ daily link change tracking */
+export interface LinkChange {
+  kind: "new" | "lost"; detected: string; from: string | null; domain: string | null; to: string | null; anchor: string | null;
+  rank: number | null; domain_rank: number | null; spam: number | null; dofollow: boolean;
+}
+export interface LinkChanges {
+  checkedAt: string;
+  /** true on the first check: it only records what already exists, so nothing is reported as "new" */
+  baseline: boolean;
+  /** newest first, at most 90 days / 300 entries */
+  events: LinkChange[];
+  /** links the previous check already knew about, used to tell what changed since */
+  known: { new: string[]; lost: string[] };
+}
+const LINK_CHANGES_EST = 0.06;
+const linkKey = (r: Row) => `${r.from ?? ""}>${r.to ?? ""}`;
+
+/**
+ * One cheap check per day (two calls, about $0.05): the newest and the lost backlinks, strongest first.
+ * What is NOT in the previous check is the change since yesterday; those events are stored for the
+ * Backlinks page and the alerts. The first check only records a baseline. Backlink databases update
+ * continuously but not every day, so some days simply show no change.
+ */
+export async function trackLinkChanges(ctx: Ctx, target: Target, force = false): Promise<{ fromCache: boolean; cost: number; added: number }> {
+  const { data: row } = await ctx.admin.from("dfs_cache").select("data, fetched_at").eq("client_id", ctx.clientId).eq("endpoint", "link_changes").eq("params_hash", "link_changes").maybeSingle();
+  if (row && !force && ageDays(row.fetched_at) < 0.9) return { fromCache: true, cost: 0, added: 0 };
+
+  await assertBudget(ctx.admin, ctx.clientId, LINK_CHANGES_EST, ctx.source);
+  let cost = 0;
+  const fetchList = async (flag: "is_new" | "is_lost") => {
+    const r = await dfsPost("/backlinks/backlinks/live", { target: target.domain, mode: "as_is", limit: 200, filters: [flag, "=", true], order_by: ["rank,desc"] });
+    cost += r.cost;
+    await recordSpend(ctx.admin, ctx.clientId, `link_changes_${flag}`, r.cost, ctx.source);
+    return arr(r.result?.items).map(backlinkRow);
+  };
+  const fresh = await fetchList("is_new");
+  const gone = await fetchList("is_lost");
+
+  const prev = row?.data as LinkChanges | undefined;
+  const today = new Date().toISOString().slice(0, 10);
+  const slim = (r: Row, kind: "new" | "lost"): LinkChange => ({
+    kind, detected: today, from: r.from as string | null, domain: r.domain as string | null, to: r.to as string | null, anchor: r.anchor as string | null,
+    rank: r.rank as number | null, domain_rank: r.domain_rank as number | null, spam: r.spam as number | null, dofollow: r.dofollow === true,
+  });
+  const knownNew = new Set(prev?.known.new ?? []), knownLost = new Set(prev?.known.lost ?? []);
+  const added: LinkChange[] = prev ? [
+    ...fresh.filter((r) => !knownNew.has(linkKey(r))).map((r) => slim(r, "new")),
+    ...gone.filter((r) => !knownLost.has(linkKey(r))).map((r) => slim(r, "lost")),
+  ] : [];
+  const cutoff = new Date(Date.now() - 90 * 86_400_000).toISOString().slice(0, 10);
+  const events = [...added, ...(prev?.events ?? [])].filter((e) => e.detected >= cutoff).slice(0, 300);
+  const data: LinkChanges = {
+    checkedAt: new Date().toISOString(), baseline: !prev, events,
+    known: { new: fresh.map(linkKey), lost: gone.map(linkKey) },
+  };
+  await ctx.admin.from("dfs_cache").upsert(
+    { client_id: ctx.clientId, endpoint: "link_changes", params_hash: "link_changes", params: { domain: target.domain }, data, row_count: events.length, cost, fetched_at: data.checkedAt },
+    { onConflict: "client_id,endpoint,params_hash" },
+  );
+  return { fromCache: false, cost, added: added.length };
 }
 
 /* ------------------------------------------------------------------ keyword research (shared cache) */

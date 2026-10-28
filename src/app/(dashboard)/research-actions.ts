@@ -6,9 +6,9 @@ import { getSession } from "@/lib/analytics/client-context";
 import { BudgetError, DEFAULT_DAILY_BUDGET } from "@/lib/dataforseo/budget";
 import { DfsError, dfsConfigured } from "@/lib/dataforseo/client";
 import { marketByCode } from "@/lib/dataforseo/locations";
-import { runCompetitorAnalysis } from "@/lib/dataforseo/competitors";
+import { COMP_SPECS, runCompetitorAnalysis } from "@/lib/dataforseo/competitors";
 import {
-  ensure, estimate, hostOf, keywordResearch, refreshCore, refreshDeep, resolveTarget, SPECS, TIER1, TIER2, type KwKind, type RunReport,
+  ensure, estimate, hostOf, keywordResearch, refreshCore, refreshDeep, resolveTarget, SPECS, TIER1, TIER2, trackLinkChanges, type KwKind, type RunReport,
 } from "@/lib/dataforseo/research";
 import { createAdminClient } from "@/lib/supabase/admin";
 
@@ -104,6 +104,36 @@ export async function runLinkGap(competitor: string, force = false): Promise<Res
     const r = await ensure({ admin: a.db, clientId: a.client.id, source: "manual" }, SPECS.link_gap, target, { force, extra: c.data });
     refresh();
     return { ok: true, message: r.fromCache ? "Already stored; showing the saved result." : `Link gap found (${usd(r.cost)}).`, cost: r.cost };
+  } catch (e) { return fail(e); }
+}
+
+/** Content gap against ANY competitor: keywords they rank top-20 for (50+ searches a month) and you don't rank for. ~3 cents, stored 7 days. */
+export async function runKeywordGap(competitor: string, force = false): Promise<Result> {
+  const a = await admin();
+  if (!a.allowed) return denied(a);
+  const c = domainSchema.safeParse(competitor);
+  if (!c.success) return { ok: false, error: c.error.issues[0]?.message ?? "Invalid domain" };
+  try {
+    const target = await resolveTarget(a.db, a.client.id);
+    if (!target) return { ok: false, error: "Set the client's website first." };
+    if (c.data === target.domain) return { ok: false, error: "Pick a competitor, not the client's own site." };
+    const r = await ensure({ admin: a.db, clientId: a.client.id, source: "manual" }, COMP_SPECS.kw_gap, target, { force, extra: c.data });
+    refresh();
+    const n = (r.data as { total?: number } | null)?.total ?? 0;
+    return { ok: true, message: r.fromCache ? "Already stored (less than a week old); showing the saved result." : `Found ${n.toLocaleString("en-US")} keyword gaps vs ${c.data} (${usd(r.cost)}).`, cost: r.cost };
+  } catch (e) { return fail(e); }
+}
+
+/** Looks for new and lost backlinks since the last check (about 5 cents). The scheduled job already does this daily. */
+export async function checkLinkChanges(force = false): Promise<Result> {
+  const a = await admin();
+  if (!a.allowed) return denied(a);
+  try {
+    const target = await resolveTarget(a.db, a.client.id);
+    if (!target) return { ok: false, error: "Set the client's website first." };
+    const r = await trackLinkChanges({ admin: a.db, clientId: a.client.id, source: "manual" }, target, force);
+    refresh();
+    return { ok: true, message: r.fromCache ? "Checked within the last day already; showing the stored result." : r.added ? `${r.added} link change${r.added > 1 ? "s" : ""} found (${usd(r.cost)}).` : `No changes since the last check (${usd(r.cost)}).`, cost: r.cost };
   } catch (e) { return fail(e); }
 }
 

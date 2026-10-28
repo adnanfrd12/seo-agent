@@ -4,7 +4,7 @@ import { KpiCard } from "@/components/dashboard/kpi-card";
 import { EmptyState } from "@/components/dashboard/page-header";
 import { TabHeader } from "@/components/dashboard/tab-header";
 import { CompareTrend } from "@/components/research/compare-trend";
-import { CompetitorManager, DiscoveredActions, ReanalyzeButton } from "@/components/research/competitor-controls";
+import { CompetitorManager, DiscoveredActions, KeywordGapForm, ReanalyzeButton } from "@/components/research/competitor-controls";
 import { SpendLine } from "@/components/research/chrome";
 import { ResearchTable, type Col } from "@/components/research/research-table";
 import { Tabs } from "@/components/research/tabs";
@@ -89,6 +89,7 @@ export default async function CompetitorsPage() {
   const tracked = new Set(comp.tracked);
   const gapsBy = comp.gaps.filter((g) => tracked.has(g.competitor));
   const sharedBy = comp.shared.filter((g) => tracked.has(g.competitor));
+  const onDemand = comp.gaps.filter((g) => !tracked.has(g.competitor)); // gaps you ran yourself against any domain
   const mergedGaps: Row[] = [];
   const seen = new Set<string>();
   for (const g of gapsBy) for (const r of g.rows) { const k = String(r.keyword); if (!seen.has(k)) { seen.add(k); mergedGaps.push({ ...r, competitor: g.competitor }); } }
@@ -187,19 +188,25 @@ export default async function CompetitorsPage() {
       <div className="mt-8 space-y-6">
         <section aria-label="Keyword analysis">
           <h2 className="mb-3 text-base font-semibold">Keyword analysis</h2>
-          {gapsBy.length === 0 && sharedBy.length === 0 ? (
+          <div className="mb-3 space-y-1">
+            <KeywordGapForm canEdit={canEdit} suggestions={[...comp.tracked, ...(comp.auto?.data ?? []).map((a) => a.domain)]} />
+            <p className="text-xs text-muted">Content gap against any site you type: keywords it ranks top-20 for that you don&apos;t rank for. About 3 cents, stored for 7 days, counted in the daily spend limit. Results appear as their own tab below.</p>
+          </div>
+          {gapsBy.length === 0 && sharedBy.length === 0 && onDemand.length === 0 ? (
             <div className="rounded-xl border border-dashed border-border p-6 text-sm text-muted">Keyword gaps and head-to-head rankings are refreshed weekly. They appear after the next analysis completes.</div>
           ) : (
             <Tabs label="Keyword analysis" items={[
               { key: "gap", label: "Keyword gaps", badge: fmtInt(mergedGaps.length), content: (
                 <ResearchTable title="Keywords competitors rank for and you don't" rows={mergedGaps} columns={GAP_COLS} searchKeys={["keyword", "competitor"]} presets={gapPresets}
+                  ranges={[{ key: "volume", label: "Volume / mo" }, { key: "difficulty", label: "Difficulty" }, { key: "their_position", label: "Their position" }]} facets={[{ key: "intent", label: "Intent" }, { key: "competitor", label: "Competitor" }]}
                   initialSort={{ key: "volume", dir: "desc" }} csvName={`keyword-gaps-${target.domain}`} empty="No keyword gaps found."
                   note="Competitor top-20 keywords with 50+ monthly searches where you have no top-100 ranking, excluding the competitor's own brand name. Volume, difficulty and CPC are estimates." />) },
               { key: "h2h", label: "Head to head", badge: fmtInt(mergedShared.length), content: (
                 <ResearchTable title="Keywords you both rank for" rows={mergedShared} columns={H2H_COLS} searchKeys={["keyword", "competitor"]} presets={h2hPresets}
+                  ranges={[{ key: "volume", label: "Volume / mo" }, { key: "difficulty", label: "Difficulty" }, { key: "you", label: "Your position" }, { key: "them", label: "Their position" }]} facets={[{ key: "competitor", label: "Competitor" }]}
                   initialSort={{ key: "volume", dir: "desc" }} csvName={`head-to-head-${target.domain}`} empty="No shared keywords found."
                   note="Both positions are Google ranks observed by DataForSEO. ▲ means you rank better by that many positions." />) },
-              ...gapsBy.map((g) => ({
+              ...[...gapsBy, ...onDemand].map((g) => ({
                 key: `gap-${g.competitor}`, label: g.competitor, badge: fmtInt(g.total),
                 content: <ResearchTable title={`Gaps vs ${g.competitor}`} rows={g.rows.map((r) => ({ ...r, competitor: g.competitor }))} columns={GAP_COLS.filter((c) => c.key !== "competitor")} searchKeys={["keyword"]} presets={gapPresets}
                   initialSort={{ key: "volume", dir: "desc" }} note={`${fmtInt(g.total)} keywords in total; the top ${g.rows.length} by search volume are stored. Updated ${g.fetchedAt.slice(0, 10)}.`} />,

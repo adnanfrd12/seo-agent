@@ -2,7 +2,7 @@ import "server-only";
 import type { SupabaseClient } from "@supabase/supabase-js";
 import { shiftDays, todayIn } from "@/lib/analytics/range";
 import { loadCompetitors } from "@/lib/dataforseo/competitors";
-import { detectLinkSpike } from "@/lib/dataforseo/research";
+import { detectLinkSpike, type LinkChange, type LinkChanges } from "@/lib/dataforseo/research";
 import { emailClientAlerts } from "@/lib/notify";
 
 /**
@@ -63,6 +63,20 @@ export async function generateAlerts(admin: SupabaseClient, clientId: string, ti
   const { data: nl } = await admin.from("dfs_cache").select("data").eq("client_id", clientId).eq("endpoint", "new_lost").order("fetched_at", { ascending: false }).limit(1).maybeSingle();
   const spike = nl?.data ? detectLinkSpike(nl.data as { date: string | null; new_backlinks: number; new_domains: number }[]) : null;
   if (spike) await put("link_spike", "critical", `Unusual jump in new backlinks (${spike.month})`, `${spike.newDomains.toLocaleString("en-US")} new referring domains versus a usual ${spike.baseline}/month. This often means a link farm or negative SEO. Review the anchors and referring domains.`, `link_spike:${spike.month}`, { ...spike });
+
+  // 3b. individual backlinks gained or lost since the previous daily check (stored by the research job)
+  const { data: lc } = await admin.from("dfs_cache").select("data").eq("client_id", clientId).eq("endpoint", "link_changes").maybeSingle();
+  const changes = (lc?.data as LinkChanges | undefined)?.events.filter((e) => e.detected === new Date().toISOString().slice(0, 10)) ?? []; // detected dates are UTC
+  if (changes.length) {
+    const strong = (e: LinkChange) => (e.rank ?? 0) >= 100 || (e.domain_rank ?? 0) >= 300; // link or domain authority worth noticing
+    const lostStrong = changes.filter((e) => e.kind === "lost" && strong(e));
+    const newStrong = changes.filter((e) => e.kind === "new" && strong(e) && (e.spam ?? 0) < 50);
+    const newSpam = changes.filter((e) => e.kind === "new" && (e.spam ?? 0) >= 50);
+    const names = (list: LinkChange[]) => [...new Set(list.map((e) => e.domain).filter(Boolean))].slice(0, 4).join(", ");
+    if (lostStrong.length) await put("links_lost", "warning", `Lost ${lostStrong.length} valuable backlink${lostStrong.length > 1 ? "s" : ""}`, `Including links from ${names(lostStrong)}. Check whether the linking pages were removed or changed, and consider reaching out to restore them.`, `links_lost:${today}`, { count: lostStrong.length });
+    if (newStrong.length) await put("links_gained", "positive", `Gained ${newStrong.length} strong backlink${newStrong.length > 1 ? "s" : ""}`, `New links from ${names(newStrong)}.`, `links_gained:${today}`, { count: newStrong.length });
+    if (newSpam.length >= 3) await put("links_spam", "warning", `${newSpam.length} new backlinks look spammy`, `Spam score 50 or higher, e.g. from ${names(newSpam)}. Review them under Backlinks → New links; spam links can be disavowed in Google Search Console.`, `links_spam:${today}`, { count: newSpam.length });
+  }
 
   // 4. competitors gaining ground
   const comp = await loadCompetitors(admin, clientId);

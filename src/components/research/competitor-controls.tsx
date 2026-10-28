@@ -3,7 +3,7 @@
 import { useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
 import { Loader2, Plus, RefreshCw, X } from "lucide-react";
-import { runCompetitorsNow, saveCompetitors } from "@/app/(dashboard)/research-actions";
+import { runCompetitorsNow, runKeywordGap, saveCompetitors } from "@/app/(dashboard)/research-actions";
 
 const btn = "inline-flex items-center gap-1.5 rounded-lg bg-accent px-3 py-1.5 text-sm font-medium text-accent-foreground hover:opacity-90 disabled:opacity-60";
 const btn2 = "inline-flex items-center gap-1.5 rounded-lg border border-border px-3 py-1.5 text-sm font-medium hover:bg-surface-muted disabled:opacity-60";
@@ -35,6 +35,26 @@ export function ReanalyzeButton({ canEdit, analysedToday }: { canEdit: boolean; 
         run(() => runCompetitorsNow(analysedToday));
       }}>
         {pending ? <Loader2 className="size-4 animate-spin" /> : <RefreshCw className="size-4" />} Re-analyse now <span className="opacity-70">(≈$0.12)</span>
+      </button>
+      {note}
+    </div>
+  );
+}
+
+/** Content gap against any domain you type (not only tracked competitors). About 3 cents; the answer is stored for 7 days. */
+export function KeywordGapForm({ canEdit, suggestions }: { canEdit: boolean; suggestions: string[] }) {
+  const { pending, run, note } = useRun();
+  const [c, setC] = useState("");
+  if (!canEdit) return null;
+  return (
+    <div className="flex flex-wrap items-end gap-2">
+      <label className="text-sm">Any competitor
+        <input list="kw-gap-suggestions" className={`${field} mt-1 w-64`} value={c} onChange={(e) => setC(e.target.value)} placeholder="competitor.com"
+          onKeyDown={(e) => { if (e.key === "Enter" && c.trim().length > 3) run(() => runKeywordGap(c, false)); }} />
+        <datalist id="kw-gap-suggestions">{suggestions.map((x) => <option key={x} value={x} />)}</datalist>
+      </label>
+      <button className={btn} disabled={pending || c.trim().length < 4} onClick={() => run(() => runKeywordGap(c, false))}>
+        {pending && <Loader2 className="size-4 animate-spin" />} Find content gaps <span className="opacity-70">(≈$0.03)</span>
       </button>
       {note}
     </div>

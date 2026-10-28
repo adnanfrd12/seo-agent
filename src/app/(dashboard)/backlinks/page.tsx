@@ -5,11 +5,11 @@ import { KpiCard } from "@/components/dashboard/kpi-card";
 import { EmptyState } from "@/components/dashboard/page-header";
 import { TabHeader } from "@/components/dashboard/tab-header";
 import { SpendLine, SpikeAlert, TargetSettings } from "@/components/research/chrome";
-import { LinkGapForm, RefreshControls } from "@/components/research/controls";
+import { LinkChangeCheck, LinkGapForm, RefreshControls } from "@/components/research/controls";
 import { ResearchTable, type Col } from "@/components/research/research-table";
 import { Tabs } from "@/components/research/tabs";
 import { fmtInt } from "@/lib/analytics/format";
-import { detectLinkSpike, estimate, TIER1, TIER2 } from "@/lib/dataforseo/research";
+import { detectLinkSpike, estimate, TIER1, TIER2, type LinkChanges } from "@/lib/dataforseo/research";
 import { pointAgo, profileSeries, researchPage } from "@/lib/dataforseo/view";
 
 type Row = Record<string, unknown>;
@@ -95,6 +95,7 @@ export default async function BacklinksPage() {
     domains: cache.get<List>("referring_domains"), anchors: cache.get<List>("anchors"), pages: cache.get<List>("domain_pages"),
   };
   const deep = Boolean(lists.backlinks);
+  const changes = cache.get<LinkChanges>("link_changes");
   const dofollowShare = s.backlinks ? ((s.dofollow ?? 0) / s.backlinks) * 100 : null;
 
   return (
@@ -135,6 +136,32 @@ export default async function BacklinksPage() {
         <Bars title="Top countries" items={s.countries} total={s.backlinks} />
       </div>
 
+      <section className="mt-8 space-y-3" aria-label="Recent link changes">
+        <div className="flex flex-wrap items-end justify-between gap-2">
+          <div>
+            <h2 className="text-base font-semibold">Recent link changes</h2>
+            <p className="text-sm text-muted">
+              {changes
+                ? `Checked ${changes.fetchedAt.slice(0, 10)}. Each daily check compares the newest and lost backlinks with the previous check, so a link appears here the day it is first detected. Strong new or lost links also raise an alert on the Overview.`
+                : "Once a day the strongest new and lost backlinks are compared with the previous check, so changes appear here the day they're detected. The first check records what exists today."}
+            </p>
+          </div>
+          <LinkChangeCheck canEdit={canEdit} />
+        </div>
+        {changes && (changes.data.baseline && changes.data.events.length === 0
+          ? <p className="rounded-xl border border-dashed border-border p-4 text-sm text-muted">Baseline recorded. Changes will show from the next daily check.</p>
+          : changes.data.events.length === 0
+            ? <p className="rounded-xl border border-dashed border-border p-4 text-sm text-muted">No new or lost links in the last 90 days of checks.</p>
+            : <ResearchTable title="New and lost links" rows={changes.data.events as unknown as Row[]} columns={[
+                { key: "kind", label: "Change", type: "badge" }, { key: "detected", label: "Detected", type: "date" }, { key: "domain", label: "Domain" }, { key: "from", label: "Linking page", type: "url" },
+                { key: "anchor", label: "Anchor" }, { key: "rank", label: "Link rank", type: "int" }, { key: "domain_rank", label: "Domain rank", type: "int" }, { key: "spam", label: "Spam", type: "spam" },
+                { key: "dofollow", label: "Follow", type: "bool" },
+              ]} searchKeys={["domain", "from", "anchor"]} facets={[{ key: "kind", label: "Change" }]} ranges={[{ key: "rank", label: "Link rank" }, { key: "spam", label: "Spam" }]}
+                presets={[{ label: "Strong (link rank ≥ 100)", where: [{ key: "rank", op: "gte", value: 100 }] }, SPAM_PRESET]}
+                initialSort={{ key: "detected", dir: "desc" }} csvName={`link-changes-${target.domain}`}
+                note="Lists the strongest links by rank; very low-value links may not be shown. Backlink databases update continuously but not every day, so some days show no change." />)}
+      </section>
+
       <div className="mt-8">
         <h2 className="mb-3 text-base font-semibold">Link details</h2>
         {!deep ? (
@@ -146,23 +173,24 @@ export default async function BacklinksPage() {
           <Tabs label="Backlink lists" items={[
             { key: "backlinks", label: "Backlinks", badge: fmtInt(lists.backlinks!.data.total), content: (
               <ResearchTable title="Backlinks (top 1,000 by rank)" rows={lists.backlinks!.data.rows} columns={BACKLINK_COLS} searchKeys={["from", "anchor", "to", "domain"]}
+                ranges={[{ key: "rank", label: "Link rank" }, { key: "domain_rank", label: "Domain rank" }, { key: "spam", label: "Spam" }]}
                 presets={[{ label: "Dofollow", where: [{ key: "dofollow", op: "true" }] }, SPAM_PRESET, { label: "Strong (link rank ≥ 100)", where: [{ key: "rank", op: "gte", value: 100 }] }]}
                 initialSort={{ key: "rank", dir: "desc" }} note={`Showing ${lists.backlinks!.data.rows.length} of ${fmtInt(lists.backlinks!.data.total)} backlinks in total.`} />) },
             { key: "new", label: "New links", badge: fmtInt(lists.new?.data.total ?? 0), content: (
-              <ResearchTable title="New backlinks" rows={lists.new?.data.rows ?? []} columns={BACKLINK_COLS} searchKeys={["from", "anchor", "domain"]} presets={[SPAM_PRESET]}
+              <ResearchTable title="New backlinks" rows={lists.new?.data.rows ?? []} columns={BACKLINK_COLS} searchKeys={["from", "anchor", "domain"]} presets={[SPAM_PRESET]} ranges={[{ key: "rank", label: "Link rank" }, { key: "spam", label: "Spam" }]}
                 initialSort={{ key: "first_seen", dir: "desc" }} empty="No new backlinks were found." note={`Top ${lists.new?.data.rows.length ?? 0} of ${fmtInt(lists.new?.data.total ?? 0)} new backlinks, by link rank.`} />) },
             { key: "lost", label: "Lost links", badge: fmtInt(lists.lost?.data.total ?? 0), content: (
-              <ResearchTable title="Lost backlinks" rows={lists.lost?.data.rows ?? []} columns={BACKLINK_COLS} searchKeys={["from", "anchor", "domain"]}
+              <ResearchTable title="Lost backlinks" rows={lists.lost?.data.rows ?? []} columns={BACKLINK_COLS} searchKeys={["from", "anchor", "domain"]} ranges={[{ key: "rank", label: "Link rank" }, { key: "spam", label: "Spam" }]}
                 initialSort={{ key: "rank", dir: "desc" }} empty="No lost backlinks were found." />) },
             { key: "domains", label: "Referring domains", badge: fmtInt(lists.domains?.data.total ?? 0), content: (
-              <ResearchTable title="Referring domains (top 1,000 by rank)" rows={lists.domains?.data.rows ?? []} columns={REF_COLS} searchKeys={["domain"]}
+              <ResearchTable title="Referring domains (top 1,000 by rank)" rows={lists.domains?.data.rows ?? []} columns={REF_COLS} searchKeys={["domain"]} ranges={[{ key: "rank", label: "Rank" }, { key: "backlinks", label: "Backlinks" }, { key: "spam", label: "Spam" }]}
                 presets={[SPAM_PRESET, { label: "Strong (rank ≥ 50)", where: [{ key: "rank", op: "gte", value: 50 }] }, { label: "Multiple links (≥ 3)", where: [{ key: "backlinks", op: "gte", value: 3 }] }]}
                 initialSort={{ key: "rank", dir: "desc" }} />) },
             { key: "anchors", label: "Anchors", badge: fmtInt(lists.anchors?.data.total ?? 0), content: (
               <ResearchTable title="Anchor texts" rows={lists.anchors?.data.rows ?? []} columns={[
                 { key: "anchor", label: "Anchor text" }, { key: "backlinks", label: "Backlinks", type: "int" }, { key: "domains", label: "Domains", type: "int" },
                 { key: "spam", label: "Spam", type: "spam" }, { key: "first_seen", label: "First seen", type: "date" },
-              ]} searchKeys={["anchor"]} presets={[SPAM_PRESET]} initialSort={{ key: "backlinks", dir: "desc" }}
+              ]} searchKeys={["anchor"]} presets={[SPAM_PRESET]} ranges={[{ key: "backlinks", label: "Backlinks" }, { key: "domains", label: "Domains" }]} initialSort={{ key: "backlinks", dir: "desc" }}
                 note="An anchor with thousands of backlinks and a high spam score usually points to a spam campaign." />) },
             { key: "pages", label: "Linked pages", badge: fmtInt(lists.pages?.data.total ?? 0), content: (
               <ResearchTable title="Pages receiving links" rows={lists.pages?.data.rows ?? []} columns={[
