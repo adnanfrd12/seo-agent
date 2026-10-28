@@ -55,7 +55,7 @@ export interface QueueResult {
  * places at once: claim_next_sync_job uses SKIP LOCKED, and one active job per resource is
  * enforced by a unique index.
  */
-export async function processQueue(opts: { budgetMs?: number } = {}): Promise<QueueResult> {
+export async function processQueue(opts: { budgetMs?: number; concurrency?: number } = {}): Promise<QueueResult> {
   const deadline = Date.now() + (opts.budgetMs ?? 240_000);
   const admin = createAdminClient();
   const result: QueueResult = { processed: 0, outcomes: {} };
@@ -63,6 +63,8 @@ export async function processQueue(opts: { budgetMs?: number } = {}): Promise<Qu
 
   await admin.rpc("requeue_stale_sync_jobs", { p_minutes: 15 });
 
+  // Several workers drain the queue side by side (claim_next_sync_job uses SKIP LOCKED, so no job runs twice).
+  const worker = async () => {
   while (Date.now() < deadline) {
     const { data, error } = await admin.rpc("claim_next_sync_job");
     if (error || !data || data.length === 0) break;
@@ -155,6 +157,8 @@ export async function processQueue(opts: { budgetMs?: number } = {}): Promise<Qu
       }
     }
   }
+  };
+  await Promise.all(Array.from({ length: Math.max(1, opts.concurrency ?? 3) }, () => worker()));
   return result;
 }
 

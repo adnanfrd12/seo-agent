@@ -1,6 +1,6 @@
 import Link from "next/link";
 import {
-  Activity, BarChart3, Link2, CalendarCheck, Eye, Flag, Gauge, Globe, MapPin, MousePointerClick, Navigation, Phone, Search, Sparkles, Target,
+  Activity, BarChart3, Swords, Link2, CalendarCheck, Eye, Flag, Gauge, Globe, MapPin, MousePointerClick, Navigation, Phone, Search, Sparkles, Target,
   TrendingDown, TrendingUp, Trophy, Users,
 } from "lucide-react";
 import { MetricTrend } from "@/components/charts/metric-trend";
@@ -33,7 +33,7 @@ function changeText(label: string, cur: Num, base: Num, opts: { lowerIsBetter?: 
 
 const CH = {
   overall: "Overall Performance & Monthly Wins", traffic: "Website Traffic & Sources", gbp: "Google Business Profile Performance",
-  gsc: "Search Console & Keyword Performance", bing: "Bing Search Performance", research: "Backlinks & Organic Keywords", behavior: "User Behavior & Conversion Analysis",
+  gsc: "Search Console & Keyword Performance", bing: "Bing Search Performance", research: "Backlinks & Organic Keywords", competitors: "Competitor Analysis", behavior: "User Behavior & Conversion Analysis",
   ai: "AI SEO Insights", strategy: "30-Day SEO Strategy",
 } as const;
 
@@ -43,6 +43,7 @@ export function reportChapters(d: ReportData, executive: boolean): string[] {
     CH.overall, CH.traffic, CH.gbp, CH.gsc,
     ...(d.bing ? [CH.bing] : []),
     ...(d.research ? [CH.research] : []),
+    ...(d.competitors ? [CH.competitors] : []),
     ...(!executive || d.clarity ? [CH.behavior] : []),
     CH.ai, CH.strategy,
   ];
@@ -72,6 +73,7 @@ export function ReportBody({ d, opts }: { d: ReportData; opts: ReportOptions }) 
   const no = (t: string) => chapters.indexOf(t) + 1;
   const bg = d.bing;
   const rs = d.research;
+  const cp = d.competitors;
   const b = d.gbp, gbpOk = d.connected.gbp && b?.current?.has_data;
   const gbpExtrasOk = Boolean(d.gbpReviews || d.gbpRanks.length);
 
@@ -510,6 +512,50 @@ export function ReportBody({ d, opts }: { d: ReportData; opts: ReportOptions }) 
         </Chapter>
       )}
 
+
+      {/* ---------------------------------------------------------------- Competitor analysis */}
+      {cp && (
+        <Chapter n={no(CH.competitors)} id="ch-competitors" icon={Swords} title={CH.competitors}
+          subtitle={`How ${cp.domain} compares with the sites competing for the same searches`} sources={["DataForSEO"]}>
+          <p className="text-xs text-muted">Analysis completed {cp.latestAt}, refreshed automatically every 24 hours. Rankings are positions DataForSEO observed in Google; keyword counts and traffic are modelled estimates, not measured visits.</p>
+          <ReportTable<(typeof cp.sites)[number]> title="Side by side (estimates)" source="DataForSEO" empty="" rows={cp.sites}
+            columns={[
+              { label: "Site", render: (x) => <span className={x.you ? "font-semibold" : ""}>{x.domain}{x.you ? " (you)" : ""}</span> },
+              { label: "Ranking keywords", align: "right", render: (x) => fmtInt(x.keywords) },
+              { label: "Top 10", align: "right", render: (x) => fmtInt(x.top10) },
+              { label: "Est. traffic / mo", align: "right", render: (x) => fmtInt(x.traffic) },
+              { label: "Shared with you", align: "right", render: (x) => (x.you ? "—" : fmtInt(x.shared)) },
+              { label: "Change", align: "right", render: (x) => (x.change === null ? "—" : `${x.change > 0 ? "+" : ""}${fmtInt(x.change)}`) },
+            ]} />
+          <Findings tone={cp.threats.length ? "bad" : undefined} items={[
+            ...cp.threats.slice(0, 2).map((t) => `${t.domain} ${t.kind === "overtaking" ? "overtook you in" : "is gaining"} organic keywords: ${fmtInt(t.keywordsFrom)} → ${fmtInt(t.keywordsTo)} in ${Math.round(t.days)} days (estimate).`),
+            cp.gapTotal ? `${fmtInt(cp.gapTotal)} keywords with 50+ monthly searches are ranked in the top 20 by a tracked competitor while ${cp.domain} has no top-100 ranking for them.` : null,
+            cp.beaten.length ? `On ${fmtInt(cp.beaten.length)}+ shared keywords a tracked competitor ranks above ${cp.domain}.` : null,
+          ].filter((x): x is string => Boolean(x))} />
+          {!opts.executive && cp.gaps.length > 0 && (
+            <ReportTable<Row> title="Keyword gaps: competitors rank, you don't" source="DataForSEO" empty="" rows={cp.gaps}
+              columns={[
+                { label: "Keyword", render: (x) => <span className="break-words">{str(x.keyword)}</span> },
+                { label: "Volume", align: "right", render: (x) => fmtInt(num(x.volume)) },
+                { label: "Difficulty", align: "right", render: (x) => fmtInt(num(x.difficulty)) },
+                { label: "Competitor", render: (x) => str(x.competitor) },
+                { label: "Their rank", align: "right", render: (x) => fmtInt(num(x.their_position)) },
+              ]} />
+          )}
+          {!opts.executive && cp.beaten.length > 0 && (
+            <ReportTable<Row> title="Shared keywords where a competitor outranks you" source="DataForSEO" empty="" rows={cp.beaten}
+              columns={[
+                { label: "Keyword", render: (x) => <span className="break-words">{str(x.keyword)}</span> },
+                { label: "Volume", align: "right", render: (x) => fmtInt(num(x.volume)) },
+                { label: "You", align: "right", render: (x) => fmtInt(num(x.you)) },
+                { label: "Them", align: "right", render: (x) => fmtInt(num(x.them)) },
+                { label: "Competitor", render: (x) => str(x.competitor) },
+              ]} />
+          )}
+          {detail("/competitors", "Full competitor analysis")}
+        </Chapter>
+      )}
+
       {/* ---------------------------------------------------------------- 05 */}
       {(!opts.executive || d.clarity) && (
         <Chapter n={no(CH.behavior)} id="ch-05" icon={Activity} title="User Behavior & Conversion Analysis"
@@ -557,7 +603,7 @@ export function ReportBody({ d, opts }: { d: ReportData; opts: ReportOptions }) 
       <footer className="border-t border-border pt-6 text-xs text-muted">
         <p className="flex items-center gap-1.5"><Trophy className="size-3.5" aria-hidden /> Figures come directly from connected Google APIs and are never estimated. Unavailable data is labelled, never shown as zero.</p>
         <p className="mt-1 flex items-center gap-1.5"><Globe className="size-3.5" aria-hidden /> GA4 dates use the property&apos;s time zone; Search Console dates are Pacific Time. GA4 users are summed daily active users.</p>
-        <div className="mt-2 flex flex-wrap gap-1.5">{ga4Ok && <SourceTag>Google Analytics 4 API</SourceTag>}{gscOk && <SourceTag>Google Search Console API</SourceTag>}{gbpOk && <SourceTag>Business Profile Performance API</SourceTag>}{gbpExtrasOk && <SourceTag>Local Brand Manager API</SourceTag>}{bg && <SourceTag>Bing Webmaster Tools API</SourceTag>}{rs && <SourceTag>DataForSEO API</SourceTag>}{d.clarity && <SourceTag>Microsoft Clarity Data Export API</SourceTag>}</div>
+        <div className="mt-2 flex flex-wrap gap-1.5">{ga4Ok && <SourceTag>Google Analytics 4 API</SourceTag>}{gscOk && <SourceTag>Google Search Console API</SourceTag>}{gbpOk && <SourceTag>Business Profile Performance API</SourceTag>}{gbpExtrasOk && <SourceTag>Local Brand Manager API</SourceTag>}{bg && <SourceTag>Bing Webmaster Tools API</SourceTag>}{(rs || cp) && <SourceTag>DataForSEO API</SourceTag>}{d.clarity && <SourceTag>Microsoft Clarity Data Export API</SourceTag>}</div>
       </footer>
     </div>
   );

@@ -4,7 +4,7 @@ import { useMemo, useState } from "react";
 import { ArrowDown, ArrowUp, Download } from "lucide-react";
 import { cn } from "@/lib/utils";
 
-export type ColType = "text" | "int" | "dec" | "usd" | "date" | "url" | "bool" | "badge" | "spark" | "change" | "spam";
+export type ColType = "text" | "int" | "dec" | "usd" | "date" | "url" | "bool" | "badge" | "spark" | "change" | "spam" | "delta";
 export interface Col { key: string; label: string; type?: ColType; hint?: string }
 export interface Preset { label: string; where: { key: string; op: "lte" | "gte" | "eq" | "true"; value?: number | string | boolean }[] }
 type Row = Record<string, unknown>;
@@ -35,6 +35,8 @@ function Cell({ col, row }: { col: Col; row: Row }) {
     case "badge": return typeof v === "string" && v ? <span className="rounded bg-surface-muted px-1.5 py-0.5 text-[11px] capitalize">{v}</span> : <>—</>;
     case "spam":
       return isNum(v) ? <span className={cn("tabular-nums", v >= 50 ? "font-semibold text-negative" : v >= 30 ? "text-[#D4970A]" : "")}>{v}</span> : <>—</>;
+    case "delta": // positive = you rank better than the competitor by N positions
+      return isNum(v) && v !== 0 ? <span className={v > 0 ? "text-positive" : "text-negative"}>{v > 0 ? "▲" : "▼"} {Math.abs(v)}</span> : <span className="text-muted">—</span>;
     case "change": {
       // v = previous position; row.position = current. Lower position number is better.
       const cur = row.position;
@@ -139,7 +141,7 @@ export function ResearchTable({ title, rows, columns, searchKeys = [], presets =
               <thead className="sticky top-0 z-10 bg-surface">
                 <tr className="text-left text-xs text-muted">
                   {columns.map((c) => {
-                    const right = ["int", "dec", "usd", "change", "spam"].includes(c.type ?? "");
+                    const right = ["int", "dec", "usd", "change", "spam", "delta"].includes(c.type ?? "");
                     const active = sort?.key === c.key;
                     return (
                       <th key={c.key} className={cn("px-2 py-2 font-medium", right && "text-right")} title={c.hint}
@@ -157,7 +159,7 @@ export function ResearchTable({ title, rows, columns, searchKeys = [], presets =
                 {view.slice(0, shown).map((r, i) => (
                   <tr key={i} className="border-t border-border align-top">
                     {columns.map((c) => (
-                      <td key={c.key} className={cn("px-2 py-1.5", ["int", "dec", "usd", "change", "spam"].includes(c.type ?? "") && "text-right tabular-nums")}><Cell col={c} row={r} /></td>
+                      <td key={c.key} className={cn("px-2 py-1.5", ["int", "dec", "usd", "change", "spam", "delta"].includes(c.type ?? "") && "text-right tabular-nums")}><Cell col={c} row={r} /></td>
                     ))}
                   </tr>
                 ))}

@@ -6,6 +6,7 @@ import { getSession } from "@/lib/analytics/client-context";
 import { BudgetError, DEFAULT_DAILY_BUDGET } from "@/lib/dataforseo/budget";
 import { DfsError, dfsConfigured } from "@/lib/dataforseo/client";
 import { marketByCode } from "@/lib/dataforseo/locations";
+import { runCompetitorAnalysis } from "@/lib/dataforseo/competitors";
 import {
   ensure, estimate, hostOf, keywordResearch, refreshCore, refreshDeep, resolveTarget, SPECS, TIER1, TIER2, type KwKind, type RunReport,
 } from "@/lib/dataforseo/research";
@@ -28,7 +29,7 @@ async function admin() {
 const denied = (a: { notConfigured?: boolean }): Result => ({
   ok: false, error: a.notConfigured ? "DataForSEO isn't configured on the server." : "Only owners and admins can run paid lookups.",
 });
-const refresh = () => ["/backlinks", "/organic-keywords", "/keyword-research", "/integrations", "/overview"].forEach((p) => revalidatePath(p));
+const refresh = () => ["/backlinks", "/organic-keywords", "/keyword-research", "/competitors", "/integrations", "/overview"].forEach((p) => revalidatePath(p));
 
 function summarize(rep: RunReport, what: string): Result {
   if (rep.fetched.length === 0 && rep.errors.length) return { ok: false, error: rep.errors[0] };
@@ -123,6 +124,49 @@ export async function researchKeywords(kind: KwKind, seed: string, location: num
     revalidatePath("/integrations");
     return { ok: true, data };
   } catch (e) { return { ok: false, error: fail(e).error }; }
+}
+
+/** Re-runs the competitor analysis now (normally it runs automatically every 24 hours). Fresh answers are reused. */
+export async function runCompetitorsNow(force = false): Promise<Result> {
+  const a = await admin();
+  if (!a.allowed) return denied(a);
+  try {
+    const target = await resolveTarget(a.db, a.client.id);
+    if (!target) return { ok: false, error: "Set the client's website first." };
+    const rep = await runCompetitorAnalysis({ admin: a.db, clientId: a.client.id, source: "manual" }, target, { force });
+    refresh();
+    if (rep.fetched === 0 && rep.errors.length) return { ok: false, error: rep.errors[0] };
+    return {
+      ok: true, cost: rep.cost,
+      message: `${rep.fetched ? `Analysis updated (${rep.fetched} lookups, ${usd(rep.cost)})` : "Analysis was already up to date"}${rep.cached ? `; ${rep.cached} reused from storage` : ""}${rep.errors.length ? `. Issues: ${rep.errors.join("; ")}` : ""}.`,
+    };
+  } catch (e) { return fail(e); }
+}
+
+/** Competitor management: auto-pick or manual list, plus competitors to hide from the automatic picks. */
+export async function saveCompetitors(input: { mode: "auto" | "manual"; competitors: string; excluded: string[] }): Promise<Result> {
+  const a = await admin();
+  if (!a.allowed) return denied(a);
+  if (!["auto", "manual"].includes(input.mode)) return { ok: false, error: "Unknown mode." };
+  const clean = (list: string[], self: string) => [...new Set(list.map((c) => hostOf(c)).filter((c): c is string => Boolean(c) && c !== self))];
+  const target = await resolveTarget(a.db, a.client.id);
+  if (!target) return { ok: false, error: "Set the client's website first." };
+  const competitors = clean(input.competitors.split(/[\s,;]+/), target.domain).slice(0, 8);
+  const excluded = clean(input.excluded, target.domain).slice(0, 50);
+  const { error } = await a.db.from("research_targets").update({ competitor_mode: input.mode, competitors, competitors_excluded: excluded }).eq("client_id", a.client.id);
+  if (error) return { ok: false, error: "Could not save (has migration 20261028000018 been applied?)." };
+  refresh();
+  return { ok: true, message: "Competitors saved. They'll be included in the next analysis (or run it now).", cost: 0 };
+}
+
+/** Marks the client's alerts as read. Membership is checked through the signed-in session first. */
+export async function markAlertsSeen(): Promise<Result> {
+  const { client } = await getSession();
+  if (!client) return { ok: false, error: "No client." };
+  const { error } = await createAdminClient().from("client_alerts").update({ seen_at: new Date().toISOString() }).eq("client_id", client.id).is("seen_at", null);
+  if (error) return { ok: false, error: "Could not update alerts." };
+  revalidatePath("/overview");
+  return { ok: true, message: "Marked as read.", cost: 0 };
 }
 
 /** Agency-wide spending settings: the daily limit and the automatic weekly refresh switch. */

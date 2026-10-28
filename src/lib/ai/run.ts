@@ -9,7 +9,7 @@ import { buildEvidence, evidenceText } from "./evidence";
 import { insightsSchema, strategySchema, type InsightsOutput, type StrategyOutput } from "./schemas";
 
 export type RunKind = "insights" | "strategy";
-export type RunResult = { ok: true; runId: string; kept: number; dropped: number } | { ok: false; error: string };
+export type RunResult = { ok: true; runId: string; kept: number; dropped: number; skipped?: boolean } | { ok: false; error: string };
 
 const SYSTEM = `You are a senior SEO and conversion analyst writing for a marketing agency's client report.
 
@@ -25,6 +25,9 @@ Rules you must follow:
 - Data is small for many sites: low-volume changes (a handful of clicks) are noise; say so instead of drawing conclusions.
 - Bing Webmaster Tools data (source "Bing Webmaster Tools") covers Bing search only; its query and page figures are weekly buckets. Compare Google and Bing only with figures both sources provide.
 - DataForSEO figures (source "DataForSEO") are third-party model estimates from its own web index: backlink counts, spam score, estimated traffic and search volume. Present them as estimates. A sudden jump in new links may indicate spam or negative SEO, but that is a hypothesis to investigate, not a fact.
+- Competitor figures (source "DataForSEO competitors") are modelled estimates; keyword gaps are keywords a competitor ranks top-20 for that the client does not rank for at all. Use the "competitor" and "link_building" categories for recommendations that follow from them, and cite the gap or threat evidence ids.
+- Do not repeat recommendations listed under PREVIOUS RECOMMENDATIONS unless the evidence has materially changed since; if one is still the right move, say what has changed or what progress was made instead of restating it.
+- Prioritise by impact, confidence and effort, and make the next step concrete. Distinguish observations (what the data shows) from hypotheses (what might explain it).
 - Local map rankings (geogrid) are scans at specific dates: lower ATGR/AGR and higher SoLV are better. Reviews and owner reply rate come from the Business Profile.`;
 
 const TASK: Record<RunKind, string> = {
@@ -43,6 +46,7 @@ Each week has 2-5 tasks. Each task: title, category, priority, target URL (or nu
  */
 export async function runAnalysis(
   userClient: SupabaseClient, clientId: string, userId: string | null, range: { start: string; end: string }, kind: RunKind,
+  opts: { skipIfUnchanged?: boolean } = {},
 ): Promise<RunResult> {
   const admin = createAdminClient();
   // userClient is the signed-in user's client (RLS-checked) or, for scheduled runs, the service role
@@ -54,6 +58,18 @@ export async function runAnalysis(
   }
   const evidence = await buildEvidence(admin, clientId, data);
   const known = new Set(evidence.items.map((i) => i.id));
+
+  // scheduled refreshes only spend tokens when the underlying numbers actually moved since the last run
+  if (opts.skipIfUnchanged) {
+    const { data: lastRun } = await admin.from("ai_analysis_runs").select("evidence").eq("client_id", clientId).eq("kind", kind).eq("status", "succeeded").order("created_at", { ascending: false }).limit(1).maybeSingle();
+    const before = new Map(((lastRun?.evidence as { items?: { id: string; value: string }[] } | null)?.items ?? []).map((i) => [i.id, i.value]));
+    const watched = evidence.items.filter((i) => /^(ga4|gsc|bing|gbp|dfs)\./.test(i.id));
+    if (before.size > 0 && watched.length > 0 && watched.every((i) => before.get(i.id) === i.value)) return { ok: true, runId: "", kept: 0, dropped: 0, skipped: true };
+  }
+
+  // titles of what was recommended recently, so the model builds on it instead of repeating it
+  const { data: prior } = await admin.from("analytics_insights").select("title, implementation_status").eq("client_id", clientId).order("created_at", { ascending: false }).limit(24);
+  const previous = (prior ?? []).map((p) => `- ${p.title} [${p.implementation_status}]`).join("\n");
 
   // a run whose server function was killed (timeout/deploy) would otherwise block new runs forever
   await admin.from("ai_analysis_runs").update({ status: "failed", error: "Timed out", finished_at: new Date().toISOString() })
@@ -82,7 +98,7 @@ export async function runAnalysis(
       fallbacks: "default",
       system: SYSTEM,
       output_config: { effort: "high", format: betaZodOutputFormat(schema) },
-      messages: [{ role: "user", content: `${evidenceText(evidence)}\n\nTASK:\n${TASK[kind]}` }],
+      messages: [{ role: "user", content: `${evidenceText(evidence)}${previous ? `\n\nPREVIOUS RECOMMENDATIONS (do not repeat unless the evidence changed):\n${previous}` : ""}\n\nTASK:\n${TASK[kind]}` }],
     });
     const usage = response.usage;
     const tokens = { input_tokens: usage.input_tokens, output_tokens: usage.output_tokens, cost_usd: costUsd(usage) };

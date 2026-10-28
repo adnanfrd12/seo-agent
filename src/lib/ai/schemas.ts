@@ -5,7 +5,7 @@ import { z } from "zod";
 const priority = z.enum(["high", "medium", "low"]);
 const effort = z.enum(["small", "medium", "large"]);
 const category = z.enum([
-  "technical_seo", "on_page_seo", "content", "user_experience", "conversion", "local_seo", "measurement",
+  "technical_seo", "on_page_seo", "content", "user_experience", "conversion", "local_seo", "measurement", "competitor", "link_building",
 ]);
 
 export const metricRef = z.object({

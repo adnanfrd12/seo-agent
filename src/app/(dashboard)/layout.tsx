@@ -1,4 +1,7 @@
 import { revalidatePath } from "next/cache";
+import { after } from "next/server";
+import { touchClient } from "@/lib/activity";
+import { createAdminClient } from "@/lib/supabase/admin";
 import { getSession } from "@/lib/analytics/client-context";
 import { createClient } from "@/lib/supabase/server";
 import { AppShell } from "@/components/layout/app-shell";
@@ -33,6 +36,9 @@ export default async function DashboardLayout({ children }: { children: React.Re
       </main>
     );
   }
+
+  // remember that this client is in use, so daily competitor analysis is spent on clients people actually open
+  after(() => touchClient(createAdminClient(), client.id));
 
   const supabase = await createClient();
   const { data: lastSync } = await supabase

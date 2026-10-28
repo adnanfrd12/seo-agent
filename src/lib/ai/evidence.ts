@@ -119,6 +119,16 @@ export async function buildEvidence(
     r.quickWins.slice(0, 8).forEach((k, i) => add(`dfs.quickwin.${i + 1}`, "DataForSEO", `Quick win "${k.keyword}"`, `position ${k.position}, volume ${k.volume}`,
       `difficulty ${k.difficulty ?? "n/a"}, ${k.url ?? ""}`));
   }
+  if (d.competitors) {
+    const c = d.competitors;
+    for (const s of c.sites) add(`dfs.comp.${slug(s.domain)}`, "DataForSEO competitors", `${s.you ? "Your site" : "Competitor"} ${s.domain}: ranking keywords and estimated traffic`,
+      `${s.keywords ?? "n/a"} keywords (${s.top10 ?? "n/a"} in the top 10), ~${s.traffic ?? "n/a"} visits/month`, `${s.you ? "" : `${s.shared ?? "n/a"} keywords shared with you; `}change since first snapshot ${s.change ?? "n/a"}; modelled estimate`);
+    c.threats.slice(0, 3).forEach((t, i) => add(`dfs.comp_threat.${i + 1}`, "DataForSEO competitors", `${t.domain} ${t.kind === "overtaking" ? "overtook you" : "is gaining"} in organic keywords`,
+      `${t.keywordsFrom} → ${t.keywordsTo} keywords over ${Math.round(t.days)} days`, "estimate from stored daily snapshots"));
+    c.gaps.slice(0, 10).forEach((g, i) => add(`dfs.gap.${i + 1}`, "DataForSEO competitors", `Keyword gap "${g.keyword}"`, `${g.volume ?? "n/a"} searches/month, difficulty ${g.difficulty ?? "n/a"}`,
+      `${g.competitor} ranks #${g.their_position ?? "?"}; you have no top-100 ranking`));
+    c.beaten.slice(0, 6).forEach((b, i) => add(`dfs.h2h.${i + 1}`, "DataForSEO competitors", `Shared keyword "${b.keyword}"`, `you #${b.you}, ${b.competitor} #${b.them}`, `${b.volume ?? "n/a"} searches/month`));
+  }
   if (d.gbpReviews) {
     add("gbp.reviews.total", "Business Profile", "Total Google reviews", String(d.gbpReviews.total));
     add("gbp.reviews.average", "Business Profile", "Average Google rating (all reviews)", d.gbpReviews.average?.toFixed(2) ?? "n/a");
@@ -155,6 +165,7 @@ export async function buildEvidence(
     !d.connected.gsc && "Google Search Console",
     !d.bing?.totals.current?.has_data && "Bing Webmaster Tools (not connected or no data for this period)",
     !d.research && "Backlink and organic keyword data (DataForSEO: not fetched yet)",
+    !d.competitors && "Competitor analysis (not completed yet)",
     !(d.connected.gbp && d.gbp?.current?.has_data) && "Google Business Profile (not connected or no data: no local metrics)",
     !(clarity ?? []).length && "Microsoft Clarity behaviour metrics",
     !(reviews ?? []).length && "Session recording observations",

@@ -5,12 +5,12 @@ import { assertBudget, BudgetError, recordSpend, type SpendSource } from "./budg
 import { dfsPost, DfsError } from "./client";
 
 export interface Target { domain: string; location_code: number; language_code: string }
-type Json = Record<string, unknown>;
-type Row = Record<string, unknown>;
-const arr = (v: unknown): Json[] => (Array.isArray(v) ? (v as Json[]) : []);
-const obj = (v: unknown): Json => (v && typeof v === "object" && !Array.isArray(v) ? (v as Json) : {});
-const num = (v: unknown) => (typeof v === "number" && Number.isFinite(v) ? v : null);
-const str = (v: unknown) => (typeof v === "string" ? v : null);
+export type Json = Record<string, unknown>;
+export type Row = Record<string, unknown>;
+export const arr = (v: unknown): Json[] => (Array.isArray(v) ? (v as Json[]) : []);
+export const obj = (v: unknown): Json => (v && typeof v === "object" && !Array.isArray(v) ? (v as Json) : {});
+export const num = (v: unknown) => (typeof v === "number" && Number.isFinite(v) ? v : null);
+export const str = (v: unknown) => (typeof v === "string" ? v : null);
 const day = (v: unknown) => (typeof v === "string" ? v.slice(0, 10) : null);
 const top = (v: unknown, n = 10) =>
   Object.entries(obj(v)).map(([name, count]) => ({ name, count: Number(count) || 0 })).filter((x) => x.count > 0).sort((a, b) => b.count - a.count).slice(0, n);
@@ -24,7 +24,7 @@ export interface Spec {
   est: number;
   path: string;
   body: (t: Target, extra?: string) => Json;
-  shape: (result: Json | null) => unknown;
+  shape: (result: Json | null, extra?: string) => unknown;
 }
 
 const monthsAgo = (n: number) => new Date(Date.now() - n * 30.4 * 86_400_000).toISOString().slice(0, 10);
@@ -200,7 +200,7 @@ export async function ensure(ctx: Ctx, spec: Spec, target: Target, opts: { force
   await assertBudget(ctx.admin, ctx.clientId, spec.est, ctx.source);
   const { result, cost } = await dfsPost(spec.path, body);
   await recordSpend(ctx.admin, ctx.clientId, spec.key, cost, ctx.source);
-  const data = spec.shape(result) ?? null;
+  const data = spec.shape(result, opts.extra) ?? null;
   const rows = Array.isArray(data) ? data.length : Array.isArray((data as { rows?: unknown[] } | null)?.rows) ? (data as { rows: unknown[] }).rows.length : 0;
   const fetched_at = new Date().toISOString();
   await ctx.admin.from("dfs_cache").upsert(
@@ -343,9 +343,14 @@ const hostOf = (u: string | null | undefined) => {
 };
 
 /** The client's research domain: the saved target, else the Bing / Search Console / Business Profile website. */
-export async function resolveTarget(admin: SupabaseClient, clientId: string): Promise<(Target & { auto_refresh: boolean; competitors: string[] }) | null> {
-  const { data: t } = await admin.from("research_targets").select("domain, location_code, language_code, auto_refresh, competitors").eq("client_id", clientId).maybeSingle();
-  if (t) return t as Target & { auto_refresh: boolean; competitors: string[] };
+export type TargetRow = Target & { auto_refresh: boolean; competitors: string[]; competitors_excluded: string[]; competitor_mode: "auto" | "manual" };
+export async function resolveTarget(admin: SupabaseClient, clientId: string): Promise<TargetRow | null> {
+  const full = await admin.from("research_targets").select("domain, location_code, language_code, auto_refresh, competitors, competitors_excluded, competitor_mode").eq("client_id", clientId).maybeSingle();
+  // before migration 18 the two newest columns don't exist: fall back so everything else keeps working
+  const t = full.error
+    ? (await admin.from("research_targets").select("domain, location_code, language_code, auto_refresh, competitors").eq("client_id", clientId).maybeSingle()).data
+    : full.data;
+  if (t) return { competitors_excluded: [], competitor_mode: "auto", ...t } as TargetRow;
   const { data: res } = await admin.from("integration_resources").select("provider, external_id, metadata").eq("client_id", clientId).eq("is_selected", true);
   const pickHost = (provider: string, f: (r: { external_id: string; metadata: Json | null }) => string | null | undefined) =>
     (res ?? []).filter((r) => r.provider === provider).map((r) => hostOf(f(r as { external_id: string; metadata: Json | null }))).find(Boolean);
@@ -354,6 +359,6 @@ export async function resolveTarget(admin: SupabaseClient, clientId: string): Pr
   if (!domain) return null;
   const row = { client_id: clientId, domain, location_code: 2840, language_code: "en", auto_refresh: true, competitors: [] as string[] };
   const { error } = await admin.from("research_targets").upsert(row, { onConflict: "client_id" });
-  return error ? null : row;
+  return error ? null : { ...row, competitors_excluded: [], competitor_mode: "auto" };
 }
 export { hostOf };

@@ -2,6 +2,7 @@ import "server-only";
 import type { SupabaseClient } from "@supabase/supabase-js";
 import { toNum } from "@/lib/analytics/format";
 import type { TrendData } from "@/lib/analytics/trend";
+import { loadCompetitors, type Threat } from "@/lib/dataforseo/competitors";
 import { detectLinkSpike, loadCache, type LinkSpike } from "@/lib/dataforseo/research";
 
 export type Totals = { has_data: boolean } & Record<string, unknown>;
@@ -41,6 +42,12 @@ export interface ReportData {
     organic: { keywords: number; traffic: number; traffic_value: number; new: number; up: number; down: number; lost: number; top10: number } | null;
     keywords: Row[]; quickWins: Row[];
     anchors: Row[];
+  } | null;
+  /** latest stored competitor analysis (DataForSEO estimates); null when none exists yet */
+  competitors: {
+    domain: string; latestAt: string;
+    sites: { domain: string; you: boolean; keywords: number | null; top10: number | null; traffic: number | null; shared: number | null; change: number | null }[];
+    gaps: Row[]; beaten: Row[]; threats: Threat[]; gapTotal: number;
   } | null;
   /** reviews and geogrid local-rank scans (Local Brand Manager); null when none stored */
   gbpReviews: { total: number; average: number | null; newInRange: number; newAverage: number | null; replyRate: number | null } | null;
@@ -140,10 +147,36 @@ export async function loadReportData(
     ...(await loadGbpExtras(supabase, clientId, range)),
     bing: await loadBing(supabase, clientId, range, compare),
     research: await loadResearch(supabase, clientId),
+    competitors: await loadCompetitorsForReport(supabase, clientId),
     ai: await loadAi(supabase, clientId),
     clarity: await loadClarity(supabase, clientId, range),
     errors: opps.error ? ["opportunities"] : [],
   };
+}
+
+async function loadCompetitorsForReport(supabase: SupabaseClient, clientId: string): Promise<ReportData["competitors"]> {
+  try {
+    const c = await loadCompetitors(supabase, clientId);
+    if (!c.target || !c.latestAt) return null;
+    const by = new Map<string, typeof c.snapshots>();
+    for (const s of c.snapshots) by.set(s.domain, [...(by.get(s.domain) ?? []), s]);
+    const sites = [...by].map(([domain, list]) => {
+      const l = [...list].sort((a, b) => a.snapshot_date.localeCompare(b.snapshot_date));
+      const first = l[0], last = l.at(-1)!;
+      return { domain, you: last.is_self, keywords: last.keywords, top10: last.top10, traffic: last.traffic === null ? null : Math.round(last.traffic), shared: last.shared_keywords,
+        change: l.length > 1 && first.keywords !== null && last.keywords !== null ? last.keywords - first.keywords : null };
+    }).sort((a, b) => Number(b.you) - Number(a.you) || (b.traffic ?? 0) - (a.traffic ?? 0));
+    const tracked = new Set(c.tracked);
+    const seen = new Set<string>();
+    const gaps: Row[] = [];
+    for (const g of c.gaps.filter((x) => tracked.has(x.competitor))) for (const r of g.rows) { const k = String(r.keyword); if (!seen.has(k)) { seen.add(k); gaps.push({ ...r, competitor: g.competitor }); } }
+    gaps.sort((a, b) => (Number(b.volume) || 0) - (Number(a.volume) || 0));
+    const beaten = c.shared.filter((x) => tracked.has(x.competitor)).flatMap((g) => g.rows.map((r): Row => ({ ...r, competitor: g.competitor, delta: typeof r.you === "number" && typeof r.them === "number" ? r.them - r.you : null })))
+      .filter((r) => typeof r.delta === "number" && r.delta <= -1).sort((a, b) => (Number(b.volume) || 0) - (Number(a.volume) || 0));
+    return { domain: c.target.domain, latestAt: c.latestAt, sites, gaps: gaps.slice(0, 15), beaten: beaten.slice(0, 10), threats: c.threats, gapTotal: gaps.length };
+  } catch {
+    return null; // migration 18 not applied yet: the report simply omits this chapter
+  }
 }
 
 async function loadResearch(supabase: SupabaseClient, clientId: string): Promise<ReportData["research"]> {
