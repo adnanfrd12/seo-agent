@@ -97,6 +97,28 @@ export async function buildEvidence(
     if (d.bing.crawl) add("bing.crawl", "Bing Webmaster Tools", "Bing index and crawl", `${d.bing.crawl.inIndex ?? "n/a"} pages indexed, ${d.bing.crawl.inLinks ?? "n/a"} inbound links`,
       `${d.bing.crawl.crawled} pages crawled and ${d.bing.crawl.errors} crawl errors over ${d.bing.crawl.days} days`);
   }
+  if (d.research) {
+    const r = d.research, p = r.profile, o = r.organic;
+    if (p) {
+      add("dfs.rank", "DataForSEO", "Domain rank (0-1000, higher is stronger)", String(p.rank ?? "n/a"), r.previous?.rank != null ? `about a month ago ${r.previous.rank}` : undefined);
+      add("dfs.backlinks", "DataForSEO", "Total backlinks", String(p.backlinks ?? "n/a"), r.previous?.backlinks != null ? `about a month ago ${r.previous.backlinks}` : undefined);
+      add("dfs.referring_domains", "DataForSEO", "Referring domains", String(p.referring_domains ?? "n/a"), r.previous?.referring_domains != null ? `about a month ago ${r.previous.referring_domains}` : undefined);
+      add("dfs.spam_score", "DataForSEO", "Backlink spam score (0-100, lower is better)", String(p.spam_score ?? "n/a"));
+    }
+    r.months.filter((m) => m.date).slice(-6).forEach((m) => add(`dfs.links.${m.date!.slice(0, 7)}`, "DataForSEO", `Links in ${m.date!.slice(0, 7)}`,
+      `${m.new_backlinks} new / ${m.lost_backlinks} lost backlinks`, `${m.new_domains} new / ${m.lost_domains} lost referring domains`));
+    if (r.spike) add("dfs.link_spike", "DataForSEO", `Unusual jump in new links (${r.spike.month})`, `${r.spike.newDomains} new referring domains vs a usual ${r.spike.baseline} a month`,
+      "possible link farm or negative SEO: a hypothesis, not confirmed");
+    r.anchors.slice(0, 5).forEach((a, i) => add(`dfs.anchor.${i + 1}`, "DataForSEO", `Anchor text "${String(a.anchor).slice(0, 80)}"`, `${a.backlinks} backlinks from ${a.domains} domains`, `spam score ${a.spam ?? "n/a"}`));
+    if (o) {
+      add("dfs.organic.keywords", "DataForSEO", "Google keywords ranking in the top 100", String(o.keywords), `${o.top10} in the top 10; ${o.new} new, ${o.up} improved, ${o.down} declined, ${o.lost} lost since the previous update`);
+      add("dfs.organic.traffic", "DataForSEO", "Estimated monthly organic traffic (modelled, not measured)", String(Math.round(o.traffic)), `traffic value about $${Math.round(o.traffic_value)}/month`);
+    }
+    r.keywords.slice(0, 10).forEach((k, i) => add(`dfs.kw.${i + 1}`, "DataForSEO", `Ranking keyword "${k.keyword}"`, `position ${k.position}, volume ${k.volume ?? "n/a"}`,
+      `est. traffic ${f(toNum(k.traffic), 1)}, difficulty ${k.difficulty ?? "n/a"}, ${k.url ?? ""}`));
+    r.quickWins.slice(0, 8).forEach((k, i) => add(`dfs.quickwin.${i + 1}`, "DataForSEO", `Quick win "${k.keyword}"`, `position ${k.position}, volume ${k.volume}`,
+      `difficulty ${k.difficulty ?? "n/a"}, ${k.url ?? ""}`));
+  }
   if (d.gbpReviews) {
     add("gbp.reviews.total", "Business Profile", "Total Google reviews", String(d.gbpReviews.total));
     add("gbp.reviews.average", "Business Profile", "Average Google rating (all reviews)", d.gbpReviews.average?.toFixed(2) ?? "n/a");
@@ -132,6 +154,7 @@ export async function buildEvidence(
     !d.connected.ga4 && "Google Analytics 4",
     !d.connected.gsc && "Google Search Console",
     !d.bing?.totals.current?.has_data && "Bing Webmaster Tools (not connected or no data for this period)",
+    !d.research && "Backlink and organic keyword data (DataForSEO: not fetched yet)",
     !(d.connected.gbp && d.gbp?.current?.has_data) && "Google Business Profile (not connected or no data: no local metrics)",
     !(clarity ?? []).length && "Microsoft Clarity behaviour metrics",
     !(reviews ?? []).length && "Session recording observations",

@@ -1,6 +1,6 @@
 import Link from "next/link";
 import {
-  Activity, BarChart3, CalendarCheck, Eye, Flag, Gauge, Globe, MapPin, MousePointerClick, Navigation, Phone, Search, Sparkles, Target,
+  Activity, BarChart3, Link2, CalendarCheck, Eye, Flag, Gauge, Globe, MapPin, MousePointerClick, Navigation, Phone, Search, Sparkles, Target,
   TrendingDown, TrendingUp, Trophy, Users,
 } from "lucide-react";
 import { MetricTrend } from "@/components/charts/metric-trend";
@@ -33,7 +33,7 @@ function changeText(label: string, cur: Num, base: Num, opts: { lowerIsBetter?: 
 
 const CH = {
   overall: "Overall Performance & Monthly Wins", traffic: "Website Traffic & Sources", gbp: "Google Business Profile Performance",
-  gsc: "Search Console & Keyword Performance", bing: "Bing Search Performance", behavior: "User Behavior & Conversion Analysis",
+  gsc: "Search Console & Keyword Performance", bing: "Bing Search Performance", research: "Backlinks & Organic Keywords", behavior: "User Behavior & Conversion Analysis",
   ai: "AI SEO Insights", strategy: "30-Day SEO Strategy",
 } as const;
 
@@ -42,6 +42,7 @@ export function reportChapters(d: ReportData, executive: boolean): string[] {
   return [
     CH.overall, CH.traffic, CH.gbp, CH.gsc,
     ...(d.bing ? [CH.bing] : []),
+    ...(d.research ? [CH.research] : []),
     ...(!executive || d.clarity ? [CH.behavior] : []),
     CH.ai, CH.strategy,
   ];
@@ -70,6 +71,7 @@ export function ReportBody({ d, opts }: { d: ReportData; opts: ReportOptions }) 
   const chapters = reportChapters(d, Boolean(opts.executive));
   const no = (t: string) => chapters.indexOf(t) + 1;
   const bg = d.bing;
+  const rs = d.research;
   const b = d.gbp, gbpOk = d.connected.gbp && b?.current?.has_data;
   const gbpExtrasOk = Boolean(d.gbpReviews || d.gbpRanks.length);
 
@@ -78,7 +80,7 @@ export function ReportBody({ d, opts }: { d: ReportData; opts: ReportOptions }) 
       {/* ---------------------------------------------------------------- 01 */}
       <Chapter n={no(CH.overall)} id="ch-01" icon={Flag} title="Overall Performance & Monthly Wins"
         subtitle="Headline website, search and local visibility results at a glance"
-        sources={[ga4Ok && "Google Analytics 4", gscOk && "Google Search Console", gbpOk && "Google Business Profile", gbpExtrasOk && "Local Brand Manager", bg && "Bing Webmaster Tools"].filter(Boolean) as string[]}>
+        sources={[ga4Ok && "Google Analytics 4", gscOk && "Google Search Console", gbpOk && "Google Business Profile", gbpExtrasOk && "Local Brand Manager", bg && "Bing Webmaster Tools", rs && "DataForSEO"].filter(Boolean) as string[]}>
         {!ga4Ok && !gscOk && !gbpOk && !gbpExtrasOk && !bg?.totals.current?.has_data ? (
           <Unavailable title="No connected data for this period" body="Connect Google Analytics 4 or Search Console on the Integrations page, then run a sync." />
         ) : (
@@ -438,6 +440,76 @@ export function ReportBody({ d, opts }: { d: ReportData; opts: ReportOptions }) 
         </Chapter>
       )}
 
+
+      {/* ---------------------------------------------------------------- Backlinks & organic keywords */}
+      {rs && (
+        <Chapter n={no(CH.research)} id="ch-research" icon={Link2} title={CH.research}
+          subtitle={`Who links to ${rs.domain} and which Google keywords it ranks for`} sources={["DataForSEO"]}>
+          <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
+            {rs.profile && <>
+              <StatTile label="Domain rank" icon={Trophy} color={CHAPTER_COLORS[5]} source="DFS" format={fmtInt} value={rs.profile.rank} previous={rs.previous?.rank ?? null}
+                hint="DataForSEO domain rank, 0-1000. Higher is stronger." />
+              <StatTile label="Backlinks" icon={Link2} color={CHAPTER_COLORS[5]} source="DFS" format={fmtInt} value={rs.profile.backlinks} previous={rs.previous?.backlinks ?? null} />
+              <StatTile label="Referring domains" icon={Globe} color={CHAPTER_COLORS[5]} source="DFS" format={fmtInt} value={rs.profile.referring_domains} previous={rs.previous?.referring_domains ?? null} />
+              <StatTile label="Backlink spam score" icon={Target} color={CHAPTER_COLORS[5]} source="DFS" format={fmtInt} higherIsBetter={false} value={rs.profile.spam_score}
+                hint="0-100 estimate of how spammy the link profile looks. Lower is better." />
+            </>}
+            {rs.organic && <>
+              <StatTile label="Ranking keywords" icon={Search} color={CHAPTER_COLORS[5]} source="DFS" format={fmtInt} value={rs.organic.keywords} hint="Google keywords ranking in the top 100." />
+              <StatTile label="Top-10 keywords" icon={TrendingUp} color={CHAPTER_COLORS[5]} source="DFS" format={fmtInt} value={rs.organic.top10} />
+              <StatTile label="Est. organic traffic / month" icon={Eye} color={CHAPTER_COLORS[5]} source="DFS" format={fmtInt} value={Math.round(rs.organic.traffic)}
+                hint="Modelled from search volume and position: an estimate, not measured visits." />
+            </>}
+          </div>
+          <Findings tone={rs.spike ? "bad" : undefined} items={[
+            rs.spike ? `Unusual jump in new links in ${rs.spike.month}: ${fmtInt(rs.spike.newDomains)} new referring domains versus a usual ${fmtInt(rs.spike.baseline)} a month. This pattern often means a link farm or negative SEO; review the anchors and referring domains and consider disavowing spam.` : null,
+            rs.profile && (rs.profile.spam_score ?? 0) >= 50 ? `The backlink spam score is ${rs.profile.spam_score}/100, which is high.` : null,
+            rs.organic ? `${fmtInt(rs.organic.new)} keywords are new, ${fmtInt(rs.organic.up)} improved, ${fmtInt(rs.organic.down)} declined and ${fmtInt(rs.organic.lost)} dropped out of the top 100 since the previous update.` : null,
+            rs.quickWins.length ? `${rs.quickWins.length}+ keywords sit just off page one (positions 4-20) with real search demand: the cheapest traffic gains.` : null,
+          ].filter((x): x is string => Boolean(x))} />
+          {!opts.executive && rs.months.length > 1 && (
+            <MetricTrend title="New and lost links by month" source="DFS" expanded={opts.variant === "print"} options={[
+              { key: "nb", label: "New backlinks", data: rs.months.filter((m) => m.date).map((m) => ({ date: m.date!, value: m.new_backlinks })) },
+              { key: "lb", label: "Lost backlinks", data: rs.months.filter((m) => m.date).map((m) => ({ date: m.date!, value: m.lost_backlinks })) },
+              { key: "nd", label: "New domains", data: rs.months.filter((m) => m.date).map((m) => ({ date: m.date!, value: m.new_domains })) },
+              { key: "ld", label: "Lost domains", data: rs.months.filter((m) => m.date).map((m) => ({ date: m.date!, value: m.lost_domains })) },
+            ]} />
+          )}
+          {!opts.executive && rs.keywords.length > 0 && (
+            <ReportTable<Row> title="Top organic keywords (by estimated traffic)" source="DataForSEO" empty="" rows={rs.keywords}
+              columns={[
+                { label: "Keyword", render: (x) => <span className="break-words">{str(x.keyword)}</span> },
+                { label: "Position", align: "right", render: (x) => fmtInt(num(x.position)) },
+                { label: "Volume", align: "right", render: (x) => fmtInt(num(x.volume)) },
+                { label: "Est. traffic", align: "right", render: (x) => fmtDecimal(num(x.traffic)) },
+                { label: "Page", render: (x) => <span className="break-all">{urlLabel(x.url)}</span> },
+              ]} />
+          )}
+          {!opts.executive && rs.quickWins.length > 0 && (
+            <ReportTable<Row> title="Quick wins: positions 4-20 with search demand" source="DataForSEO" empty="" rows={rs.quickWins}
+              columns={[
+                { label: "Keyword", render: (x) => <span className="break-words">{str(x.keyword)}</span> },
+                { label: "Position", align: "right", render: (x) => fmtInt(num(x.position)) },
+                { label: "Volume", align: "right", render: (x) => fmtInt(num(x.volume)) },
+                { label: "Difficulty", align: "right", render: (x) => fmtInt(num(x.difficulty)) },
+              ]} />
+          )}
+          {!opts.executive && rs.anchors.length > 0 && (
+            <ReportTable<Row> title="Most common anchor texts" source="DataForSEO" empty="" rows={rs.anchors}
+              columns={[
+                { label: "Anchor", render: (x) => <span className="break-words">{str(x.anchor)}</span> },
+                { label: "Backlinks", align: "right", render: (x) => fmtInt(num(x.backlinks)) },
+                { label: "Domains", align: "right", render: (x) => fmtInt(num(x.domains)) },
+                { label: "Spam", align: "right", render: (x) => fmtInt(num(x.spam)) },
+              ]} />
+          )}
+          <p className="text-xs text-muted">
+            Backlink and keyword figures are DataForSEO estimates from its own web index, updated about weekly{rs.updatedAt ? ` (latest ${rs.updatedAt.slice(0, 10)})` : ""}; they won&apos;t match Search Console exactly.
+          </p>
+          {detail("/backlinks", "Full backlink analysis")}
+        </Chapter>
+      )}
+
       {/* ---------------------------------------------------------------- 05 */}
       {(!opts.executive || d.clarity) && (
         <Chapter n={no(CH.behavior)} id="ch-05" icon={Activity} title="User Behavior & Conversion Analysis"
@@ -485,7 +557,7 @@ export function ReportBody({ d, opts }: { d: ReportData; opts: ReportOptions }) 
       <footer className="border-t border-border pt-6 text-xs text-muted">
         <p className="flex items-center gap-1.5"><Trophy className="size-3.5" aria-hidden /> Figures come directly from connected Google APIs and are never estimated. Unavailable data is labelled, never shown as zero.</p>
         <p className="mt-1 flex items-center gap-1.5"><Globe className="size-3.5" aria-hidden /> GA4 dates use the property&apos;s time zone; Search Console dates are Pacific Time. GA4 users are summed daily active users.</p>
-        <div className="mt-2 flex flex-wrap gap-1.5">{ga4Ok && <SourceTag>Google Analytics 4 API</SourceTag>}{gscOk && <SourceTag>Google Search Console API</SourceTag>}{gbpOk && <SourceTag>Business Profile Performance API</SourceTag>}{gbpExtrasOk && <SourceTag>Local Brand Manager API</SourceTag>}{bg && <SourceTag>Bing Webmaster Tools API</SourceTag>}{d.clarity && <SourceTag>Microsoft Clarity Data Export API</SourceTag>}</div>
+        <div className="mt-2 flex flex-wrap gap-1.5">{ga4Ok && <SourceTag>Google Analytics 4 API</SourceTag>}{gscOk && <SourceTag>Google Search Console API</SourceTag>}{gbpOk && <SourceTag>Business Profile Performance API</SourceTag>}{gbpExtrasOk && <SourceTag>Local Brand Manager API</SourceTag>}{bg && <SourceTag>Bing Webmaster Tools API</SourceTag>}{rs && <SourceTag>DataForSEO API</SourceTag>}{d.clarity && <SourceTag>Microsoft Clarity Data Export API</SourceTag>}</div>
       </footer>
     </div>
   );

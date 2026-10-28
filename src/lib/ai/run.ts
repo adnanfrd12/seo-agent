@@ -24,14 +24,15 @@ Rules you must follow:
 - Prefer improving existing pages over creating new ones unless no existing page fits the search intent.
 - Data is small for many sites: low-volume changes (a handful of clicks) are noise; say so instead of drawing conclusions.
 - Bing Webmaster Tools data (source "Bing Webmaster Tools") covers Bing search only; its query and page figures are weekly buckets. Compare Google and Bing only with figures both sources provide.
+- DataForSEO figures (source "DataForSEO") are third-party model estimates from its own web index: backlink counts, spam score, estimated traffic and search volume. Present them as estimates. A sudden jump in new links may indicate spam or negative SEO, but that is a hypothesis to investigate, not a fact.
 - Local map rankings (geogrid) are scans at specific dates: lower ATGR/AGR and higher SoLV are better. Reviews and owner reply rate come from the Business Profile.`;
 
 const TASK: Record<RunKind, string> = {
   insights: `Write the AI SEO insights for this period: an executive performance summary, significant improvements, significant declines, and 4-10 prioritised recommendations covering (where the evidence supports it) user experience problems, SEO growth opportunities, priority website changes, content opportunities and conversion optimisation.
-Use every connected source in the evidence: Google Search Console, GA4, Google Business Profile (including reviews and local map rankings), Bing Webmaster Tools (search performance, queries, pages, index and crawl health) and Microsoft Clarity. When Bing evidence exists, include at least one Bing finding or recommendation (e.g. Bing-specific query or page opportunities, indexing or crawl issues, or how Bing performance differs from Google).`,
+Use every connected source in the evidence: Google Search Console, GA4, DataForSEO (backlink profile, link spikes, spam, anchors, organic keywords and quick wins), Google Business Profile (including reviews and local map rankings), Bing Webmaster Tools (search performance, queries, pages, index and crawl health) and Microsoft Clarity. When Bing evidence exists, include at least one Bing finding or recommendation (e.g. Bing-specific query or page opportunities, indexing or crawl issues, or how Bing performance differs from Google).`,
   strategy: `Write a 30-day SEO strategy as exactly four weeks:
 Week 1 - critical fixes and quick wins; Week 2 - keyword and on-page/content optimisation; Week 3 - user experience and conversion improvements; Week 4 - measurement, validation and next steps (including any missing tracking such as funnel key events).
-Draw tasks from every connected source in the evidence, including Bing Webmaster Tools (Bing query/page opportunities, index coverage, crawl errors, sitemaps) and Business Profile reviews and local rankings when present.
+Draw tasks from every connected source in the evidence, including DataForSEO (backlink clean-up or disavow review, link-building, quick-win keywords just off page one) and Bing Webmaster Tools (Bing query/page opportunities, index coverage, crawl errors, sitemaps) and Business Profile reviews and local rankings when present.
 Each week has 2-5 tasks. Each task: title, category, priority, target URL (or null), the problem identified, evidence ids, description, concrete implementation steps, estimated effort and the success metric that will show whether it worked.`,
 };
 

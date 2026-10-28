@@ -6,6 +6,7 @@ import { ConnectClarity, ReviewForm } from "../clarity/clarity-forms";
 import { LbmPanel } from "./lbm-panel";
 import { LbmBulkSetup } from "./lbm-bulk";
 import { BingPanel } from "./bing-panel";
+import { DataForSeoCard } from "./dataforseo-card";
 import { PROVIDER_META, type ProviderId } from "@/lib/integrations/providers";
 import { createClient } from "@/lib/supabase/server";
 
@@ -79,6 +80,7 @@ export default async function IntegrationsPage({
           <IntegrationCard key={p} provider={p} status={status[p] ?? EMPTY} canEdit={canEdit} available={p !== "gbp" || gbpConfigured()} />
         ))}
       </div>
+      <DataForSeoCard canEdit={canEdit} clientId={client.id} />
       <section className="mt-4 rounded-xl border border-border bg-surface p-5" aria-labelledby="bing-title">
         <div className="flex flex-wrap items-start justify-between gap-3">
           <div>

@@ -2,6 +2,7 @@ import "server-only";
 import type { SupabaseClient } from "@supabase/supabase-js";
 import { toNum } from "@/lib/analytics/format";
 import type { TrendData } from "@/lib/analytics/trend";
+import { detectLinkSpike, loadCache, type LinkSpike } from "@/lib/dataforseo/research";
 
 export type Totals = { has_data: boolean } & Record<string, unknown>;
 export type Compared = { current: Totals; previous: Totals; mom: Totals; yoy: Totals };
@@ -29,6 +30,17 @@ export interface ReportData {
     totals: Compared; trend: TrendData; queries: Row[]; pages: Row[];
     crawl: { inIndex: number | null; inLinks: number | null; crawled: number; errors: number; days: number } | null;
     coverage: { first: string | null; last: string | null } | null;
+  } | null;
+  /** DataForSEO backlinks and organic keywords, read from storage (never fetched here); null when nothing is stored */
+  research: {
+    domain: string; updatedAt: string | null;
+    profile: { rank: number | null; backlinks: number | null; referring_domains: number | null; referring_pages: number | null; spam_score: number | null; dofollow: number | null } | null;
+    previous: { rank: number | null; backlinks: number | null; referring_domains: number | null } | null;
+    months: { date: string | null; new_backlinks: number; lost_backlinks: number; new_domains: number; lost_domains: number }[];
+    spike: LinkSpike | null;
+    organic: { keywords: number; traffic: number; traffic_value: number; new: number; up: number; down: number; lost: number; top10: number } | null;
+    keywords: Row[]; quickWins: Row[];
+    anchors: Row[];
   } | null;
   /** reviews and geogrid local-rank scans (Local Brand Manager); null when none stored */
   gbpReviews: { total: number; average: number | null; newInRange: number; newAverage: number | null; replyRate: number | null } | null;
@@ -127,10 +139,46 @@ export async function loadReportData(
     opportunities: opps.error ? null : (opps.data as Opportunities),
     ...(await loadGbpExtras(supabase, clientId, range)),
     bing: await loadBing(supabase, clientId, range, compare),
+    research: await loadResearch(supabase, clientId),
     ai: await loadAi(supabase, clientId),
     clarity: await loadClarity(supabase, clientId, range),
     errors: opps.error ? ["opportunities"] : [],
   };
+}
+
+async function loadResearch(supabase: SupabaseClient, clientId: string): Promise<ReportData["research"]> {
+  try {
+    const c = await loadCache(supabase, clientId);
+    const sum = c.get<Row>("summary"), ov = c.get<Row>("rank_overview"), kw = c.get<Row[]>("ranked_keywords");
+    if (!c.target || (!sum && !ov)) return null;
+    const monthAgo = new Date(Date.now() - 28 * DAY).toISOString().slice(0, 10);
+    const prev = [...c.snapshots].reverse().find((s) => String(s.snapshot_date) <= monthAgo);
+    const buckets = (ov?.data.buckets as { name: string; count: number }[] | undefined) ?? [];
+    const rows = kw?.data ?? [];
+    const nl = (c.get<NonNullable<ReportData["research"]>["months"]>("new_lost")?.data ?? []);
+    return {
+      domain: c.target.domain,
+      updatedAt: sum?.fetchedAt ?? ov?.fetchedAt ?? null,
+      profile: sum ? {
+        rank: toNum(sum.data.rank), backlinks: toNum(sum.data.backlinks), referring_domains: toNum(sum.data.referring_domains), referring_pages: toNum(sum.data.referring_pages),
+        spam_score: toNum(sum.data.spam_score), dofollow: toNum(sum.data.dofollow),
+      } : null,
+      previous: prev ? { rank: toNum(prev.rank), backlinks: toNum(prev.backlinks), referring_domains: toNum(prev.referring_domains) } : null,
+      months: nl,
+      spike: detectLinkSpike(nl),
+      organic: ov ? {
+        keywords: Number(ov.data.keywords) || 0, traffic: Number(ov.data.traffic) || 0, traffic_value: Number(ov.data.traffic_value) || 0,
+        new: Number(ov.data.new) || 0, up: Number(ov.data.up) || 0, down: Number(ov.data.down) || 0, lost: Number(ov.data.lost) || 0,
+        top10: buckets.filter((b) => ["pos_1", "pos_2_3", "pos_4_10"].includes(b.name)).reduce((a, b) => a + b.count, 0),
+      } : null,
+      keywords: [...rows].sort((a, b) => (Number(b.traffic) || 0) - (Number(a.traffic) || 0)).slice(0, 15),
+      quickWins: rows.filter((r) => Number(r.position) >= 4 && Number(r.position) <= 20 && Number(r.volume) >= 100)
+        .sort((a, b) => (Number(b.volume) || 0) - (Number(a.volume) || 0)).slice(0, 10),
+      anchors: (c.get<{ rows: Row[] }>("anchors")?.data.rows ?? []).slice(0, 8),
+    };
+  } catch {
+    return null; // migration 16 not applied yet: the report simply omits this chapter
+  }
 }
 
 async function loadBing(supabase: SupabaseClient, clientId: string, range: { start: string; end: string }, compare: boolean): Promise<ReportData["bing"]> {

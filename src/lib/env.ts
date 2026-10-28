@@ -22,6 +22,10 @@ const schema = z.object({
   GOOGLE_GBP_REDIRECT_URI: z.url().optional(),
   LOCAL_BRAND_MANAGER_API_TOKEN: z.string().optional(),
   BING_WEBMASTER_API_KEY: z.string().optional(),
+  // DataForSEO (backlinks, organic keywords, keyword research) and its spending guard
+  DATAFORSEO_LOGIN: z.string().optional(),
+  DATAFORSEO_PASSWORD: z.string().optional(),
+  DATAFORSEO_DAILY_BUDGET_USD: z.string().optional(),
 });
 
 export type ServerEnv = z.infer<typeof schema>;
