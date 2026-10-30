@@ -11,6 +11,7 @@ import { movement, pickHighlights } from "@/lib/overview/highlights";
 import { RangeSelector } from "@/components/dashboard/range-selector";
 import { SearchBox } from "@/components/dashboard/search-box";
 import { DataTable } from "@/components/tables/data-table";
+import { ResearchTable } from "@/components/research/research-table";
 import { getSession } from "@/lib/analytics/client-context";
 import { fmtDecimal, fmtInt, fmtPercent, toNum } from "@/lib/analytics/format";
 import { resolveRange } from "@/lib/analytics/range";
@@ -226,6 +227,15 @@ export default async function SearchConsolePage({ searchParams }: { searchParams
   const brandTerms = savedTerms.length ? savedTerms : defaultBrandTerms(client.name, resources.map((r) => r.display_name));
   const brandRes = await supabase.rpc("get_gsc_brand_split", { ...args, p_terms: brandTerms });
   const brand = brandRes.error ? null : (brandRes.data as BrandSplitData | null);
+  // device / country / new-query breakdowns (web search, all filters off); absent until migration 21 is applied
+  const bdRes = await supabase.rpc("get_gsc_breakdowns", args);
+  type Bd = { value: string; clicks: number; impressions: number; ctr: number | null; position: number | null };
+  const bd = bdRes.error ? null : (bdRes.data as { devices: Bd[]; countries: Bd[]; new_queries: { query: string; clicks: number; impressions: number; position: number | null }[]; recent_start: string });
+  const bdRows = (list: Bd[]) => list.map((x) => ({ value: x.value.length <= 3 ? x.value.toUpperCase() : cap(x.value.toLowerCase()), clicks: Number(x.clicks), impressions: Number(x.impressions), ctr: x.ctr == null ? null : Number((Number(x.ctr) * 100).toFixed(2)), position: x.position == null ? null : Number(Number(x.position).toFixed(1)) }));
+  const bdCols = (label: string) => [
+    { key: "value", label }, { key: "clicks", label: "Clicks", type: "int" as const }, { key: "impressions", label: "Impressions", type: "int" as const },
+    { key: "ctr", label: "CTR %", type: "dec" as const }, { key: "position", label: "Avg position", type: "dec" as const },
+  ];
 
   return (
     <>
@@ -256,6 +266,20 @@ export default async function SearchConsolePage({ searchParams }: { searchParams
       </div>
 
       {brand && <div className="mt-6"><BrandSplit data={brand} terms={brandTerms} canEdit={["owner", "admin"].includes(client.role)} /></div>}
+
+      {bd && (
+        <div className="mt-6 space-y-6">
+          <div className="grid gap-4 lg:grid-cols-2">
+            <ResearchTable title="By device · web search" rows={bdRows(bd.devices)} columns={bdCols("Device")} initialSort={{ key: "clicks", dir: "desc" }} pageSize={5} empty="No device data in this period." />
+            <ResearchTable title="By country · web search" rows={bdRows(bd.countries)} columns={bdCols("Country")} initialSort={{ key: "clicks", dir: "desc" }} pageSize={8} csvName={`gsc-countries-${range.start}-${range.end}`} empty="No country data in this period." />
+          </div>
+          <ResearchTable title={`New search queries since ${bd.recent_start}`} rows={bd.new_queries.map((x) => ({ ...x, clicks: Number(x.clicks), impressions: Number(x.impressions), position: x.position == null ? null : Number(Number(x.position).toFixed(1)) }))}
+            columns={[{ key: "query", label: "Query" }, { key: "clicks", label: "Clicks", type: "int" }, { key: "impressions", label: "Impressions", type: "int" }, { key: "position", label: "Avg position", type: "dec" }]}
+            searchKeys={["query"]} initialSort={{ key: "impressions", dir: "desc" }} pageSize={10} csvName={`gsc-new-queries-${range.end}`}
+            empty="No new queries in the last 7 days of this range."
+            note="Queries that got impressions in the last 7 days of the range and none in the 28 days before: new demand Google is starting to show the site for." />
+        </div>
+      )}
 
       <div className="mt-6 space-y-6">
         {tablesNarrowed && (

@@ -27,16 +27,18 @@ type TaskResponse = {
 };
 
 /** One Live call. Returns the first result object (or null when DataForSEO has no data) and what it cost. */
-export async function dfsPost(path: string, body: Record<string, unknown>): Promise<{ result: Record<string, unknown> | null; cost: number }> {
+export async function dfsPost(
+  path: string, body: Record<string, unknown>, opts: { timeoutMs?: number; attempts?: number } = {},
+): Promise<{ result: Record<string, unknown> | null; cost: number }> {
   let lastErr: unknown;
-  for (let attempt = 0; attempt < 3; attempt++) {
+  for (let attempt = 0; attempt < (opts.attempts ?? 3); attempt++) {
     let res: Response;
     try {
       res = await fetch(`${BASE}${path}`, {
         method: "POST",
         headers: { Authorization: authHeader(), "Content-Type": "application/json" },
         body: JSON.stringify([body]),
-        signal: AbortSignal.timeout(45_000),
+        signal: AbortSignal.timeout(opts.timeoutMs ?? 45_000),
         cache: "no-store",
       });
     } catch (e) {

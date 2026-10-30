@@ -1,0 +1,195 @@
+import { timingSafeEqual } from "node:crypto";
+import { NextResponse, type NextRequest } from "next/server";
+import { activeClientIds } from "@/lib/activity";
+import { runAiChecks, suggestPrompts } from "@/lib/ai/visibility";
+import { AUTO_SHARE, BudgetError, getSettings, spend } from "@/lib/dataforseo/budget";
+import { dfsConfigured } from "@/lib/dataforseo/client";
+import { runLighthouse, LH_EST } from "@/lib/dataforseo/lighthouse";
+import { fetchProfile, GRID_POINT_EST, gridRivals, localIdentity, PROFILE_EST, REVIEWS_EST, runGrid, startReviews, type Grid, type Profile } from "@/lib/dataforseo/local";
+import { refreshDeep, resolveTarget, type Row } from "@/lib/dataforseo/research";
+import { serverEnv } from "@/lib/env";
+import { loggedRun } from "@/lib/jobs/log";
+import { createAdminClient } from "@/lib/supabase/admin";
+
+export const maxDuration = 300;
+
+function authorized(request: NextRequest): boolean {
+  const given = Buffer.from(request.headers.get("authorization") ?? "");
+  const want = Buffer.from(`Bearer ${serverEnv().CRON_SECRET}`);
+  return given.length === want.length && timingSafeEqual(given, want);
+}
+
+const DAY = 86_400_000;
+const GRID_EVERY_DAYS = 7, LH_EVERY_DAYS = 7, RIVAL_EVERY_DAYS = 7, DEEP_EVERY_DAYS = 14;
+const SEED_KEYWORDS = 8, SEED_PROMPTS = 4, MAX_GRID_KEYWORDS = 3;
+
+/**
+ * Daily, after the research run. Everything here used to need a button; it now runs on its own for
+ * ACTIVE clients (opened in the last 14 days), inside the automatic share of the daily DataForSEO budget:
+ *   0. starter setup: when a client tracks no keywords or AI questions yet, the best ones are added
+ *   1. AI visibility (ChatGPT, Perplexity, Gemini via DataForSEO; Claude via the Anthropic key), weekly
+ *   2. Google Maps rank grids for the keywords scanned before (or the business category), weekly
+ *   3. Lighthouse on the home page and the top page, mobile and desktop, weekly
+ *   4. Business Profiles and reviews of the competitors compared before (or "people also search"), weekly
+ *   5. the backlink / top-pages deep dive, every two weeks
+ * Every step skips what is still fresh, so a re-run the same day spends nothing. Manual buttons still work.
+ */
+async function handle(request: NextRequest) {
+  if (!authorized(request)) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+  const admin = createAdminClient();
+  const deadline = Date.now() + 270_000;
+  try {
+    const summary = await loggedRun(admin, "extras", async () => {
+      const out: Record<string, unknown> = {};
+      const active = [...(await activeClientIds(admin))];
+      out.activeClients = active.length;
+      const settings = dfsConfigured() ? await getSettings(admin) : null;
+      const cap = settings?.dailyBudget ?? 0;
+      const spentNow = async () => { try { return await spend(admin); } catch { return Infinity; } };
+      const room = async (est: number) => settings?.autoRefresh !== false && (await spentNow()) + est <= cap * AUTO_SHARE;
+      const age = (iso: string | null | undefined) => (iso ? Date.now() - Date.parse(iso) : Infinity);
+      const latest = async (clientId: string, endpoint: string) => {
+        const { data } = await admin.from("dfs_cache").select("params_hash, data, fetched_at").eq("client_id", clientId).eq("endpoint", endpoint).order("fetched_at", { ascending: false }).limit(50);
+        return data ?? [];
+      };
+
+      // 0. starter setup (free)
+      let seededKw = 0, seededQ = 0;
+      for (const id of active) {
+        const target = await resolveTarget(admin, id);
+        if (!target) continue;
+        const ranked = ((await latest(id, "ranked_keywords"))[0]?.data ?? []) as Row[];
+        const best = ranked.filter((k) => typeof k.keyword === "string" && Number(k.position) <= 30).sort((a, b) => Number(b.volume ?? 0) - Number(a.volume ?? 0)).map((k) => String(k.keyword));
+        const { count: kwCount } = await admin.from("rank_keywords").select("id", { count: "exact", head: true }).eq("client_id", id);
+        if (kwCount === 0 && best.length) {
+          const rows = best.slice(0, SEED_KEYWORDS).flatMap((keyword) => (["desktop", "mobile"] as const).map((device) => ({ client_id: id, keyword, device, location_code: target.location_code, language_code: target.language_code })));
+          const { error } = await admin.from("rank_keywords").upsert(rows, { onConflict: "client_id,keyword,device,location_code", ignoreDuplicates: true });
+          if (!error) seededKw += rows.length;
+        }
+        const { count: qCount } = await admin.from("ai_prompts").select("id", { count: "exact", head: true }).eq("client_id", id);
+        if (qCount === 0) {
+          const me = await localIdentity(admin, id);
+          const prof = ((await latest(id, "gbp_profile")).find((r) => r.params_hash === "self")?.data ?? null) as Profile | null;
+          const category = prof?.category ?? null;
+          const local = category && me?.city ? [`Who are the best ${category.toLowerCase()}s in ${me.city}? Recommend specific businesses.`] : [];
+          const prompts = [...local, ...suggestPrompts(best, local)].slice(0, SEED_PROMPTS);
+          if (prompts.length) {
+            const { error } = await admin.from("ai_prompts").upsert(prompts.map((prompt) => ({ client_id: id, prompt })), { onConflict: "client_id,prompt", ignoreDuplicates: true });
+            if (!error) seededQ += prompts.length;
+          }
+        }
+      }
+      out.seeded = { keywords: seededKw, questions: seededQ };
+
+      // 1. AI visibility (weekly per question; the DataForSEO assistants respect the automatic budget inside runAiChecks)
+      if (process.env.ANTHROPIC_API_KEY) {
+        let checked = 0, cost = 0;
+        const errors: string[] = [];
+        for (const id of active) {
+          if (Date.now() > deadline - 90_000) break;
+          const target = await resolveTarget(admin, id);
+          if (!target) continue;
+          const { data: s } = await admin.from("clients").select("settings").eq("id", id).maybeSingle();
+          try {
+            const r = await runAiChecks(admin, id, target.domain, { deadline: deadline - 90_000, source: "auto", search: (s?.settings as { ai_search?: boolean } | null)?.ai_search !== false });
+            checked += r.checked; cost += r.cost; errors.push(...r.errors.slice(0, 2));
+          } catch (e) { errors.push(e instanceof Error ? e.message : "failed"); }
+        }
+        out.aiVisibility = { questionsChecked: checked, cost: Number(cost.toFixed(3)), errors: [...new Set(errors)].slice(0, 3) };
+      }
+
+      if (!settings) { out.skipped = "DataForSEO not configured"; return out; }
+      if (!settings.autoRefresh) { out.skipped = "Automatic refresh is turned off on the Integrations page"; return out; }
+
+      // 2. map rank grids
+      let grids = 0;
+      let gridStopped: string | null = null;
+      for (const id of active) {
+        const me = await localIdentity(admin, id);
+        if (!me || me.lat == null) continue;
+        const rows = await latest(id, "maps_grid");
+        const byKw = new Map<string, { g: Grid; at: string }>();
+        for (const r of rows) { const g = r.data as Grid; if (!byKw.has(g.keyword)) byKw.set(g.keyword, { g, at: r.fetched_at as string }); }
+        if (!byKw.size) {
+          const prof = ((await latest(id, "gbp_profile")).find((r) => r.params_hash === "self")?.data ?? null) as Profile | null;
+          if (prof?.category) byKw.set(`${prof.category.toLowerCase()} near me`, { g: { keyword: `${prof.category.toLowerCase()} near me`, size: 3, spacingKm: 2 } as Grid, at: "" });
+        }
+        for (const { g, at } of [...byKw.values()].slice(0, MAX_GRID_KEYWORDS)) {
+          if (age(at || null) < (GRID_EVERY_DAYS - 0.5) * DAY) continue;
+          if (Date.now() > deadline - 60_000) { gridStopped = "time"; break; }
+          if (!(await room(g.size * g.size * GRID_POINT_EST))) { gridStopped = "budget"; break; }
+          try { await runGrid({ admin, clientId: id, source: "auto" }, me, g.keyword, g.size === 5 ? 5 : 3, g.spacingKm || 2); grids++; }
+          catch (e) { if (e instanceof BudgetError) { gridStopped = "budget"; break; } }
+        }
+        if (gridStopped) break;
+      }
+      out.grids = { scanned: grids, stopped: gridStopped };
+
+      // 3. Lighthouse
+      let lh = 0;
+      for (const id of active) {
+        if (Date.now() > deadline - 100_000) break;
+        const runs = await latest(id, "lighthouse");
+        if (age(runs[0]?.fetched_at as string | undefined) < (LH_EVERY_DAYS - 0.5) * DAY) continue;
+        const target = await resolveTarget(admin, id);
+        if (!target || !(await room(4 * LH_EST))) continue;
+        const rel = ((await latest(id, "relevant_pages"))[0]?.data ?? []) as { page: string | null; traffic: number | null }[];
+        const home = `https://${target.domain}/`;
+        const topPage = rel.filter((r) => r.page).sort((a, b) => (b.traffic ?? 0) - (a.traffic ?? 0)).map((r) => (r.page!.startsWith("http") ? r.page! : `https://${r.page}`)).find((u) => u.replace(/\/$/, "") !== home.replace(/\/$/, ""));
+        try { await runLighthouse({ admin, clientId: id, source: "auto" }, [home, ...(topPage ? [topPage] : [])], ["mobile", "desktop"]); lh++; } catch { /* next run */ }
+      }
+      out.lighthouse = { tested: lh };
+
+      // 4. competitor Business Profiles and reviews
+      let rivals = 0;
+      for (const id of active) {
+        if (Date.now() > deadline - 40_000) break;
+        const profiles = await latest(id, "gbp_profile");
+        const self = (profiles.find((r) => r.params_hash === "self")?.data ?? null) as Profile | null;
+        const known = profiles.filter((r) => r.params_hash !== "self");
+        // the ones compared before, else "people also search for", else the businesses that beat the client on its map grid
+        const me = await localIdentity(admin, id);
+        const also = (self?.alsoSearch ?? []).filter((a) => a.cid);
+        const list = known.length
+          ? known.map((r) => ({ key: r.params_hash as string, at: r.fetched_at as string, cid: (r.data as Profile | null)?.cid ?? null, name: String((r.data as Profile | null)?.title ?? "") }))
+          : also.length
+            ? also.slice(0, 3).map((a) => ({ key: `cid:${a.cid}`, at: "", cid: a.cid, name: a.title }))
+            : gridRivals((await latest(id, "maps_grid")).map((r) => r.data as Grid), self?.title ?? me?.name ?? "").slice(0, 3)
+              .map((g) => ({ key: g.cid ? `cid:${g.cid}` : `name:${g.name.toLowerCase()}`, at: "", cid: g.cid, name: g.name }));
+        for (const r of list.slice(0, 3)) {
+          if (age(r.at || null) < (RIVAL_EVERY_DAYS - 0.5) * DAY) continue;
+          if (!(await room(PROFILE_EST + REVIEWS_EST / 2))) break;
+          const ctx = { admin, clientId: id, source: "auto" as const };
+          try {
+            const p = await fetchProfile(ctx, { name: r.name, cid: r.cid }, r.key, me ?? undefined);
+            if (p) await startReviews(ctx, { name: p.title ?? r.name, cid: p.cid ?? r.cid, placeId: p.placeId }, r.key, 50);
+            rivals++;
+          } catch (e) { if (e instanceof BudgetError) break; }
+        }
+      }
+      out.rivalProfiles = { refreshed: rivals };
+
+      // 5. deep dive (backlink lists, anchors, linked pages, competitors, top pages), every two weeks
+      let deep = 0;
+      for (const id of active) {
+        if (Date.now() > deadline - 30_000) break;
+        const last = await latest(id, "backlinks");
+        if (age(last[0]?.fetched_at as string | undefined) < (DEEP_EVERY_DAYS - 0.5) * DAY) continue;
+        const target = await resolveTarget(admin, id);
+        if (!target || !target.auto_refresh || !(await room(0.35))) continue;
+        const rep = await refreshDeep({ admin, clientId: id, source: "auto" }, target);
+        deep++;
+        if (rep.stoppedByBudget) break;
+      }
+      out.deepDive = { refreshed: deep };
+      out.spentToday = Number((await spentNow()).toFixed(3));
+      return out;
+    });
+    return NextResponse.json(summary);
+  } catch {
+    return NextResponse.json({ error: "Extras run failed" }, { status: 500 });
+  }
+}
+
+export const GET = handle;
+export const POST = handle;

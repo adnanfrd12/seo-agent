@@ -80,6 +80,24 @@ export const COMP_SPECS = {
       }).filter((x) => x.keyword),
     }),
   },
+  // the pages that earn each competitor its organic traffic (weekly)
+  comp_pages: {
+    key: "comp_pages", tier: 2, ttlDays: 7, est: 0.02, path: "/dataforseo_labs/google/relevant_pages/live",
+    body: (t, competitor) => ({ target: competitor, location_code: t.location_code, language_code: t.language_code, limit: 20, order_by: ["metrics.organic.etv,desc"] }),
+    shape: (r) => arr(r?.items).map((i) => {
+      const o = obj(obj(i.metrics).organic);
+      return { page: str(i.page_address), traffic: num(o.etv), keywords: num(o.count), value: num(o.estimated_paid_traffic_cost), top3: (num(o.pos_1) ?? 0) + (num(o.pos_2_3) ?? 0) };
+    }).filter((x) => x.page),
+  },
+  // each competitor's link authority (weekly), for the side-by-side and link-building comparison
+  comp_links: {
+    key: "comp_links", tier: 2, ttlDays: 7, est: 0.03, path: "/backlinks/summary/live",
+    body: (_t, competitor) => ({ target: competitor, include_subdomains: true, internal_list_limit: 1 }),
+    shape: (r) => r && {
+      rank: num(r.rank), backlinks: num(r.backlinks), referring_domains: num(r.referring_domains), spam_score: num(r.backlinks_spam_score),
+      broken_backlinks: num(r.broken_backlinks), referring_ips: num(r.referring_ips),
+    },
+  },
 } satisfies Record<string, Spec>;
 
 export interface AutoCompetitor { domain: string; shared: number | null; avg_position: number | null; keywords: number | null; traffic: number | null }
@@ -146,6 +164,8 @@ export async function runCompetitorAnalysis(ctx: Ctx, target: TargetFull, opts: 
   for (const d of rep.tracked) {
     await guard(`gap ${d}`, () => run(COMP_SPECS.kw_gap, d));
     await guard(`shared ${d}`, () => run(COMP_SPECS.kw_shared, d));
+    await guard(`pages ${d}`, () => run(COMP_SPECS.comp_pages, d));
+    await guard(`links ${d}`, () => run(COMP_SPECS.comp_links, d));
   }
   return rep;
 }
@@ -181,6 +201,8 @@ export interface CompetitorData {
   snapshots: SnapshotRow[];
   gaps: { competitor: string; total: number; rows: Row[]; fetchedAt: string }[];
   shared: { competitor: string; total: number; rows: Row[]; fetchedAt: string }[];
+  pages: { competitor: string; rows: Row[]; fetchedAt: string }[];
+  links: { competitor: string; data: { rank: number | null; backlinks: number | null; referring_domains: number | null; spam_score: number | null; broken_backlinks: number | null; referring_ips: number | null }; fetchedAt: string }[];
   latestAt: string | null;
   threats: Threat[];
 }
@@ -189,7 +211,7 @@ export interface CompetitorData {
 export async function loadCompetitors(supabase: SupabaseClient, clientId: string): Promise<CompetitorData> {
   const [{ data: t }, { data: cache }, { data: snaps }] = await Promise.all([
     supabase.from("research_targets").select("domain, location_code, language_code, competitors, competitors_excluded, competitor_mode").eq("client_id", clientId).maybeSingle(),
-    supabase.from("dfs_cache").select("endpoint, data, params, fetched_at").eq("client_id", clientId).in("endpoint", ["competitors_auto", "kw_gap", "kw_shared"]).order("fetched_at", { ascending: false }).limit(60),
+    supabase.from("dfs_cache").select("endpoint, data, params, fetched_at").eq("client_id", clientId).in("endpoint", ["competitors_auto", "kw_gap", "kw_shared", "comp_pages", "comp_links"]).order("fetched_at", { ascending: false }).limit(120),
     supabase.from("competitor_snapshots").select("domain, is_self, snapshot_date, keywords, traffic, traffic_value, top3, top10, shared_keywords, avg_position").eq("client_id", clientId).order("snapshot_date").limit(3000),
   ]);
   const target = t as TargetFull | null;
@@ -210,7 +232,20 @@ export async function loadCompetitors(supabase: SupabaseClient, clientId: string
   const snapshots = (snaps ?? []) as SnapshotRow[];
   const latestAt = snapshots.length ? snapshots.reduce((a, s) => (s.snapshot_date > a ? s.snapshot_date : a), "") : null;
   const tracked = target ? pickTracked(target, auto?.data ?? []) : [];
-  return { target, auto, tracked, snapshots, gaps: list("kw_gap"), shared: list("kw_shared"), latestAt, threats: detectThreats(snapshots) };
+  const byCompetitor = (endpoint: string) => {
+    const seen = new Set<string>();
+    return rows.filter((r) => r.endpoint === endpoint && r.data).flatMap((r) => {
+      const d = String((r.params as Json).competitor ?? (r.params as Json).target ?? "");
+      if (!d || seen.has(d)) return [];
+      seen.add(d);
+      return [{ competitor: d, data: r.data, fetchedAt: r.fetched_at as string }];
+    });
+  };
+  return {
+    target, auto, tracked, snapshots, gaps: list("kw_gap"), shared: list("kw_shared"), latestAt, threats: detectThreats(snapshots),
+    pages: byCompetitor("comp_pages").map((x) => ({ competitor: x.competitor, rows: x.data as Row[], fetchedAt: x.fetchedAt })),
+    links: byCompetitor("comp_links") as CompetitorData["links"],
+  };
 }
 
 export { hostOf };

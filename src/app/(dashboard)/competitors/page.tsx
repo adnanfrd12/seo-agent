@@ -11,6 +11,12 @@ import { Tabs } from "@/components/research/tabs";
 import { fmtInt } from "@/lib/analytics/format";
 import { shiftDays, todayIn } from "@/lib/analytics/range";
 import { loadCompetitors } from "@/lib/dataforseo/competitors";
+import { BarList } from "@/components/charts/bar-list";
+import { brandStats, ENGINES, loadAi, type EngineKey } from "@/lib/ai/visibility";
+import { loadLocal, reviewStats } from "@/lib/dataforseo/local";
+import { loadRanks } from "@/lib/dataforseo/rank";
+import { loadCache } from "@/lib/dataforseo/research";
+import { createAdminClient } from "@/lib/supabase/admin";
 import { marketLabel } from "@/lib/dataforseo/locations";
 import { nextRun } from "@/lib/jobs/log";
 import { researchPage } from "@/lib/dataforseo/view";
@@ -107,6 +113,41 @@ export default async function CompetitorsPage() {
     { label: "You're on page 2+ (11+)", where: [{ key: "you", op: "gte" as const, value: 11 }] },
   ];
   const winnable = mergedGaps.filter((r) => Number(r.difficulty) <= 35 && Number(r.volume) >= 100).length;
+
+  /* ---------------------------------------------------------------- competitor research from the other stored datasets (no extra calls) */
+  const bare = (d: string | null | undefined) => (d ?? "").replace(/^www\./, "").toLowerCase();
+  const self = bare(target.domain);
+  const rivalsList = comp.tracked.slice(0, 4);
+  const [ranks, ai, cache, local] = await Promise.all([
+    loadRanks(supabase, client.id), loadAi(supabase, client.id), loadCache(supabase, client.id), loadLocal(supabase, createAdminClient(), client.id),
+  ]);
+  const posIn = (top: { position: number; domain: string | null }[], d: string) => top.find((t) => { const x = bare(t.domain); return x === d || x.endsWith(`.${d}`); })?.position ?? null;
+  const matrix: Row[] = ranks.ok ? ranks.rows.filter((r) => r.checkedOn).map((r) => ({
+    keyword: r.keyword, device: r.device, volume: r.volume, you: r.position,
+    ...Object.fromEntries(rivalsList.map((d, i) => [`c${i}`, posIn(r.top, d)])),
+    leader: r.top[0]?.domain ? bare(r.top[0].domain) : null,
+  })) : [];
+  const compPages: Row[] = comp.pages.filter((p) => tracked.has(p.competitor)).flatMap((p) => p.rows.map((r) => ({ ...r, competitor: p.competitor })));
+  const selfLinks = cache.get<{ rank: number | null; backlinks: number | null; referring_domains: number | null; spam_score: number | null }>("summary")?.data ?? null;
+  const authority: Row[] = [
+    ...(selfLinks ? [{ site: `${self} (you)`, rank: selfLinks.rank, backlinks: selfLinks.backlinks, referring_domains: selfLinks.referring_domains, spam: selfLinks.spam_score }] : []),
+    ...comp.links.filter((l) => tracked.has(l.competitor)).map((l) => ({ site: l.competitor, rank: l.data.rank, backlinks: l.data.backlinks, referring_domains: l.data.referring_domains, spam: l.data.spam_score })),
+  ];
+  const packCount = new Map<string, number>(), adCount = new Map<string, number>();
+  for (const r of ranks.ok ? ranks.rows : []) {
+    for (const p of r.serp?.local_pack ?? []) { const k = p.own ? `${p.title ?? self} (you)` : p.title ?? p.domain ?? "?"; packCount.set(k, (packCount.get(k) ?? 0) + 1); }
+    for (const a of r.serp?.ads ?? []) adCount.set(a, (adCount.get(a) ?? 0) + 1);
+  }
+  const aiBrands = ai.ok ? brandStats(ai, self).slice(0, 10) : [];
+  const usedEngines = [...new Set(ai.latest.map((c) => c.engine))] as EngineKey[];
+  const aiRows: Row[] = aiBrands.map((b) => ({
+    brand: b.own ? `${b.name} (you)` : b.name, ...Object.fromEntries(usedEngines.map((e) => [e, b.engines[e]?.mentions ?? 0])),
+    mentions: b.mentions, detection: b.detection, position: b.latestPosition, sentiment: b.avgSentiment, citations: b.citations,
+  }));
+  const gbpRows: Row[] = [
+    ...(local.profile ? [{ business: `${local.profile.data.title ?? "You"} (you)`, rating: local.profile.data.rating, reviews: local.profile.data.votes, reply: local.reviews ? reviewStats(local.reviews.items).replyRate : null, last90: local.reviews ? reviewStats(local.reviews.items).last90 : null }] : []),
+    ...local.rivals.filter((r) => r.profile).map((r) => ({ business: r.profile!.title, rating: r.profile!.rating, reviews: r.profile!.votes, reply: r.reviews ? reviewStats(r.reviews.items).replyRate : null, last90: r.reviews ? reviewStats(r.reviews.items).last90 : null })),
+  ].map((r) => ({ ...r, reply: r.reply == null ? null : Math.round(Number(r.reply) * 100) }));
   const beatenBy = mergedShared.filter((r) => Number(r.delta) <= -1).length;
 
   return (
@@ -215,6 +256,49 @@ export default async function CompetitorsPage() {
           )}
         </section>
 
+        <section aria-label="Competitor research">
+          <h2 className="mb-1 text-base font-semibold">Competitor research</h2>
+          <p className="mb-3 text-sm text-muted">Rankings, winning pages, link authority, results-page features, AI answers and Google profiles side by side. Built from data that refreshes automatically: weekly for pages and links, and with every Rank Tracking, AI Visibility and Local SEO check.</p>
+          <Tabs label="Competitor research" items={[
+            { key: "matrix", label: "Rankings matrix", badge: matrix.length, content: matrix.length ? (
+              <ResearchTable title="Where you and each competitor rank for your tracked keywords" rows={matrix} searchKeys={["keyword", "leader"]} csvName={`ranking-matrix-${target.domain}`} initialSort={{ key: "volume", dir: "desc" }}
+                columns={[
+                  { key: "keyword", label: "Keyword" }, { key: "device", label: "Device", type: "badge" }, { key: "volume", label: "Volume", type: "int" }, { key: "you", label: "You", type: "int" },
+                  ...rivalsList.map((d, i) => ({ key: `c${i}`, label: d, type: "int" as const })), { key: "leader", label: "Ranks #1" },
+                ]} note="From the latest Rank Tracking check. A competitor's position shows when it is in the top 10; empty means not in the top 10 (for you: not in the top 30)." />
+            ) : <p className="rounded-xl border border-dashed border-border p-4 text-sm text-muted">Track keywords on the Rank Tracking tab to compare positions here.</p> },
+            { key: "pages", label: "Their top pages", badge: compPages.length, content: compPages.length ? (
+              <ResearchTable title="The pages competitors win with" rows={compPages} searchKeys={["page", "competitor"]} facets={[{ key: "competitor", label: "Competitor" }]} initialSort={{ key: "traffic", dir: "desc" }} csvName={`competitor-pages-${target.domain}`}
+                columns={[{ key: "competitor", label: "Competitor" }, { key: "page", label: "Page", type: "url" }, { key: "traffic", label: "Est. traffic", type: "dec" }, { key: "keywords", label: "Keywords", type: "int" }, { key: "top3", label: "In top 3", type: "int" }, { key: "value", label: "Traffic value", type: "usd" }]}
+                note="Each tracked competitor's 20 strongest pages by estimated organic traffic (DataForSEO Labs, refreshed weekly)." />
+            ) : <p className="rounded-xl border border-dashed border-border p-4 text-sm text-muted">Collected with the next weekly competitor analysis.</p> },
+            { key: "links", label: "Link authority", badge: authority.length, content: authority.length > 1 ? (
+              <div className="space-y-4">
+                <ResearchTable title="Backlink profiles" rows={authority} initialSort={{ key: "referring_domains", dir: "desc" }}
+                  columns={[{ key: "site", label: "Site" }, { key: "rank", label: "Domain rank", type: "int" }, { key: "referring_domains", label: "Referring domains", type: "int" }, { key: "backlinks", label: "Backlinks", type: "int" }, { key: "spam", label: "Spam", type: "spam" }]} />
+                <BarList title="Referring domains" valueLabel="Domains" items={authority.map((a) => ({ label: String(a.site), value: Number(a.referring_domains ?? 0) }))} />
+                <p className="text-xs text-muted">Sites linking to competitors but not to you are on the Backlinks tab (Link gap).</p>
+              </div>
+            ) : <p className="rounded-xl border border-dashed border-border p-4 text-sm text-muted">Collected with the next weekly competitor analysis.</p> },
+            { key: "serp", label: "Map pack & ads", content: packCount.size || adCount.size ? (
+              <div className="grid gap-4 md:grid-cols-2">
+                <BarList title="Who appears in the Google map pack" valueLabel="Keywords" items={[...packCount.entries()].sort((a, b) => b[1] - a[1]).slice(0, 10).map(([label, value]) => ({ label, value }))} emptyText="No map pack on your tracked keywords." />
+                <BarList title="Who buys Google ads on your keywords" valueLabel="Keywords" items={[...adCount.entries()].sort((a, b) => b[1] - a[1]).slice(0, 10).map(([label, value]) => ({ label, value }))} emptyText="No ads seen on your tracked keywords." />
+              </div>
+            ) : <p className="rounded-xl border border-dashed border-border p-4 text-sm text-muted">Appears after the next Rank Tracking check.</p> },
+            { key: "ai", label: "AI answers", badge: aiRows.length, content: aiRows.length ? (
+              <ResearchTable title="Who the AI assistants name" rows={aiRows} initialSort={{ key: "mentions", dir: "desc" }} csvName={`ai-share-of-voice-${target.domain}`}
+                columns={[{ key: "brand", label: "Brand" }, ...usedEngines.map((e) => ({ key: e, label: ENGINES[e].label, type: "int" as const })), { key: "mentions", label: "Mentions", type: "int" }, { key: "detection", label: "Share of answers %", type: "int" }, { key: "position", label: "Avg position", type: "dec" }, { key: "sentiment", label: "Sentiment", type: "int" }, { key: "citations", label: "Citations", type: "int" }]}
+                note="From the latest AI Visibility check. Open that tab for the competition map, citations and sentiment." />
+            ) : <p className="rounded-xl border border-dashed border-border p-4 text-sm text-muted">Add questions on the AI Visibility tab to see who the assistants recommend.</p> },
+            { key: "gbp", label: "Google profiles", badge: gbpRows.length, content: gbpRows.length > 1 ? (
+              <ResearchTable title="Business Profile comparison" rows={gbpRows} initialSort={{ key: "reviews", dir: "desc" }}
+                columns={[{ key: "business", label: "Business" }, { key: "rating", label: "Rating", type: "dec" }, { key: "reviews", label: "Reviews", type: "int" }, { key: "last90", label: "Reviews · 90 days", type: "int" }, { key: "reply", label: "Reply rate %", type: "int" }]}
+                note="From Local SEO & Reviews, which also has the map rank grid and review velocity." />
+            ) : <p className="rounded-xl border border-dashed border-border p-4 text-sm text-muted">Compare nearby businesses on the <Link href="/local-seo" className="text-accent hover:underline">Local SEO &amp; Reviews</Link> tab.</p> },
+          ]} />
+        </section>
+
         <section className="rounded-xl border border-border bg-surface p-4" aria-label="AI competitor recommendations">
           <h2 className="mb-1 text-sm font-semibold">AI recommendations from this data <span className="ml-1 rounded bg-accent-soft px-1.5 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-accent">ai interpretation</span></h2>
           <p className="mb-3 text-xs text-muted">Written by AI from the competitor data above. They are hypotheses to test, never guaranteed outcomes.</p>
@@ -267,7 +351,7 @@ export default async function CompetitorsPage() {
 
         <div className="flex flex-wrap items-center gap-4 text-xs text-muted">
           {reanalyze}
-          <p>Local (Google Maps) competitor listings aren&apos;t included: Local Brand Manager reports your own ranking grids, and map competitor data would be a separate paid DataForSEO product.</p>
+          <p>Google Maps competitors, reviews and map rankings are on the <Link href="/local-seo" className="text-accent hover:underline">Local SEO &amp; Reviews</Link> tab.</p>
         </div>
       </div>
     </>

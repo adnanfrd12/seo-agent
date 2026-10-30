@@ -5,6 +5,8 @@ import { z } from "zod";
 import { shiftDays, todayIn } from "@/lib/analytics/range";
 import { loadRanks } from "@/lib/dataforseo/rank";
 import { loadAudit } from "@/lib/dataforseo/audit";
+import { loadLighthouse } from "@/lib/dataforseo/lighthouse";
+import { gridRivals, loadLocal, reviewStats } from "@/lib/dataforseo/local";
 import { loadReportData } from "@/lib/report/data";
 import { aiErrorMessage, anthropic } from "./claude";
 import { buildEvidence, evidenceText, type EvidenceItem } from "./evidence";
@@ -90,9 +92,26 @@ export async function coachEvidence(admin: SupabaseClient, clientId: string, ran
 
   const ai = await loadAi(admin, clientId);
   if (ai.ok && ai.lastChecked) {
-    add("ai.score", "AI visibility", "Share of tracked questions where the business is named or cited by Claude", `${f(ai.score)}%`);
-    for (const r of ai.rows.filter((x) => x.latest).slice(0, 10)) add(`ai.${r.id.slice(0, 8)}`, "AI visibility", `Question "${r.prompt}"`, r.latest!.mentioned ? "named" : r.latest!.cited ? "cited" : r.latest!.seen ? "found by search but not used" : "not visible", `sources the answer cited: ${r.latest!.competitors.slice(0, 5).join(", ") || "none"}`);
+    add("ai.score", "AI visibility", "Share of AI answers (ChatGPT, Perplexity, Gemini, Claude) that name or cite the business", `${f(ai.score)}%`);
+    for (const r of ai.rows.filter((x) => Object.keys(x.byEngine).length).slice(0, 10)) {
+      const per = Object.values(r.byEngine).map((c) => `${c!.engine}: ${c!.mentioned ? `named${c!.position ? ` #${c!.position}` : ""}` : c!.cited ? "cited" : "not named"}`).join("; ");
+      const named = [...new Set(Object.values(r.byEngine).flatMap((c) => c!.brands.filter((b) => !b.own).slice(0, 3).map((b) => b.name)))].slice(0, 5);
+      add(`ai.${r.id.slice(0, 8)}`, "AI visibility", `Question "${r.prompt}"`, per, `businesses the assistants recommend instead: ${named.join(", ") || "none"}`);
+    }
   } else unavailable.push("AI visibility (no questions checked yet)");
+
+  const local = await loadLocal(admin, admin, clientId);
+  if (local.profile) {
+    const p = local.profile.data, st = reviewStats(local.reviews?.items ?? []);
+    add("gbp.rating", "Google Business Profile", "Google rating and review count", `${f(p.rating)} from ${f(p.votes)} reviews`, `${st.replied} of ${st.loaded} newest reviews answered by the owner; ${st.last90} new reviews in 90 days`);
+    if (p.topics.length) add("gbp.topics", "Google Business Profile", "What reviewers talk about", p.topics.slice(0, 6).map((t) => `${t.topic} (${t.count})`).join(", "));
+    for (const r of local.rivals.filter((x) => x.profile).slice(0, 3)) add(`gbp.rival.${r.key.slice(-6)}`, "Google Business Profile", `Competitor ${r.profile!.title}`, `${f(r.profile!.rating)} from ${f(r.profile!.votes)} reviews`);
+  }
+  const grid = [...local.grids].sort((a, b) => b.checkedAt.localeCompare(a.checkedAt))[0];
+  if (grid) add("maps.grid", "Google Maps", `Map rank grid for "${grid.keyword}"`, `found at ${grid.summary.found} of ${grid.summary.searched} points, ${grid.summary.top3} in the top 3`, `${grid.spacingKm} km apart; who ranks first where the business is missing: ${gridRivals([grid], local.profile?.data.title ?? "").slice(0, 3).map((x) => x.name).join(", ")}`);
+  const lh = (await loadLighthouse(admin, clientId))[0];
+  const home = lh?.rows.find((r) => r.device === "mobile" && !r.error);
+  if (home) add("lighthouse.mobile", "Lighthouse", `Mobile scores for ${home.url}`, `performance ${f(home.performance)}, SEO ${f(home.seo)}, accessibility ${f(home.accessibility)}`, `largest contentful paint ${home.lcp_ms ? (home.lcp_ms / 1000).toFixed(1) : "?"} s, server response ${home.ttfb_ms ? (home.ttfb_ms / 1000).toFixed(1) : "?"} s`);
 
   return { items, unavailable, text: evidenceText({ period: { start: range.start, end: range.end, comparison: "n/a" }, items, unavailable }) };
 }

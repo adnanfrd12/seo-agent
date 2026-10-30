@@ -33,6 +33,7 @@ export async function lastRuns(admin: SupabaseClient) {
 export const SCHEDULE: Record<string, { hourUtc: number; minute: number; label: string }> = {
   sync: { hourUtc: 6, minute: 0, label: "Data sync (GA4, Search Console, Business Profile, Bing, Clarity)" },
   research: { hourUtc: 7, minute: 30, label: "Competitor analysis and SEO research (DataForSEO)" },
+  extras: { hourUtc: 8, minute: 15, label: "AI visibility, map grids, Lighthouse, competitor profiles and deep dive" },
   ai: { hourUtc: 9, minute: 0, label: "AI insights and strategy" },
 };
 

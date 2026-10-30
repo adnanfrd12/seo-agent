@@ -1,3 +1,4 @@
+import { BarList } from "@/components/charts/bar-list";
 import { MetricTrend } from "@/components/charts/metric-trend";
 import { Highlights } from "@/components/dashboard/highlights";
 import { KpiCard } from "@/components/dashboard/kpi-card";
@@ -72,7 +73,36 @@ export default async function RankTrackingPage() {
   });
   const prevPoint = series.length >= 2 ? series[series.length - 2] : null;
 
-  const tableRows: Row[] = rows.map((r: RankRow) => ({ ...r, serp: r.top.length }));
+  const featureName = (f: string) => f.replace(/_/g, " ");
+  const tableRows: Row[] = rows.map((r: RankRow) => ({
+    ...r, serp: undefined, history: undefined, top: undefined,
+    features: r.serp?.features.map(featureName).join(", ") ?? null,
+    in_pack: r.serp ? (r.serp.local_pack.some((p) => p.own) ? "Yes" : r.serp.local_pack.length ? "No" : "No map pack") : null,
+    in_ai: r.serp ? (r.serp.ai_overview.length === 0 ? "No AI Overview" : r.serp.ai_overview.some((a) => (a.domain ?? "").replace(/^www\./, "").toLowerCase().endsWith(self)) ? "Cited" : "Not cited") : null,
+  }));
+  const improved = rows.filter((r) => (r.change ?? 0) > 0).length, declined = rows.filter((r) => (r.change ?? 0) < 0).length;
+  const unchanged = rows.filter((r) => r.change === 0).length;
+  const dist = [
+    { label: "Top 3", value: found.filter((r) => (r.position as number) <= 3).length },
+    { label: "4 to 10", value: found.filter((r) => (r.position as number) >= 4 && (r.position as number) <= 10).length },
+    { label: "11 to 20", value: found.filter((r) => (r.position as number) >= 11 && (r.position as number) <= 20).length },
+    { label: `21 to ${RANK_DEPTH}`, value: found.filter((r) => (r.position as number) >= 21).length },
+    { label: `Not in top ${RANK_DEPTH}`, value: missing },
+  ];
+  const deviceAvg = (["desktop", "mobile"] as const).map((d) => {
+    const f = found.filter((r) => r.device === d);
+    return { device: d, avg: f.length ? f.reduce((a, r) => a + (r.position as number), 0) / f.length : null, n: rows.filter((r) => r.device === d).length };
+  }).filter((d) => d.n > 0);
+  // the rest of each results page: who holds the map pack, who advertises, what the AI Overview cites
+  const serpRows: Row[] = rows.filter((r) => r.serp).map((r) => ({
+    keyword: r.keyword, device: r.device,
+    local_pack: r.serp!.local_pack.map((p) => `${p.own ? "★ " : ""}${p.title ?? p.domain ?? "?"}${p.rating ? ` (${p.rating})` : ""}`).join(" · ") || null,
+    ai_overview: r.serp!.ai_overview.map((a) => a.domain).filter(Boolean).slice(0, 5).join(", ") || null,
+    featured_snippet: r.serp!.featured_snippet, ads: r.serp!.ads.join(", ") || null,
+  }));
+  const adCount = new Map<string, number>();
+  for (const r of rows) for (const a of r.serp?.ads ?? []) adCount.set(a, (adCount.get(a) ?? 0) + 1);
+  const advertisers = [...adCount.entries()].sort((a, b) => b[1] - a[1]).slice(0, 8);
   return (
     <>
       {header}
@@ -93,6 +123,11 @@ export default async function RankTrackingPage() {
             <KpiCard label="In the top 10" source="DFS" format={fmtInt} value={top10} previous={prevPoint?.top10 ?? null} />
             <KpiCard label={`Not in top ${RANK_DEPTH}`} source="DFS" format={fmtInt} value={missing} previous={null} higherIsBetter={false} />
           </section>
+          <p className="mt-2 text-xs text-muted">
+            Since the previous check: <span className="text-positive">{improved} improved</span> · <span className="text-negative">{declined} declined</span> · {unchanged} unchanged
+            {deviceAvg.map((d) => ` · ${d.device} average ${d.avg == null ? "—" : `#${d.avg.toFixed(1)}`} (${d.n} keyword${d.n === 1 ? "" : "s"})`).join("")}
+          </p>
+          <div className="mt-4"><BarList title="Position distribution" valueLabel="Keywords" items={dist} /></div>
 
           {series.length >= 2 && (
             <div className="mt-6"><MetricTrend title="Rankings over time" source="DFS" options={[
@@ -106,12 +141,28 @@ export default async function RankTrackingPage() {
               columns={[
                 { key: "keyword", label: "Keyword" }, { key: "position", label: "Position", type: "int", hint: `Place in Google's organic results; empty = not in the top ${RANK_DEPTH}` },
                 { key: "previous", label: "Change", type: "change", hint: "Movement since the previous check" }, { key: "best", label: "Best", type: "int" },
-                { key: "url", label: "Ranking page", type: "url" }, { key: "device", label: "Device", type: "badge" }, { key: "checkedOn", label: "Checked", type: "date" },
+                { key: "url", label: "Ranking page", type: "url" }, { key: "device", label: "Device", type: "badge" },
+                { key: "volume", label: "Volume", type: "int", hint: "Monthly Google searches (DataForSEO estimate)" }, { key: "difficulty", label: "KD", type: "int", hint: "Keyword difficulty, 0-100" },
+                { key: "cpc", label: "CPC", type: "usd", hint: "Average cost per click in Google Ads" }, { key: "intent", label: "Intent", type: "badge" },
+                { key: "features", label: "On the results page", hint: "SERP features Google showed for this search" }, { key: "in_pack", label: "In map pack", type: "badge" },
+                { key: "in_ai", label: "AI Overview", type: "badge" }, { key: "checkedOn", label: "Checked", type: "date" },
               ]}
-              ranges={[{ key: "position", label: "Position" }, { key: "best", label: "Best" }]} facets={[{ key: "device", label: "Device" }]}
+              ranges={[{ key: "position", label: "Position" }, { key: "best", label: "Best" }, { key: "volume", label: "Volume" }, { key: "difficulty", label: "KD" }]} facets={[{ key: "device", label: "Device" }, { key: "intent", label: "Intent" }, { key: "in_pack", label: "Map pack" }, { key: "in_ai", label: "AI Overview" }]}
               presets={[{ label: "Top 3", where: [{ key: "position", op: "lte", value: 3 }] }, { label: "Top 10", where: [{ key: "position", op: "lte", value: 10 }] }, { label: "Page 2-3 (11-30)", where: [{ key: "position", op: "gte", value: 11 }] }, { label: "Improved", where: [{ key: "change", op: "gte", value: 1 }] }, { label: "Declined", where: [{ key: "change", op: "lte", value: -1 }] }]}
               note="Keywords where the site wasn't found have no position. Change compares with the previous check." />
           </div>
+
+          {serpRows.length > 0 && (
+            <div className="mt-6 space-y-3">
+              <ResearchTable title="Who owns the rest of the results page" rows={serpRows} searchKeys={["keyword", "local_pack", "ai_overview", "ads"]} pageSize={10}
+                columns={[{ key: "keyword", label: "Keyword" }, { key: "device", label: "Device", type: "badge" }, { key: "local_pack", label: "Map pack (★ = you)" },
+                  { key: "ai_overview", label: "AI Overview cites" }, { key: "featured_snippet", label: "Featured snippet" }, { key: "ads", label: "Ads shown by" }]}
+                note="From the same Google search as the position. Empty cells mean Google didn't show that feature for the search." />
+              {advertisers.length > 0 && (
+                <BarList title="Who buys ads on your keywords" valueLabel="Keywords with their ad" items={advertisers.map(([d, n]) => ({ label: d, value: n }))} />
+              )}
+            </div>
+          )}
 
           {leaders.length > 0 && (
             <section className="mt-6 rounded-xl border border-border bg-surface p-4" aria-label="Who ranks above you">

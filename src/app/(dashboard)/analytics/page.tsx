@@ -10,6 +10,7 @@ import { TabHeader } from "@/components/dashboard/tab-header";
 import { movement, pickHighlights } from "@/lib/overview/highlights";
 import { RangeSelector } from "@/components/dashboard/range-selector";
 import { DataTable } from "@/components/tables/data-table";
+import { ResearchTable } from "@/components/research/research-table";
 import { getSession } from "@/lib/analytics/client-context";
 import { fmtDecimal, fmtDuration, fmtInt, fmtMoney, fmtPercent, toNum, type Num } from "@/lib/analytics/format";
 import { resolveRange } from "@/lib/analytics/range";
@@ -180,10 +181,18 @@ export default async function Ga4Page({ searchParams }: { searchParams: Promise<
   const kpis = all;
 
   // extra breakdowns (cities, new vs returning); absent until the latest migration is applied and a sync has run
-  const [cityRes, userTypeRes] = await Promise.all([
+  const [cityRes, userTypeRes, eventsRes] = await Promise.all([
     supabase.rpc("get_ga4_dimension", { ...args, p_dim: "city", p_limit: 15 }),
     supabase.rpc("get_ga4_dimension", { ...args, p_dim: "user_type", p_limit: 5 }),
+    supabase.rpc("get_ga4_events", args),
   ]);
+  const totalEvents = pick(stats.current, "event_count");
+  const events = (eventsRes.error ? [] : ((eventsRes.data ?? []) as { value: string; event_count: number; users: number; key_events: number; revenue: number }[]))
+    .map((e) => ({
+      event: e.value, count: Number(e.event_count), share: totalEvents ? Number(((Number(e.event_count) / totalEvents) * 100).toFixed(1)) : null,
+      users: Number(e.users), per_user: Number(e.users) > 0 ? Number((Number(e.event_count) / Number(e.users)).toFixed(2)) : null,
+      key: Number(e.key_events) > 0 ? "Key event" : "", key_events: Number(e.key_events), revenue: Number(e.revenue),
+    }));
   const cities = cityRes.error ? [] : ((cityRes.data ?? []) as { value: string; sessions: number }[]);
   const userTypes = userTypeRes.error ? [] : ((userTypeRes.data ?? []) as { value: string; sessions: number }[]);
   const topChannel = b.channels[0];
@@ -256,6 +265,22 @@ export default async function Ga4Page({ searchParams }: { searchParams: Promise<
           {userTypes.length > 0 && <BarList title="New vs returning visitors" valueLabel="Sessions" items={userTypes.map((c) => ({ label: c.value === "new" ? "New visitors" : c.value === "returning" ? "Returning visitors" : c.value, value: Number(c.sessions) }))} />}
         </div>
       )}
+
+      <section aria-label="Events" className="mt-6">
+        {events.length > 0 ? (
+          <ResearchTable title="Events" rows={events} columns={[
+            { key: "event", label: "Event name" }, { key: "count", label: "Event count", type: "int" }, { key: "share", label: "% of events", type: "dec" },
+            { key: "users", label: "Total users", type: "int", hint: "Summed per day: someone who fired the event on two days counts twice." },
+            { key: "per_user", label: "Events per user", type: "dec" }, { key: "key", label: "Key event", type: "badge" },
+            { key: "key_events", label: "Key event count", type: "int" }, { key: "revenue", label: "Revenue", type: "usd" },
+          ]} searchKeys={["event"]} facets={[{ key: "key", label: "Type" }]} ranges={[{ key: "count", label: "Event count" }]}
+            presets={[{ label: "Key events only", where: [{ key: "key_events", op: "gte", value: 1 }] }]}
+            initialSort={{ key: "count", dir: "desc" }} csvName={`ga4-events-${range.start}-${range.end}`}
+            note="Every event GA4 recorded in this period, all traffic (like GA4's Engagement › Events report). Leads usually show up as form_submit, phone or click events." />
+        ) : (
+          <p className="rounded-xl border border-dashed border-border p-4 text-sm text-muted">The full events list appears after the next GA4 sync (it needs the latest database update).</p>
+        )}
+      </section>
 
       <div className="mt-6 space-y-6">
         <DataTable<SourceRow>

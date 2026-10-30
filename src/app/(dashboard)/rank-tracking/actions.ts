@@ -18,7 +18,7 @@ async function guard() {
 }
 
 /** Adds keywords (one per line or comma separated) to track. They are checked at the next run or with "Check now". */
-export async function addRankKeywords(input: string, device: "desktop" | "mobile"): Promise<Result> {
+export async function addRankKeywords(input: string, device: "desktop" | "mobile" | "both"): Promise<Result> {
   const g = await guard();
   if ("error" in g) return { ok: false, error: String(g.error) };
   const list = [...new Set(input.split(/[\n,;]+/).map((k) => k.trim().toLowerCase().replace(/\s+/g, " ")).filter((k) => k.length >= 2 && k.length <= 120))];
@@ -28,7 +28,8 @@ export async function addRankKeywords(input: string, device: "desktop" | "mobile
   const room = MAX_RANK_KEYWORDS - (count ?? 0);
   if (room <= 0) return { ok: false, error: `You can track up to ${MAX_RANK_KEYWORDS} keywords. Remove some first.` };
   const target = await resolveTarget(g.db, g.client.id);
-  const rows = list.slice(0, room).map((keyword) => ({ client_id: g.client.id, keyword, device, location_code: target?.location_code ?? 2840, language_code: target?.language_code ?? "en" }));
+  const devices = device === "both" ? (["desktop", "mobile"] as const) : [device];
+  const rows = list.slice(0, Math.max(1, Math.floor(room / devices.length))).flatMap((keyword) => devices.map((d) => ({ client_id: g.client.id, keyword, device: d, location_code: target?.location_code ?? 2840, language_code: target?.language_code ?? "en" })));
   const { error } = await g.db.from("rank_keywords").upsert(rows, { onConflict: "client_id,keyword,device,location_code", ignoreDuplicates: true });
   if (error) return { ok: false, error: "Could not save the keywords." };
   revalidatePath("/rank-tracking");

@@ -6,10 +6,11 @@ import { KpiCard } from "@/components/dashboard/kpi-card";
 import { EmptyState } from "@/components/dashboard/page-header";
 import { TabHeader } from "@/components/dashboard/tab-header";
 import { SpendLine } from "@/components/research/chrome";
-import { AuditProgress, AuditRun } from "@/components/research/audit-controls";
+import { AuditProgress, AuditRun, LighthouseRun } from "@/components/research/audit-controls";
 import { ResearchTable } from "@/components/research/research-table";
 import { fmtInt } from "@/lib/analytics/format";
 import { loadAudit, pollAudit, type AuditIssue, type Severity } from "@/lib/dataforseo/audit";
+import { loadLighthouse, type LhRun } from "@/lib/dataforseo/lighthouse";
 import { researchPage } from "@/lib/dataforseo/view";
 import type { Highlight } from "@/lib/overview/highlights";
 import { createAdminClient } from "@/lib/supabase/admin";
@@ -61,6 +62,58 @@ function SiteCheck({ label, ok, detail }: { label: string; ok: boolean | null; d
   );
 }
 
+export const maxDuration = 300; // Lighthouse runs from this page can take a couple of minutes
+
+const scoreTone = (n: number | null) => (n == null ? "text-muted" : n >= 90 ? "text-positive" : n >= 50 ? "text-[#D4970A]" : "text-negative");
+const secs = (ms: number | null) => (ms == null ? "—" : ms >= 1000 ? `${(ms / 1000).toFixed(1)} s` : `${Math.round(ms)} ms`);
+
+function LighthouseSection({ runs, canEdit }: { runs: LhRun[]; canEdit: boolean }) {
+  const last = runs[0];
+  const pages = last ? [...new Set(last.rows.map((r) => r.url))] : [];
+  return (
+    <section className="mt-8 space-y-3" aria-label="Lighthouse">
+      <div>
+        <h2 className="text-base font-semibold">Page speed and quality (Lighthouse)</h2>
+        <p className="text-sm text-muted">Google&apos;s Lighthouse test on the home page and the most important pages, on mobile and desktop. Scores are 0-100 (90+ good, 50-89 needs work, under 50 poor). Core Web Vitals: LCP under 2.5 s, CLS under 0.1, TBT under 200 ms.</p>
+      </div>
+      <LighthouseRun canEdit={canEdit} />
+      {!last ? <p className="text-sm text-muted">No Lighthouse test yet.</p> : (
+        <>
+          <div className="grid gap-4 lg:grid-cols-3">
+            {pages.map((u) => (
+              <div key={u} className="rounded-xl border border-border bg-surface p-4">
+                <p className="mb-2 break-all text-sm font-semibold">{u.replace(/^https?:\/\//, "")}</p>
+                {last.rows.filter((r) => r.url === u).map((r) => (
+                  <div key={r.device} className="mb-2">
+                    <p className="text-xs font-medium capitalize text-muted">{r.device}{r.error ? ` · failed: ${r.error}` : ""}</p>
+                    {!r.error && (
+                      <>
+                        <dl className="mt-1 grid grid-cols-4 gap-1 text-center">
+                          {([["Perf.", r.performance], ["Access.", r.accessibility], ["Best pr.", r.best_practices], ["SEO", r.seo]] as const).map(([l, v]) => (
+                            <div key={l} className="rounded-lg bg-surface-muted p-1.5"><dt className="text-[10px] text-muted">{l}</dt><dd className={`text-base font-bold tabular-nums ${scoreTone(v)}`}>{v ?? "—"}</dd></div>
+                          ))}
+                        </dl>
+                        <p className="mt-1 text-[11px] text-muted">LCP {secs(r.lcp_ms)} · CLS {r.cls == null ? "—" : r.cls.toFixed(3)} · TBT {secs(r.tbt_ms)} · server {secs(r.ttfb_ms)} · FCP {secs(r.fcp_ms)}</p>
+                      </>
+                    )}
+                  </div>
+                ))}
+              </div>
+            ))}
+          </div>
+          <p className="text-xs text-muted">Tested {last.checkedAt.slice(0, 10)} (${last.cost.toFixed(3)}).{runs.length > 1 ? ` ${runs.length - 1} earlier test${runs.length > 2 ? "s" : ""} stored.` : ""}</p>
+          {runs.length >= 2 && (
+            <MetricTrend title="Mobile performance score over time (home page)" source="Lighthouse" options={[
+              { key: "perf", label: "Performance", data: [...runs].reverse().map((x) => ({ date: x.checkedAt.slice(0, 10), value: x.rows.find((r) => r.device === "mobile" && !r.error)?.performance ?? null })).filter((p) => p.value != null) },
+              { key: "seo", label: "SEO", data: [...runs].reverse().map((x) => ({ date: x.checkedAt.slice(0, 10), value: x.rows.find((r) => r.device === "mobile" && !r.error)?.seo ?? null })).filter((p) => p.value != null) },
+            ]} />
+          )}
+        </>
+      )}
+    </section>
+  );
+}
+
 export default async function SiteAuditPage() {
   const page = await researchPage();
   if (!page) return null;
@@ -76,6 +129,7 @@ export default async function SiteAuditPage() {
 
   const supabase = await createClient();
   const { result, task } = await loadAudit(supabase, client.id);
+  const lighthouse = await loadLighthouse(supabase, client.id);
   const crawling = task?.data.status === "crawling";
   // a viewer arriving mid-crawl (or after it finished) collects the result right away instead of waiting for the daily job
   if (crawling && canEdit) after(async () => { try { await pollAudit(createAdminClient(), client.id); } catch { /* shown on the next visit */ } });
@@ -109,7 +163,7 @@ export default async function SiteAuditPage() {
       <div className="mb-6"><AuditRun canEdit={canEdit} busy={crawling} hasResult={Boolean(r)} /></div>
 
       {!r ? (
-        !crawling && <EmptyState title={`No audit for ${cache.target.domain} yet`} body="Nothing is crawled automatically when you open this page. Run the first audit above; the result is stored and refreshed weekly in the background." />
+        !crawling && <><EmptyState title={`No audit for ${cache.target.domain} yet`} body="Nothing is crawled automatically when you open this page. Run the first audit above; the result is stored and refreshed weekly in the background." /><LighthouseSection runs={lighthouse} canEdit={canEdit} /></>
       ) : (
         <>
           <Highlights items={picks.slice(0, 4)} stableNote="Nothing notable in this audit." />
@@ -181,6 +235,7 @@ export default async function SiteAuditPage() {
               ranges={[{ key: "status", label: "Status" }, { key: "words", label: "Words" }, { key: "depth", label: "Click depth" }, { key: "ms", label: "Load (ms)" }, { key: "score", label: "Score" }]}
               note={r.pages > r.rows.length ? `Showing the ${r.rows.length} pages with the most problems of ${fmtInt(r.pages)} crawled.` : undefined} />
           </div>
+          <LighthouseSection runs={lighthouse} canEdit={canEdit} />
         </>
       )}
     </>

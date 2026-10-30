@@ -18,6 +18,7 @@ type Summary = {
   rank: number | null; backlinks: number | null; referring_domains: number | null; referring_pages: number | null; referring_main_domains: number | null;
   spam_score: number | null; broken_backlinks: number | null; nofollow: number | null; dofollow: number | null; first_seen: string | null;
   tld: Named[]; types: Named[]; platforms: Named[]; countries: Named[]; attributes: Named[]; semantic: Named[]; referring_ips: number | null; crawled_pages: number | null;
+  referring_subnets?: number | null;
 };
 type Month = { date: string | null; new_backlinks: number; lost_backlinks: number; new_domains: number; lost_domains: number };
 type List = { total: number; rows: Row[] };
@@ -97,6 +98,27 @@ export default async function BacklinksPage() {
   const deep = Boolean(lists.backlinks);
   const changes = cache.get<LinkChanges>("link_changes");
   const dofollowShare = s.backlinks ? ((s.dofollow ?? 0) / s.backlinks) * 100 : null;
+  // derived from the stored lists (no extra calls)
+  const domRows = (lists.domains?.data.rows ?? []) as Row[];
+  const band = (lo: number, hi: number, key: "rank" | "spam") => domRows.filter((d) => typeof d[key] === "number" && (d[key] as number) >= lo && (d[key] as number) <= hi).length;
+  const strength = [
+    { label: "Strong (rank 300+)", value: band(300, 1000, "rank") }, { label: "Good (100-299)", value: band(100, 299, "rank") },
+    { label: "Modest (30-99)", value: band(30, 99, "rank") }, { label: "Weak (0-29)", value: band(0, 29, "rank") },
+  ];
+  const spamMix = [{ label: "Clean (0-10)", value: band(0, 10, "spam") }, { label: "Watch (11-40)", value: band(11, 40, "spam") }, { label: "Toxic (41+)", value: band(41, 100, "spam") }];
+  const brand = target.domain.split(".")[0].replace(/[^a-z0-9]/gi, "").toLowerCase();
+  const anchorType = (a: string) => {
+    const t = a.trim().toLowerCase(), flat = t.replace(/[^a-z0-9]/g, "");
+    if (!t) return "No text (image or empty)";
+    if (/https?:|www\.|\.(com|net|org|us)\b/.test(t)) return "Web address";
+    if (brand.length > 3 && flat.includes(brand)) return "Brand name";
+    if (/^(click here|here|website|visit|read more|more|link|this|source|homepage|home|view|learn more|go to)$/.test(t)) return "Generic";
+    return "Keyword or phrase";
+  };
+  const anchorCounts = new Map<string, number>();
+  for (const a of (lists.anchors?.data.rows ?? []) as Row[]) { const k = anchorType(String(a.anchor ?? "")); anchorCounts.set(k, (anchorCounts.get(k) ?? 0) + (Number(a.backlinks) || 0)); }
+  const anchorTotal = [...anchorCounts.values()].reduce((x, y) => x + y, 0);
+  const anchorMix = [...anchorCounts.entries()].sort((a, b) => b[1] - a[1]).map(([label, value]) => ({ label, value, detail: anchorTotal ? `${((value / anchorTotal) * 100).toFixed(0)}%` : undefined }));
 
   return (
     <>
@@ -134,7 +156,13 @@ export default async function BacklinksPage() {
         <Bars title="Link types" items={s.types} total={s.backlinks} />
         <Bars title="Top domain extensions" items={s.tld} total={s.backlinks} />
         <Bars title="Top countries" items={s.countries} total={s.backlinks} />
+        <Bars title="Linking site types" items={s.platforms} total={s.backlinks} />
+        <Bars title="Where on the page links sit" items={s.semantic} total={s.backlinks} />
+        {deep && <BarList title="Referring domains by strength" valueLabel="Domains" items={strength} />}
+        {deep && <BarList title="Spam score of linking domains" valueLabel="Domains" items={spamMix} />}
       </div>
+      {deep && anchorMix.length > 0 && <div className="mt-4"><BarList title="Anchor text mix" valueLabel="Backlinks" items={anchorMix} /></div>}
+      <p className="mt-2 text-xs text-muted">{fmtInt(s.referring_ips)} referring IPs · {fmtInt(s.referring_main_domains)} main domains · {fmtInt(s.crawled_pages)} pages of this site crawled by DataForSEO. A natural anchor mix is mostly the brand name and the web address; a jump in exact-keyword anchors is a warning sign.</p>
 
       <section className="mt-8 space-y-3" aria-label="Recent link changes">
         <div className="flex flex-wrap items-end justify-between gap-2">

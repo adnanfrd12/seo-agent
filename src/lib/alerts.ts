@@ -2,6 +2,7 @@ import "server-only";
 import type { SupabaseClient } from "@supabase/supabase-js";
 import { shiftDays, todayIn } from "@/lib/analytics/range";
 import { loadCompetitors } from "@/lib/dataforseo/competitors";
+import { loadLocal } from "@/lib/dataforseo/local";
 import { detectLinkSpike, type LinkChange, type LinkChanges } from "@/lib/dataforseo/research";
 import type { AuditResult } from "@/lib/dataforseo/audit";
 import { loadAi } from "@/lib/ai/visibility";
@@ -118,6 +119,11 @@ export async function generateAlerts(admin: SupabaseClient, clientId: string, ti
   const since = shiftDays(today, -7);
   const { data: lowRows } = await admin.from("gbp_reviews").select("remote_id, resource_id").eq("client_id", clientId).lte("rating", 2).gte("reviewed_at", `${since}T00:00:00Z`).limit(50);
   if (lowRows?.length) await put("negative_reviews", "warning", `${lowRows.length} new low-rated review${lowRows.length > 1 ? "s" : ""} (1–2 stars)`, "Replying promptly to unhappy customers protects your rating. See Business Profile → Google reviews.", `neg_reviews:${weekKey(today)}`, { count: lowRows.length });
+
+  // 5b. reviews collected from Google (Local SEO & Reviews) that are 3 stars or fewer and still unanswered
+  const local = await loadLocal(admin, admin, clientId);
+  const unanswered = (local.reviews?.items ?? []).filter((r) => !r.reply && (r.rating ?? 5) <= 3 && (r.date ?? "") >= shiftDays(today, -30));
+  if (unanswered.length) await put("unanswered_reviews", "warning", `${unanswered.length} unhappy review${unanswered.length > 1 ? "s" : ""} without a reply`, `Reviews of 3 stars or fewer from the last 30 days that the owner hasn't answered (newest: ${unanswered[0].author ?? "a customer"}, ${unanswered[0].rating}★). Open Local SEO & Reviews to reply.`, `unanswered_reviews:${weekKey(today)}`, { count: unanswered.length });
 
   if (fresh.length) {
     const { data: c } = await admin.from("clients").select("name").eq("id", clientId).maybeSingle();

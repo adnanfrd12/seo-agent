@@ -4,9 +4,9 @@ import { activeClientIds } from "@/lib/activity";
 import { generateAlerts } from "@/lib/alerts";
 import { AUTO_SHARE, BudgetError, getSettings, spend } from "@/lib/dataforseo/budget";
 import { dfsConfigured } from "@/lib/dataforseo/client";
-import { runAiChecks } from "@/lib/ai/visibility";
 import { DEFAULT_AUDIT_PAGES, auditEstimate, pollAudit, startAudit, type AuditTask } from "@/lib/dataforseo/audit";
 import { runCompetitorAnalysis } from "@/lib/dataforseo/competitors";
+import { fetchProfile, localIdentity, pollReviews, PROFILE_EST, REVIEWS_EST, startReviews, type ReviewTask } from "@/lib/dataforseo/local";
 import { runRankChecks } from "@/lib/dataforseo/rank";
 import { refreshCore, resolveTarget, trackLinkChanges } from "@/lib/dataforseo/research";
 import { serverEnv } from "@/lib/env";
@@ -31,6 +31,9 @@ const AUDIT_SHARE = 0.55;
 const AUDIT_EVERY_DAYS = 7;
 /** Cumulative share of the daily cap after which weekly rank checks stop. */
 const RANK_SHARE = 0.58;
+/** Cumulative share of the daily cap after which the weekly Business Profile + reviews refresh stops. */
+const LOCAL_SHARE = 0.6;
+const LOCAL_EVERY_DAYS = 7;
 
 /**
  * Daily. Order of work, all inside the automatic budget (60% of the daily cap set on the Integrations page):
@@ -58,6 +61,15 @@ async function handle(request: NextRequest) {
           try { if ((await pollAudit(admin, p.client_id as string)).state === "done") collected++; } catch { /* retried tomorrow or when the page is opened */ }
         }
         out.auditsCollected = collected;
+        // and finished review collections (free)
+        const { data: rt } = await admin.from("dfs_cache").select("client_id, data").eq("endpoint", "reviews_task");
+        const waiting = new Set((rt ?? []).filter((r) => (r.data as ReviewTask).status === "pending").map((r) => r.client_id as string));
+        let reviewsCollected = 0;
+        for (const id of waiting) {
+          if (Date.now() > deadline) break;
+          try { reviewsCollected += (await pollReviews(admin, id)).done; } catch { /* retried next run or when the page is opened */ }
+        }
+        out.reviewsCollected = reviewsCollected;
       }
 
       if (dfsConfigured()) {
@@ -139,6 +151,26 @@ async function handle(request: NextRequest) {
             }
             out.rankChecks = { keywordsChecked: ranked, cost: Number(rankedCost.toFixed(4)), stopped: rankStopped };
 
+            // 1e. weekly Business Profile + newest reviews for active clients with a profile (about 1.5 cents each)
+            const { data: profiles } = await admin.from("dfs_cache").select("client_id, fetched_at").eq("endpoint", "gbp_profile").eq("params_hash", "self");
+            const lastProfile = new Map((profiles ?? []).map((r) => [r.client_id as string, Date.parse(r.fetched_at as string)]));
+            let localDone = 0;
+            let localStopped: string | null = null;
+            for (const id of ids.filter((x) => active.has(x))) {
+              if (lastProfile.has(id) && Date.now() - lastProfile.get(id)! < LOCAL_EVERY_DAYS * 86_400_000) continue;
+              if (Date.now() > deadline) { localStopped = "time"; break; }
+              if ((await spentNow()) + PROFILE_EST + REVIEWS_EST > cap * LOCAL_SHARE) { localStopped = "budget"; break; }
+              const me = await localIdentity(admin, id);
+              if (!me) continue;
+              const ctx = { admin, clientId: id, source: "auto" as const };
+              try {
+                const prof = await fetchProfile(ctx, me);
+                await startReviews(ctx, { ...me, cid: me.cid ?? prof?.cid ?? null });
+                localDone++;
+              } catch (e) { if (e instanceof BudgetError) { localStopped = "budget"; break; } }
+            }
+            out.local = { refreshed: localDone, stopped: localStopped };
+
             // 2. weekly core refresh, stalest first
             const { data: cached } = await admin.from("dfs_cache").select("client_id, fetched_at").eq("endpoint", "summary");
             const lastCore = new Map((cached ?? []).map((r) => [r.client_id as string, Date.parse(r.fetched_at as string)]));
@@ -162,24 +194,7 @@ async function handle(request: NextRequest) {
         out.skipped = "DataForSEO not configured";
       }
 
-      // 2b. weekly AI visibility checks (your Anthropic key, not DataForSEO) for active clients that track questions
-      if (process.env.ANTHROPIC_API_KEY && Date.now() < deadline) {
-        try {
-          const active = await activeClientIds(admin);
-          const { data: withPrompts } = await admin.from("ai_prompts").select("client_id");
-          const wanted = new Set((withPrompts ?? []).map((r) => r.client_id as string));
-          let aiChecked = 0, aiCost = 0;
-          for (const id of ids.filter((x) => active.has(x) && wanted.has(x))) {
-            if (Date.now() > deadline) break;
-            const target = await resolveTarget(admin, id);
-            if (!target) continue;
-            const { data: s } = await admin.from("clients").select("settings").eq("id", id).maybeSingle();
-            const r = await runAiChecks(admin, id, target.domain, { deadline, search: (s?.settings as { ai_search?: boolean } | null)?.ai_search !== false });
-            aiChecked += r.checked; aiCost += r.cost;
-          }
-          out.aiVisibility = { questionsChecked: aiChecked, cost: Number(aiCost.toFixed(3)) };
-        } catch { /* tables not created yet */ }
-      }
+      // 2b. AI visibility now runs in the "extras" job (several assistants per question)
 
       // 3. alerts for every client (reads stored data only)
       let alerts = 0;

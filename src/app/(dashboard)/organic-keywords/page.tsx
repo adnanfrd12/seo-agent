@@ -40,6 +40,8 @@ export default async function OrganicKeywordsPage() {
   const overview = cache.get<Overview>("rank_overview");
   const ranked = cache.get<Row[]>("ranked_keywords");
   const competitors = cache.get<Row[]>("competitors");
+  const relevant = cache.get<Row[]>("relevant_pages");
+  const links = cache.get<{ backlinks: number | null; referring_domains: number | null; rank: number | null }>("summary");
   const coreAt = overview?.fetchedAt ?? null;
   const controls = <RefreshControls canEdit={canEdit} coreAt={coreAt} deepAt={cache.get("backlinks")?.fetchedAt ?? null} estCore={estimate(TIER1.filter((k) => k !== "history"))} estDeep={estimate(TIER2)} />;
   const chrome = <div className="mb-5 space-y-3"><TargetSettings canEdit={canEdit} target={target} /><SpendLine budget={budget} /></div>;
@@ -81,6 +83,9 @@ export default async function OrganicKeywordsPage() {
         <KpiCard label="Top-10 keywords" source="DFS" format={fmtInt} value={top10} previous={null} />
         <KpiCard label="Traffic value / month" source="DFS" format={usd0} value={o.traffic_value} previous={null} hint="What the same traffic would cost through Google Ads." />
       </section>
+      {links && (
+        <p className="mt-2 text-xs text-muted">Authority behind these rankings: {fmtInt(links.data.backlinks)} backlinks from {fmtInt(links.data.referring_domains)} referring domains · domain rank {fmtInt(links.data.rank)} (details on the Backlinks tab).</p>
+      )}
       <p className="mt-2 text-xs text-muted">Market: {marketLabel(target.location_code)} · updated {coreAt?.slice(0, 10)} · {o.paid_keywords} paid keywords detected · {quickWins} quick wins (positions 4–20 with 100+ searches).</p>
       <div className="mt-3">{controls}</div>
 
@@ -124,11 +129,22 @@ export default async function OrganicKeywordsPage() {
           ]}
           note="Quick wins are keywords already close to page one with real search demand: improving the page's content, title and internal links is usually the cheapest traffic gain." />
 
-        <ResearchTable title="Top pages by organic traffic" rows={[...pages.values()]} searchKeys={["url"]} initialSort={{ key: "traffic", dir: "desc" }}
-          columns={[
-            { key: "url", label: "Page", type: "url" }, { key: "keywords", label: "Keywords", type: "int" }, { key: "best", label: "Best position", type: "int" },
-            { key: "traffic", label: "Est. traffic", type: "dec" }, { key: "volume", label: "Total volume", type: "int" },
-          ]} />
+        {relevant ? (
+          <ResearchTable title="Top pages by organic traffic" rows={relevant.data} searchKeys={["page"]} initialSort={{ key: "traffic", dir: "desc" }} csvName={`top-pages-${target.domain}`}
+            ranges={[{ key: "traffic", label: "Est. traffic" }, { key: "keywords", label: "Keywords" }]}
+            columns={[
+              { key: "page", label: "Page", type: "url" }, { key: "traffic", label: "Est. traffic", type: "dec" }, { key: "keywords", label: "Keywords", type: "int" },
+              { key: "top3", label: "In top 3", type: "int" }, { key: "top10", label: "In top 10", type: "int" }, { key: "p11_20", label: "On page 2", type: "int" },
+              { key: "value", label: "Traffic value", type: "usd", hint: "What the same clicks would cost in Google Ads" },
+              { key: "new", label: "New", type: "int" }, { key: "up", label: "Up", type: "int" }, { key: "down", label: "Down", type: "int" }, { key: "lost", label: "Lost", type: "int" },
+            ]} note={`All keywords each page ranks for in the top 100 (DataForSEO Labs relevant pages, updated ${relevant.fetchedAt.slice(0, 10)}).`} />
+        ) : (
+          <ResearchTable title="Top pages by organic traffic" rows={[...pages.values()]} searchKeys={["url"]} initialSort={{ key: "traffic", dir: "desc" }}
+            columns={[
+              { key: "url", label: "Page", type: "url" }, { key: "keywords", label: "Keywords", type: "int" }, { key: "best", label: "Best position", type: "int" },
+              { key: "traffic", label: "Est. traffic", type: "dec" }, { key: "volume", label: "Total volume", type: "int" },
+            ]} note="Built from the ranking keywords above. The deep dive adds a per-page breakdown with positions and traffic value." />
+        )}
 
         {competitors ? (
           <ResearchTable title="Organic competitors" rows={competitors.data} searchKeys={["domain"]} initialSort={{ key: "shared", dir: "desc" }}

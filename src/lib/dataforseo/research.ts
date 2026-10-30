@@ -105,6 +105,19 @@ export const SPECS = {
       };
     }),
   },
+  // the pages that earn the organic traffic, with how many keywords each ranks for and where
+  relevant_pages: {
+    key: "relevant_pages", tier: 2, ttlDays: 14, est: 0.03, path: "/dataforseo_labs/google/relevant_pages/live",
+    body: (t) => ({ target: t.domain, location_code: t.location_code, language_code: t.language_code, limit: 100, order_by: ["metrics.organic.etv,desc"] }),
+    shape: (r) => arr(r?.items).map((i) => {
+      const o = obj(obj(i.metrics).organic);
+      return {
+        page: str(i.page_address), traffic: num(o.etv), keywords: num(o.count), value: num(o.estimated_paid_traffic_cost),
+        top3: (num(o.pos_1) ?? 0) + (num(o.pos_2_3) ?? 0), top10: (num(o.pos_1) ?? 0) + (num(o.pos_2_3) ?? 0) + (num(o.pos_4_10) ?? 0),
+        p11_20: num(o.pos_11_20), new: num(o.is_new), up: num(o.is_up), down: num(o.is_down), lost: num(o.is_lost),
+      };
+    }),
+  },
   // ---------------------------------------------------------------- tier 2: on demand ("deep dive")
   backlinks: {
     key: "backlinks", tier: 2, ttlDays: 14, est: 0.06, path: "/backlinks/backlinks/live",
@@ -178,7 +191,7 @@ export const SPECS = {
 } satisfies Record<string, Spec>;
 export type SpecKey = keyof typeof SPECS;
 export const TIER1: SpecKey[] = ["summary", "new_lost", "rank_overview", "ranked_keywords", "history"];
-export const TIER2: SpecKey[] = ["backlinks", "new_backlinks", "lost_backlinks", "referring_domains", "anchors", "domain_pages", "competitors"];
+export const TIER2: SpecKey[] = ["backlinks", "new_backlinks", "lost_backlinks", "referring_domains", "anchors", "domain_pages", "competitors", "relevant_pages"];
 
 const hash = (v: unknown) => createHash("sha1").update(JSON.stringify(v)).digest("hex");
 const ageDays = (iso: string) => (Date.now() - Date.parse(iso)) / 86_400_000;
@@ -252,7 +265,7 @@ export interface CacheEntry { endpoint: string; data: unknown; fetched_at: strin
 
 /** Everything stored for a client, newest first. Pages and reports read only this. */
 export async function loadCache(supabase: SupabaseClient, clientId: string): Promise<{
-  get: <T = unknown>(endpoint: SpecKey | "link_changes") => { data: T; fetchedAt: string } | null;
+  get: <T = unknown>(endpoint: SpecKey | "link_changes" | (string & {})) => { data: T; fetchedAt: string } | null;
   gaps: { competitor: string; data: { total: number; rows: Row[] }; fetchedAt: string }[];
   snapshots: Row[];
   target: (Target & { auto_refresh: boolean; competitors: string[] }) | null;
@@ -264,7 +277,7 @@ export async function loadCache(supabase: SupabaseClient, clientId: string): Pro
   ]);
   const list = (rows ?? []) as CacheEntry[];
   return {
-    get: <T,>(endpoint: SpecKey | "link_changes") => {
+    get: <T,>(endpoint: string) => {
       const r = list.find((x) => x.endpoint === endpoint);
       return r ? { data: r.data as T, fetchedAt: r.fetched_at } : null;
     },

@@ -3,7 +3,7 @@
 import { useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
 import { Loader2, RefreshCw, X } from "lucide-react";
-import { addAiPrompts, removeAiPrompt, runAiVisibilityNow, setAiSearch } from "@/app/(dashboard)/ai-visibility/actions";
+import { addAiPrompts, removeAiPrompt, runAiVisibilityNow, setAiEngines, setAiSearch } from "@/app/(dashboard)/ai-visibility/actions";
 import { addRankKeywords, checkRanksNow, removeRankKeyword } from "@/app/(dashboard)/rank-tracking/actions";
 
 const btn = "inline-flex items-center gap-1.5 rounded-lg bg-accent px-3 py-1.5 text-sm font-medium text-accent-foreground hover:opacity-90 disabled:opacity-60";
@@ -40,7 +40,7 @@ export function RemoveButton({ kind, id, label }: { kind: "rank" | "ai"; id: str
 export function RankControls({ canEdit, count, due, suggestions, estimate }: { canEdit: boolean; count: number; due: number; suggestions: string[]; estimate: string }) {
   const { pending, run, note } = useRun();
   const [text, setText] = useState("");
-  const [device, setDevice] = useState<"desktop" | "mobile">("desktop");
+  const [device, setDevice] = useState<"desktop" | "mobile" | "both">("desktop");
   if (!canEdit) return <p className="text-xs text-muted">Only owners and admins can change tracked keywords.</p>;
   return (
     <div className="space-y-3 rounded-xl border border-border bg-surface p-4">
@@ -50,7 +50,7 @@ export function RankControls({ canEdit, count, due, suggestions, estimate }: { c
         </label>
         <div className="space-y-2">
           <label className="block text-sm">Device
-            <select className={`${field} mt-1`} value={device} onChange={(e) => setDevice(e.target.value as "desktop" | "mobile")}><option value="desktop">Desktop</option><option value="mobile">Mobile</option></select>
+            <select className={`${field} mt-1`} value={device} onChange={(e) => setDevice(e.target.value as "desktop" | "mobile" | "both")}><option value="desktop">Desktop</option><option value="mobile">Mobile</option><option value="both">Desktop + mobile</option></select>
           </label>
           <button className={btn} disabled={pending || !text.trim()} onClick={() => run(() => addRankKeywords(text, device), (r) => { if (r.ok) setText(""); })}>
             {pending && <Loader2 className="size-4 animate-spin" />} Add keywords
@@ -74,9 +74,15 @@ export function RankControls({ canEdit, count, due, suggestions, estimate }: { c
   );
 }
 
-export function AiControls({ canEdit, count, due, search, suggestions, estimate }: { canEdit: boolean; count: number; due: number; search: boolean; suggestions: string[]; estimate: string }) {
+const ENGINE_LABELS: { key: string; label: string; cost: string }[] = [
+  { key: "chatgpt", label: "ChatGPT", cost: "3¢" }, { key: "perplexity", label: "Perplexity", cost: "1¢" },
+  { key: "gemini", label: "Gemini", cost: "4¢" }, { key: "claude", label: "Claude", cost: "5¢, your Anthropic key" },
+];
+
+export function AiControls({ canEdit, count, due, search, suggestions, estimate, engines }: { canEdit: boolean; count: number; due: number; search: boolean; suggestions: string[]; estimate: string; engines: string[] }) {
   const { pending, run, note } = useRun();
   const [text, setText] = useState("");
+  const toggle = (k: string, on: boolean) => run(() => setAiEngines(on ? [...engines, k] : engines.filter((e) => e !== k)));
   if (!canEdit) return <p className="text-xs text-muted">Only owners and admins can change tracked questions.</p>;
   return (
     <div className="space-y-3 rounded-xl border border-border bg-surface p-4">
@@ -89,9 +95,18 @@ export function AiControls({ canEdit, count, due, search, suggestions, estimate 
         </button>
         <label className="ml-2 inline-flex items-center gap-2 text-sm">
           <input type="checkbox" className="accent-[var(--accent)]" checked={search} disabled={pending} onChange={(e) => run(() => setAiSearch(e.target.checked))} />
-          Use live web search <span className="text-muted">(about 5¢ a question; off = under 1¢, Claude&apos;s own knowledge)</span>
+          Claude uses live web search <span className="text-muted">(off = Claude&apos;s own knowledge, cheaper)</span>
         </label>
       </div>
+      <fieldset className="flex flex-wrap items-center gap-x-4 gap-y-1 text-sm">
+        <legend className="mb-1 text-xs font-semibold uppercase tracking-wide text-muted">Assistants asked</legend>
+        {ENGINE_LABELS.map((e) => (
+          <label key={e.key} className="inline-flex items-center gap-1.5">
+            <input type="checkbox" className="accent-[var(--accent)]" checked={engines.includes(e.key)} disabled={pending} onChange={(ev) => toggle(e.key, ev.target.checked)} />
+            {e.label} <span className="text-xs text-muted">({e.cost})</span>
+          </label>
+        ))}
+      </fieldset>
       {suggestions.length > 0 && (
         <div className="text-xs text-muted">
           Suggested from your top keywords:{" "}
@@ -102,7 +117,7 @@ export function AiControls({ canEdit, count, due, search, suggestions, estimate 
         <button className={btn2} disabled={pending || count === 0} onClick={() => run(() => runAiVisibilityNow(due === 0))}>
           {pending ? <Loader2 className="size-4 animate-spin" /> : <RefreshCw className="size-4" />} {due > 0 ? `Check ${due} question${due > 1 ? "s" : ""} now` : "Re-check all now"} <span className="opacity-70">(≈{estimate})</span>
         </button>
-        <span className="text-xs text-muted">Runs weekly on its own for active clients. Uses your Anthropic key with Claude Sonnet 5.5.</span>
+        <span className="text-xs text-muted">Runs automatically every week. ChatGPT, Perplexity and Gemini answer through DataForSEO (inside the daily API budget); Claude uses your Anthropic key; Claude Sonnet 5.5 reads every answer for brands and sentiment.</span>
       </div>
       {note}
     </div>

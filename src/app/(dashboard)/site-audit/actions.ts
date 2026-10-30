@@ -5,6 +5,7 @@ import { getSession } from "@/lib/analytics/client-context";
 import { auditEstimate, pollAudit, startAudit, type AuditState } from "@/lib/dataforseo/audit";
 import { BudgetError } from "@/lib/dataforseo/budget";
 import { DfsError, dfsConfigured } from "@/lib/dataforseo/client";
+import { runLighthouse } from "@/lib/dataforseo/lighthouse";
 import { resolveTarget } from "@/lib/dataforseo/research";
 import { createAdminClient } from "@/lib/supabase/admin";
 
@@ -38,4 +39,33 @@ export async function checkSiteAudit(): Promise<AuditState> {
     if (state.state === "done") revalidatePath("/site-audit");
     return state;
   } catch { return { state: "none" }; }
+}
+
+/** Lighthouse on the home page plus the most important pages, mobile and desktop ($0.005 per page per device). */
+export async function runLighthouseNow(pages: number): Promise<Result> {
+  const { client } = await getSession();
+  if (!client) return { ok: false, error: "No client selected." };
+  if (!["owner", "admin"].includes(client.role)) return { ok: false, error: "Only owners and admins can run Lighthouse." };
+  if (!dfsConfigured()) return { ok: false, error: "DataForSEO isn't configured on the server." };
+  const n = Math.min(3, Math.max(1, Math.round(pages)));
+  try {
+    const db = createAdminClient();
+    const target = await resolveTarget(db, client.id);
+    if (!target) return { ok: false, error: "Set the client's website first." };
+    // home page first, then the pages that earn the most organic traffic, then the shallowest crawled pages
+    const { data: cached } = await db.from("dfs_cache").select("endpoint, data").eq("client_id", client.id).in("endpoint", ["relevant_pages", "audit"]);
+    const rel = ((cached ?? []).find((r) => r.endpoint === "relevant_pages")?.data ?? []) as { page: string | null; traffic: number | null }[];
+    const audit = (cached ?? []).find((r) => r.endpoint === "audit")?.data as { rows?: { url: string; status: number | null; depth: number | null }[] } | undefined;
+    const urls = [...new Set([
+      `https://${target.domain}/`,
+      ...rel.filter((r) => r.page).sort((a, b) => (b.traffic ?? 0) - (a.traffic ?? 0)).map((r) => (r.page!.startsWith("http") ? r.page! : `https://${r.page}`)),
+      ...(audit?.rows ?? []).filter((r) => r.status === 200).sort((a, b) => (a.depth ?? 9) - (b.depth ?? 9)).map((r) => r.url),
+    ])].slice(0, n);
+    const run = await runLighthouse({ admin: db, clientId: client.id, source: "manual" }, urls, ["mobile", "desktop"]);
+    revalidatePath("/site-audit");
+    const failed = run.rows.filter((r) => r.error).length;
+    return { ok: true, message: `Lighthouse tested ${urls.length} page${urls.length > 1 ? "s" : ""} on mobile and desktop ($${run.cost.toFixed(3)})${failed ? `; ${failed} test${failed > 1 ? "s" : ""} failed` : ""}.` };
+  } catch (e) {
+    return { ok: false, error: e instanceof BudgetError || e instanceof DfsError ? e.message : "Lighthouse couldn't run. Try again." };
+  }
 }

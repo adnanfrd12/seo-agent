@@ -205,6 +205,23 @@ export async function syncGa4(
         return upsertChunks(admin, "ga4_dimension_metrics", [...map.values()], "resource_id,metric_date,dimension,value");
       },
     },
+    {
+      // every event (page_view, scroll, form_submit, phone clicks...), like GA4's Engagement > Events report
+      name: "events",
+      run: async () => {
+        const rows = await report(["date", "eventName"], ["eventCount", "totalUsers", "keyEvents", "totalRevenue"], { maxRows: 100_000 });
+        const map = new Map<string, Record<string, unknown>>();
+        for (const r of rows) {
+          const d = isoDate(dim(r, 0));
+          if (!d || met(r, 0) <= 0) continue;
+          map.set(`${d}|${dim(r, 1)}`, {
+            ...base, metric_date: d, dimension: "event", value: dim(r, 1) || "(not set)",
+            sessions: 0, users: met(r, 1), key_events: met(r, 2), event_count: met(r, 0), revenue: Math.max(0, met(r, 3)),
+          });
+        }
+        return upsertChunks(admin, "ga4_dimension_metrics", [...map.values()], "resource_id,metric_date,dimension,value");
+      },
+    },
   ];
 
   const written: Record<string, number> = {};
