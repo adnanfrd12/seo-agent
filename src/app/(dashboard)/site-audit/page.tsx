@@ -10,7 +10,9 @@ import { AuditProgress, AuditRun, LighthouseRun } from "@/components/research/au
 import { ResearchTable } from "@/components/research/research-table";
 import { fmtInt } from "@/lib/analytics/format";
 import { loadAudit, pollAudit, type AuditIssue, type Severity } from "@/lib/dataforseo/audit";
-import { loadLighthouse, type LhRun } from "@/lib/dataforseo/lighthouse";
+import { loadLighthouse, type LhRow, type LhRun } from "@/lib/dataforseo/lighthouse";
+import { ScoreRing } from "@/components/charts/score-ring";
+import { Tabs } from "@/components/research/tabs";
 import { researchPage } from "@/lib/dataforseo/view";
 import type { Highlight } from "@/lib/overview/highlights";
 import { createAdminClient } from "@/lib/supabase/admin";
@@ -64,51 +66,55 @@ function SiteCheck({ label, ok, detail }: { label: string; ok: boolean | null; d
 
 export const maxDuration = 300; // Lighthouse runs from this page can take a couple of minutes
 
-const scoreTone = (n: number | null) => (n == null ? "text-muted" : n >= 90 ? "text-positive" : n >= 50 ? "text-[#D4970A]" : "text-negative");
 const secs = (ms: number | null) => (ms == null ? "—" : ms >= 1000 ? `${(ms / 1000).toFixed(1)} s` : `${Math.round(ms)} ms`);
+const pathOf = (u: string) => { try { const x = new URL(u); return x.pathname === "/" ? "/ (home)" : x.pathname; } catch { return u; } };
+// Core Web Vitals thresholds (good / needs improvement) shown in Lighthouse's colours
+const vital = (v: number | null, good: number, poor: number) => (v == null ? "text-muted" : v <= good ? "text-[#0a8f4c]" : v <= poor ? "text-[#c77700]" : "text-[#e0362b]");
+
+function LhCard({ r }: { r: LhRow }) {
+  return (
+    <div className="rounded-xl border border-border bg-surface-muted/60 p-4">
+      <p className="mb-3 truncate text-sm font-semibold" title={r.url}>{pathOf(r.url)}</p>
+      {r.error ? <p className="text-sm text-negative">Test failed: {r.error}</p> : (
+        <>
+          <div className="flex flex-wrap justify-between gap-2">
+            <ScoreRing score={r.performance} label="Performance" />
+            <ScoreRing score={r.accessibility} label="Accessibility" />
+            <ScoreRing score={r.best_practices} label="Best practices" />
+            <ScoreRing score={r.seo} label="SEO" />
+          </div>
+          <p className="mt-3 text-sm tabular-nums">
+            <span className={vital(r.lcp_ms, 2500, 4000)}>LCP {secs(r.lcp_ms)}</span>
+            <span className="text-muted"> · </span><span className={vital(r.cls, 0.1, 0.25)}>CLS {r.cls == null ? "—" : r.cls.toFixed(2)}</span>
+            <span className="text-muted"> · </span><span className={vital(r.tbt_ms, 200, 600)}>TBT {secs(r.tbt_ms)}</span>
+            <span className="text-muted"> · </span><span className={vital(r.ttfb_ms, 800, 1800)}>TTFB {secs(r.ttfb_ms)}</span>
+          </p>
+        </>
+      )}
+    </div>
+  );
+}
 
 function LighthouseSection({ runs, canEdit }: { runs: LhRun[]; canEdit: boolean }) {
   const last = runs[0];
-  const pages = last ? [...new Set(last.rows.map((r) => r.url))] : [];
+  const grid = (device: "mobile" | "desktop") => (
+    <div className="grid gap-4 md:grid-cols-2">{last.rows.filter((r) => r.device === device).map((r) => <LhCard key={r.url} r={r} />)}</div>
+  );
+  const series = (key: "performance" | "seo") => [...runs].reverse().map((x) => ({ date: x.checkedAt.slice(0, 10), value: x.rows.find((r) => r.device === "mobile" && !r.error)?.[key] ?? null })).filter((p) => p.value != null);
   return (
-    <section className="mt-8 space-y-3" aria-label="Lighthouse">
-      <div>
-        <h2 className="text-base font-semibold">Page speed and quality (Lighthouse)</h2>
-        <p className="text-sm text-muted">Google&apos;s Lighthouse test on the home page and the most important pages, on mobile and desktop. Scores are 0-100 (90+ good, 50-89 needs work, under 50 poor). Core Web Vitals: LCP under 2.5 s, CLS under 0.1, TBT under 200 ms.</p>
+    <section className="mt-8 rounded-xl border border-border bg-surface p-5" aria-label="Lighthouse">
+      <div className="mb-4 flex flex-wrap items-end justify-between gap-3">
+        <div>
+          <h2 className="text-base font-semibold">Lighthouse scores</h2>
+          {last && <p className="text-xs text-muted">Tested {last.checkedAt.slice(0, 10)} · refreshed weekly</p>}
+        </div>
+        <LighthouseRun canEdit={canEdit} />
       </div>
-      <LighthouseRun canEdit={canEdit} />
       {!last ? <p className="text-sm text-muted">No Lighthouse test yet.</p> : (
-        <>
-          <div className="grid gap-4 lg:grid-cols-3">
-            {pages.map((u) => (
-              <div key={u} className="rounded-xl border border-border bg-surface p-4">
-                <p className="mb-2 break-all text-sm font-semibold">{u.replace(/^https?:\/\//, "")}</p>
-                {last.rows.filter((r) => r.url === u).map((r) => (
-                  <div key={r.device} className="mb-2">
-                    <p className="text-xs font-medium capitalize text-muted">{r.device}{r.error ? ` · failed: ${r.error}` : ""}</p>
-                    {!r.error && (
-                      <>
-                        <dl className="mt-1 grid grid-cols-4 gap-1 text-center">
-                          {([["Perf.", r.performance], ["Access.", r.accessibility], ["Best pr.", r.best_practices], ["SEO", r.seo]] as const).map(([l, v]) => (
-                            <div key={l} className="rounded-lg bg-surface-muted p-1.5"><dt className="text-[10px] text-muted">{l}</dt><dd className={`text-base font-bold tabular-nums ${scoreTone(v)}`}>{v ?? "—"}</dd></div>
-                          ))}
-                        </dl>
-                        <p className="mt-1 text-[11px] text-muted">LCP {secs(r.lcp_ms)} · CLS {r.cls == null ? "—" : r.cls.toFixed(3)} · TBT {secs(r.tbt_ms)} · server {secs(r.ttfb_ms)} · FCP {secs(r.fcp_ms)}</p>
-                      </>
-                    )}
-                  </div>
-                ))}
-              </div>
-            ))}
-          </div>
-          <p className="text-xs text-muted">Tested {last.checkedAt.slice(0, 10)} (${last.cost.toFixed(3)}).{runs.length > 1 ? ` ${runs.length - 1} earlier test${runs.length > 2 ? "s" : ""} stored.` : ""}</p>
-          {runs.length >= 2 && (
-            <MetricTrend title="Mobile performance score over time (home page)" source="Lighthouse" options={[
-              { key: "perf", label: "Performance", data: [...runs].reverse().map((x) => ({ date: x.checkedAt.slice(0, 10), value: x.rows.find((r) => r.device === "mobile" && !r.error)?.performance ?? null })).filter((p) => p.value != null) },
-              { key: "seo", label: "SEO", data: [...runs].reverse().map((x) => ({ date: x.checkedAt.slice(0, 10), value: x.rows.find((r) => r.device === "mobile" && !r.error)?.seo ?? null })).filter((p) => p.value != null) },
-            ]} />
-          )}
-        </>
+        <div className="space-y-4">
+          <Tabs label="Device" items={[{ key: "mobile", label: "Mobile", content: grid("mobile") }, { key: "desktop", label: "Desktop", content: grid("desktop") }]} />
+          {runs.length >= 2 && <MetricTrend title="Mobile scores over time" source="Lighthouse" options={[{ key: "perf", label: "Performance", data: series("performance") }, { key: "seo", label: "SEO", data: series("seo") }]} />}
+        </div>
       )}
     </section>
   );
@@ -155,7 +161,7 @@ export default async function SiteAuditPage() {
       {header}
       <div className="mb-5 space-y-3">
         <SpendLine budget={budget} />
-        <p className="text-xs text-muted">Website: <span className="font-medium text-foreground">{cache.target.domain}</span>. An audit crawls up to the chosen number of pages (about 1.5 cents per 100 pages) and is stored; the scheduled job repeats it weekly for active clients.</p>
+        <p className="text-xs text-muted"><span className="font-medium text-foreground">{cache.target.domain}</span> · crawled weekly</p>
       </div>
 
       {crawling && <div className="mb-5"><AuditProgress crawled={task!.data.crawled ?? 0} max={task!.data.maxPages} /></div>}
@@ -175,10 +181,8 @@ export default async function SiteAuditPage() {
             <KpiCard label="Warnings" source="DFS" format={fmtInt} value={warnings} previous={prev?.warnings ?? null} higherIsBetter={false} />
             <KpiCard label="Healthy pages" source="DFS" format={(n) => (n === null ? "—" : `${fmtInt(n)} of ${fmtInt(r.pages)}`)} value={r.cleanPages} previous={null} hint="Pages with no errors or warnings." />
           </section>
-          <p className="mt-2 text-xs text-muted">
-            Crawled {r.finishedAt.slice(0, 10)}{r.maxPages <= r.pages ? ` · stopped at the ${r.maxPages}-page limit, so a larger site may have more pages than shown` : ""}
-            {prev ? ` · compared with the audit on ${prev.date}` : ""}.
-          </p>
+          <p className="mt-2 text-xs text-muted">Crawled {r.finishedAt.slice(0, 10)}{prev ? ` · compared with ${prev.date}` : ""}</p>
+          <LighthouseSection runs={lighthouse} canEdit={canEdit} />
 
           <div className="mt-6 grid gap-6 lg:grid-cols-[1fr_20rem]">
             <div className="space-y-5">
@@ -235,7 +239,6 @@ export default async function SiteAuditPage() {
               ranges={[{ key: "status", label: "Status" }, { key: "words", label: "Words" }, { key: "depth", label: "Click depth" }, { key: "ms", label: "Load (ms)" }, { key: "score", label: "Score" }]}
               note={r.pages > r.rows.length ? `Showing the ${r.rows.length} pages with the most problems of ${fmtInt(r.pages)} crawled.` : undefined} />
           </div>
-          <LighthouseSection runs={lighthouse} canEdit={canEdit} />
         </>
       )}
     </>

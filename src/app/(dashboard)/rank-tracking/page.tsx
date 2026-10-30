@@ -20,11 +20,10 @@ export default async function RankTrackingPage() {
   const page = await researchPage();
   if (!page) return null;
   const { client, canEdit, configured, cache, budget } = page;
-  const header = <TabHeader source="dfs" title="Rank Tracking" description="Where the website appears in Google for the keywords that matter, and how that changes week by week." guide={[
-    { term: "Position", text: `The website's place among Google's organic results (1 = first). We look at the top ${RANK_DEPTH}; "not in top ${RANK_DEPTH}" means it wasn't found there.` },
-    { term: "Change", text: "Movement since the previous check. A green arrow means the keyword moved up." },
-    { term: "Who ranks above you", text: "The websites that most often appear in the top 10 for your keywords: your real search competitors." },
-    { term: "Estimates and timing", text: "Positions come from a fresh Google search from the United States (or the client's market) on the chosen device. Google results vary by person and place, so treat positions as a consistent yardstick rather than an exact view for every visitor." },
+  const header = <TabHeader source="dfs" title="Rank Tracking" description="Google positions for your keywords on desktop and mobile, and what else is on each results page." guide={[
+    { term: "Position", text: `Place among Google's organic results (1 = first). "Not in top ${RANK_DEPTH}" means it wasn't found.` },
+    { term: "Change", text: "Movement since the previous weekly check." },
+    { term: "Map pack / AI Overview", text: "Whether Google showed a map pack or AI Overview for the search, and whether the business is in it." },
   ]} />;
   if (!configured) return <>{header}<EmptyState title="DataForSEO isn't configured" body="Add DATAFORSEO_LOGIN and DATAFORSEO_PASSWORD to the environment, then redeploy." action={{ href: "/integrations", label: "Open Integrations" }} /></>;
   if (!cache.target) return <>{header}<EmptyState title="No website to track yet" body="Connect Bing, Search Console or Business Profile for this client so the website can be detected, or ask an owner or admin to set it." action={{ href: "/integrations", label: "Open Integrations" }} /></>;
@@ -106,17 +105,12 @@ export default async function RankTrackingPage() {
   return (
     <>
       {header}
-      <div className="mb-5 space-y-3">
-        <SpendLine budget={budget} />
-        <p className="text-xs text-muted">Website: <span className="font-medium text-foreground">{cache.target.domain}</span> · {rows.length} keyword{rows.length === 1 ? "" : "s"} tracked{lastChecked ? ` · last checked ${lastChecked}` : ""}. A check costs about 0.5 cents per keyword and runs weekly for active clients.</p>
-      </div>
-      <div className="mb-6"><RankControls canEdit={canEdit} count={rows.length} due={due} suggestions={suggestions} estimate={`$${rankEstimate(due || rows.length).toFixed(2)}`} /></div>
+      <p className="mb-5 text-sm"><span className="font-semibold">{cache.target.domain}</span><span className="text-muted"> · {rows.length} keyword/device pairs{lastChecked ? ` · checked ${lastChecked}` : ""} · refreshes weekly</span></p>
 
-      {rows.length === 0 ? <EmptyState title="No keywords tracked yet" body="Add the keywords you want to rank for above. The first check gives their positions today; every later check shows movement." /> : checkedRows.length === 0 ? (
-        <p className="rounded-xl border border-dashed border-border p-6 text-sm text-muted">Keywords added. Press &quot;Check now&quot; to get their first positions.</p>
+      {rows.length === 0 ? <EmptyState title="No keywords tracked yet" body="Keywords are added automatically in the next daily run, or add your own below." /> : checkedRows.length === 0 ? (
+        <p className="rounded-xl border border-dashed border-border p-6 text-sm text-muted">Keywords added. Their first positions arrive with the next daily run.</p>
       ) : (
         <>
-          <Highlights items={picks.slice(0, 4)} stableNote="No keyword moved much since the previous check." />
           <section aria-label="Ranking summary" className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
             <KpiCard label="Average position" source="DFS" format={(n) => (n == null ? "—" : n.toFixed(1))} value={avg} previous={prevPoint?.avg ?? null} higherIsBetter={false} hint="Across keywords found in the top 30. Lower is better." />
             <KpiCard label="In the top 3" source="DFS" format={fmtInt} value={top3} previous={null} />
@@ -127,7 +121,8 @@ export default async function RankTrackingPage() {
             Since the previous check: <span className="text-positive">{improved} improved</span> · <span className="text-negative">{declined} declined</span> · {unchanged} unchanged
             {deviceAvg.map((d) => ` · ${d.device} average ${d.avg == null ? "—" : `#${d.avg.toFixed(1)}`} (${d.n} keyword${d.n === 1 ? "" : "s"})`).join("")}
           </p>
-          <div className="mt-4"><BarList title="Position distribution" valueLabel="Keywords" items={dist} /></div>
+          {picks.length > 0 && <div className="mt-6"><Highlights items={picks.slice(0, 3)} /></div>}
+          <div className="mt-6"><BarList title="Position distribution" valueLabel="Keywords" items={dist} /></div>
 
           {series.length >= 2 && (
             <div className="mt-6"><MetricTrend title="Rankings over time" source="DFS" options={[
@@ -148,16 +143,14 @@ export default async function RankTrackingPage() {
                 { key: "in_ai", label: "AI Overview", type: "badge" }, { key: "checkedOn", label: "Checked", type: "date" },
               ]}
               ranges={[{ key: "position", label: "Position" }, { key: "best", label: "Best" }, { key: "volume", label: "Volume" }, { key: "difficulty", label: "KD" }]} facets={[{ key: "device", label: "Device" }, { key: "intent", label: "Intent" }, { key: "in_pack", label: "Map pack" }, { key: "in_ai", label: "AI Overview" }]}
-              presets={[{ label: "Top 3", where: [{ key: "position", op: "lte", value: 3 }] }, { label: "Top 10", where: [{ key: "position", op: "lte", value: 10 }] }, { label: "Page 2-3 (11-30)", where: [{ key: "position", op: "gte", value: 11 }] }, { label: "Improved", where: [{ key: "change", op: "gte", value: 1 }] }, { label: "Declined", where: [{ key: "change", op: "lte", value: -1 }] }]}
-              note="Keywords where the site wasn't found have no position. Change compares with the previous check." />
+              presets={[{ label: "Top 3", where: [{ key: "position", op: "lte", value: 3 }] }, { label: "Top 10", where: [{ key: "position", op: "lte", value: 10 }] }, { label: "Page 2-3 (11-30)", where: [{ key: "position", op: "gte", value: 11 }] }, { label: "Improved", where: [{ key: "change", op: "gte", value: 1 }] }, { label: "Declined", where: [{ key: "change", op: "lte", value: -1 }] }]} />
           </div>
 
           {serpRows.length > 0 && (
             <div className="mt-6 space-y-3">
               <ResearchTable title="Who owns the rest of the results page" rows={serpRows} searchKeys={["keyword", "local_pack", "ai_overview", "ads"]} pageSize={10}
                 columns={[{ key: "keyword", label: "Keyword" }, { key: "device", label: "Device", type: "badge" }, { key: "local_pack", label: "Map pack (★ = you)" },
-                  { key: "ai_overview", label: "AI Overview cites" }, { key: "featured_snippet", label: "Featured snippet" }, { key: "ads", label: "Ads shown by" }]}
-                note="From the same Google search as the position. Empty cells mean Google didn't show that feature for the search." />
+                  { key: "ai_overview", label: "AI Overview cites" }, { key: "featured_snippet", label: "Featured snippet" }, { key: "ads", label: "Ads shown by" }]} />
               {advertisers.length > 0 && (
                 <BarList title="Who buys ads on your keywords" valueLabel="Keywords with their ad" items={advertisers.map(([d, n]) => ({ label: d, value: n }))} />
               )}
@@ -167,7 +160,7 @@ export default async function RankTrackingPage() {
           {leaders.length > 0 && (
             <section className="mt-6 rounded-xl border border-border bg-surface p-4" aria-label="Who ranks above you">
               <h2 className="text-sm font-semibold">Who ranks in the top 10 for your keywords</h2>
-              <p className="mb-2 text-xs text-muted">Websites that appear most often, with their average position. These are your real search competitors.</p>
+
               <ul className="grid gap-x-6 gap-y-1 text-sm sm:grid-cols-2">
                 {leaders.map(([d, v]) => <li key={d} className="flex justify-between gap-3"><span className="break-all">{d}</span><span className="shrink-0 tabular-nums text-muted">{v.n} keyword{v.n > 1 ? "s" : ""} · avg #{(v.sum / v.n).toFixed(1)}</span></li>)}
               </ul>
@@ -176,14 +169,16 @@ export default async function RankTrackingPage() {
         </>
       )}
 
-      {canEdit && rows.length > 0 && (
-        <details className="mt-6 rounded-xl border border-border bg-surface p-4">
+      {canEdit && (
+        <details className="mt-8 rounded-xl border border-border bg-surface p-4" open={rows.length === 0}>
           <summary className="cursor-pointer text-sm font-medium">Manage tracked keywords <span className="text-muted">({rows.length})</span></summary>
+          <div className="mt-3"><RankControls canEdit={canEdit} count={rows.length} due={due} suggestions={suggestions} estimate={`$${rankEstimate(due || rows.length).toFixed(2)}`} /></div>
           <ul className="mt-3 flex flex-wrap gap-2 text-sm">
             {rows.map((r) => <li key={r.id} className="inline-flex items-center gap-1 rounded-full border border-border py-0.5 pl-3 pr-1">{r.keyword}<span className="text-xs text-muted">({r.device})</span><RemoveButton kind="rank" id={r.id} label={r.keyword} /></li>)}
           </ul>
         </details>
       )}
+      <div className="mt-6"><SpendLine budget={budget} /></div>
     </>
   );
 }

@@ -40,14 +40,11 @@ export default async function AiVisibilityPage() {
   const { client } = await getSession();
   if (!client) return null;
   const canEdit = ["owner", "admin"].includes(client.role);
-  const header = <TabHeader source={null} title="AI Visibility" description="Whether ChatGPT, Perplexity, Gemini and Claude name, rank and cite the business when people ask the questions your customers ask, who they recommend instead, and how they talk about each brand." guide={[
-    { term: "Visibility", text: "Share of AI answers (question × assistant) that name the business." },
-    { term: "Top-3 visibility", text: "Share of answers where the business is among the first three businesses named." },
-    { term: "Position", text: "Where the business is named in the answer: #1 = the first business mentioned." },
-    { term: "Detection rate", text: "Share of tracked questions where at least one assistant names the business." },
-    { term: "Citations", text: "Links the assistants give as sources. A citation of your website sends readers to it." },
-    { term: "Sentiment", text: "0-100 for how favourably the answer describes a brand: 50 neutral, 75+ recommended or praised, under 40 negative. Read by Claude Sonnet 5.5 from the answer text." },
-    { term: "Sources", text: "ChatGPT (GPT-5.4 mini), Perplexity (Sonar) and Gemini (3.5 Flash) answer with live web search through DataForSEO; Claude Sonnet 5.5 through your Anthropic key. Answers vary by person and day, so read the numbers as a trend." },
+  const header = <TabHeader source={null} title="AI Visibility" description="How ChatGPT, Perplexity, Gemini and Claude answer your customers' questions: who they name, in what order, how they describe them, and which sites they cite." guide={[
+    { term: "Visibility", text: "Share of answers (question × assistant) that name the business." },
+    { term: "Position", text: "Order in which the business is named: #1 = first." },
+    { term: "Detection rate", text: "Share of questions where at least one assistant names the business." },
+    { term: "Sentiment", text: "0-100: how favourably the answer describes a brand (50 = neutral)." },
   ]} />;
   if (!process.env.ANTHROPIC_API_KEY) return <>{header}<EmptyState title="AI isn't configured" body="Add ANTHROPIC_API_KEY to the environment (and Vercel), then redeploy." /></>;
 
@@ -146,14 +143,12 @@ export default async function AiVisibilityPage() {
   return (
     <>
       {header}
-      <p className="mb-4 text-xs text-muted">Website: <span className="font-medium text-foreground">{site}</span> · {ai.rows.length} question{ai.rows.length === 1 ? "" : "s"} × {engines.length} assistant{engines.length === 1 ? "" : "s"}{ai.lastChecked ? ` · last checked ${ai.lastChecked}` : ""}. Checks run automatically every week; you can also run them now.</p>
-      <div className="mb-6"><AiControls canEdit={canEdit} count={ai.rows.length} due={due} search={search} suggestions={suggestions} estimate={est} engines={engines} /></div>
+      <p className="mb-5 text-sm"><span className="font-semibold">{site}</span><span className="text-muted"> · {ai.rows.length} questions × {engines.length} assistants{ai.lastChecked ? ` · checked ${ai.lastChecked}` : ""} · refreshes weekly</span></p>
 
-      {ai.rows.length === 0 ? <EmptyState title="No questions tracked yet" body="Add the questions your customers would ask an AI assistant, or pick a suggestion above. Each check shows whether each assistant names, ranks and cites the business." /> : L.length === 0 ? (
-        <p className="rounded-xl border border-dashed border-border p-6 text-sm text-muted">Questions added. They are checked in the next daily run, or press &quot;Check now&quot;.</p>
+      {ai.rows.length === 0 ? <EmptyState title="No questions tracked yet" body="Questions are added automatically in the next daily run, or add your own below." /> : L.length === 0 ? (
+        <p className="rounded-xl border border-dashed border-border p-6 text-sm text-muted">Questions added. They are checked in the next daily run.</p>
       ) : (
         <>
-          <Highlights items={picks.slice(0, 4)} stableNote="No big change since the previous check." />
           <section aria-label="AI visibility summary" className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
             <KpiCard label="Visibility" source="AI" format={(n) => (n == null ? "—" : `${n}%`)} value={vis} previous={prevVis} hint="Share of AI answers that name the business." />
             <KpiCard label="Top-3 visibility" source="AI" format={(n) => (n == null ? "—" : `${n}%`)} value={pctOf(positions.filter((p) => p <= 3).length, L.length)} previous={null} hint="Share of answers naming the business among the first three." />
@@ -164,6 +159,7 @@ export default async function AiVisibilityPage() {
             <KpiCard label="Detection rate" source="AI" format={(n) => (n == null ? "—" : `${n}%`)} value={pctOf(detected, checkedQuestions)} previous={null} hint="Share of questions where at least one assistant names or cites the business." />
             <KpiCard label="Brands found" source="AI" format={fmtInt} value={brands.length} previous={null} hint="Different businesses named across the latest answers." />
           </section>
+          {picks.length > 0 && <div className="mt-6"><Highlights items={picks.slice(0, 3)} /></div>}
 
           <div className="mt-6">
             <Tabs label="AI visibility views" items={[
@@ -183,8 +179,8 @@ export default async function AiVisibilityPage() {
                       {aio.length ? (
                         <ResearchTable title="AI Overviews (from Rank Tracking)" rows={aio} pageSize={10} facets={[{ key: "shown", label: "AI Overview shown" }, { key: "you", label: "You" }]}
                           columns={[{ key: "keyword", label: "Keyword" }, { key: "device", label: "Device", type: "badge" }, { key: "shown", label: "AI Overview", type: "badge" }, { key: "you", label: "Your site", type: "badge" }, { key: "sources", label: "Sources it cites" }, { key: "checked", label: "Checked", type: "date" }]}
-                          note="Collected from the same Google searches as Rank Tracking, at no extra cost." />
-                      ) : <p className="text-sm text-muted">Appears after the next Rank Tracking check (it reads the AI Overview from the same Google search).</p>}
+ />
+                      ) : <p className="text-sm text-muted">Appears after the next Rank Tracking check.</p>}
                     </section>
                   </div>
                 ),
@@ -199,8 +195,7 @@ export default async function AiVisibilityPage() {
                         { key: "name", label: "Brand" }, { key: "domain", label: "Website" }, { key: "latestPosition", label: "Latest position", type: "dec" }, { key: "avgPosition", label: "Avg position", type: "dec" },
                         { key: "detection", label: "Detection %", type: "int" }, { key: "top3", label: "Top 3 %", type: "int" }, { key: "mentions", label: "Mentions", type: "int" },
                         { key: "citations", label: "Citations", type: "int", hint: "Links to the brand's website among the cited sources" }, { key: "avgSentiment", label: "Avg sentiment", type: "int" },
-                      ]} ranges={[{ key: "detection", label: "Detection %" }, { key: "mentions", label: "Mentions" }]}
-                      note="Every business the assistants named in the latest answers. Sentiment is 0-100 (50 neutral)." />
+                      ]} ranges={[{ key: "detection", label: "Detection %" }, { key: "mentions", label: "Mentions" }]} />
                     {ai.topSources.length > 0 && <BarList title="Websites cited instead of you" valueLabel="Answers citing them" items={ai.topSources.map((s) => ({ label: s.domain, value: s.count }))} />}
                   </div>
                 ),
@@ -215,8 +210,7 @@ export default async function AiVisibilityPage() {
                     </dl>
                     <BarList title="Top cited domains" valueLabel="Citations" items={topDomains.slice(0, 20).map(([label, value]) => ({ label: label === site ? `${label} (you)` : label, value }))} />
                     <ResearchTable title="Cited pages" rows={citeRows} searchKeys={["url", "title", "question", "brands"]} facets={[{ key: "engine", label: "Assistant" }, { key: "yours", label: "Owner" }]} csvName={`ai-citations-${site}`}
-                      columns={[{ key: "url", label: "Citation URL", type: "url" }, { key: "question", label: "Question" }, { key: "brands", label: "Brands named" }, { key: "engine", label: "Assistant", type: "badge" }, { key: "yours", label: "", type: "badge" }]}
-                      note="Every source link in the latest answers. Gemini only reports the cited domain, not the exact page." />
+                      columns={[{ key: "url", label: "Citation URL", type: "url" }, { key: "question", label: "Question" }, { key: "brands", label: "Brands named" }, { key: "engine", label: "Assistant", type: "badge" }, { key: "yours", label: "", type: "badge" }]} />
                   </div>
                 ),
               },
@@ -267,6 +261,13 @@ export default async function AiVisibilityPage() {
             ]} />
           </div>
         </>
+      )}
+
+      {canEdit && (
+        <details className="mt-8 rounded-xl border border-border bg-surface p-4" open={ai.rows.length === 0}>
+          <summary className="cursor-pointer text-sm font-medium">Manage questions and assistants</summary>
+          <div className="mt-3"><AiControls canEdit={canEdit} count={ai.rows.length} due={due} search={search} suggestions={suggestions} estimate={est} engines={engines} /></div>
+        </details>
       )}
     </>
   );

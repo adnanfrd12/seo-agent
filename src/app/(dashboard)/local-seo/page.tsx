@@ -1,7 +1,7 @@
 import { BarList } from "@/components/charts/bar-list";
 import { MetricTrend } from "@/components/charts/metric-trend";
 import { Highlights } from "@/components/dashboard/highlights";
-import { KpiCard } from "@/components/dashboard/kpi-card";
+import { StatCard } from "@/components/dashboard/kpi-card";
 import { EmptyState } from "@/components/dashboard/page-header";
 import { TabHeader } from "@/components/dashboard/tab-header";
 import { SpendLine } from "@/components/research/chrome";
@@ -36,7 +36,7 @@ function GridCard({ g }: { g: Grid }) {
           <div key={String(l)} className="rounded-lg bg-surface-muted p-2"><dt className="text-muted">{l}</dt><dd className="text-sm font-semibold tabular-nums">{v}</dd></div>
         ))}
       </dl>
-      <p className="mt-2 text-[11px] text-muted">The outlined square is the business location. Green = top 3, amber = 4-10, red = 11-20, grey = not in the top 20. Hover a square for who ranks first there.</p>
+      <p className="mt-2 text-[11px] text-muted">Outlined = the business · green top 3 · amber 4-10 · red 11-20 · grey not found</p>
     </div>
   );
 }
@@ -45,12 +45,10 @@ export default async function LocalSeoPage() {
   const page = await researchPage();
   if (!page) return null;
   const { client, canEdit, configured, cache, budget } = page;
-  const header = <TabHeader source="dfs" title="Local SEO & Reviews" description="The Google Business Profile as customers see it, every recent review and whether it got a reply, map rankings around the business, and how nearby competitors compare." guide={[
-    { term: "Reply rate", text: "Share of the loaded reviews the owner answered. Google and customers both notice replies; aim to answer every review, especially the unhappy ones." },
-    { term: "Review sentiment", text: "Based on the star rating: 4-5 stars positive, 3 neutral, 1-2 negative." },
-    { term: "Review velocity", text: "How many new reviews arrive each month. A steady flow matters as much as the total." },
-    { term: "Map rank grid", text: "Google Maps results change with the searcher's location. The grid searches from points around the business and shows where it appears at each one." },
-    { term: "Source", text: "Profile and reviews come from Google via DataForSEO; the grid is live Google Maps searches. Nothing is fetched when you open this page." },
+  const header = <TabHeader source="dfs" title="Local SEO & Reviews" description="Google rating, reviews and replies, map rankings and nearby competitors." guide={[
+    { term: "Reply rate", text: "Share of the newest reviews the owner answered." },
+    { term: "Sentiment", text: "From the stars: 4-5 positive, 3 neutral, 1-2 negative." },
+    { term: "Map grid", text: "Where the business shows on Google Maps when people search from points around it." },
   ]} />;
   if (!configured) return <>{header}<EmptyState title="DataForSEO isn't configured" body="Add DATAFORSEO_LOGIN and DATAFORSEO_PASSWORD to the environment, then redeploy." action={{ href: "/integrations", label: "Open Integrations" }} /></>;
 
@@ -92,141 +90,116 @@ export default async function LocalSeoPage() {
     ...local.rivals.filter((r) => r.reviews?.items.length).map((r) => ({ key: r.key, label: r.profile?.title ?? r.reviews!.name, data: reviewStats(r.reviews!.items).monthly.slice(-12).map((m) => ({ date: `${m.month}-01`, value: m.count })) })),
   ];
 
+  const stars5 = (n: number | null) => (n == null ? "—" : `${n.toFixed(1)} ★`);
+  const grids = groupGrids(local.grids);
   return (
     <>
       {header}
-      <div className="mb-5 space-y-3">
-        <SpendLine budget={budget} />
-        <p className="text-xs text-muted">Business: <span className="font-medium text-foreground">{p?.title ?? local.identity.name}</span>{local.identity.city ? ` · ${local.identity.city}` : ""}{local.profile ? ` · profile updated ${local.profile.fetchedAt.slice(0, 10)}` : ""}{local.reviews ? ` · reviews collected ${local.reviews.fetchedAt.slice(0, 10)}` : ""}</p>
+      <div className="mb-5 flex flex-wrap items-center justify-between gap-3">
+        <p className="text-sm"><span className="font-semibold">{p?.title ?? local.identity.name}</span><span className="text-muted">{local.identity.city ? ` · ${local.identity.city}` : ""}{local.reviews ? ` · updated ${local.reviews.fetchedAt.slice(0, 10)}` : ""} · refreshes weekly</span></p>
         <LocalRefresh canEdit={canEdit} waiting={waiting} hasData={Boolean(p)} />
       </div>
 
       {!p && !local.reviews ? (
-        <EmptyState title="No profile or review data yet" body="Press the button above to load the Google Business Profile and the newest 100 reviews (about 1.5 cents). Nothing is fetched automatically when you open this page." />
+        <EmptyState title="No profile or review data yet" body="It loads automatically in the next daily run, or press the button above." />
       ) : (
         <>
-          <Highlights items={picks.slice(0, 4)} stableNote="Nothing needs attention in the reviews right now." />
-          <section aria-label="Reputation summary" className="grid gap-4 sm:grid-cols-2 xl:grid-cols-6">
-            <KpiCard label="Google rating" source="Google" format={(n) => (n == null ? "—" : n.toFixed(1))} value={p?.rating ?? local.reviews?.rating ?? null} previous={null} />
-            <KpiCard label="Total reviews" source="Google" format={fmtInt} value={p?.votes ?? local.reviews?.total ?? null} previous={null} hint="All reviews on the Google profile." />
-            <KpiCard label="Reviews replied" source="Google" format={fmtInt} value={st.loaded ? st.replied : null} previous={null} hint={`Of the ${st.loaded} newest reviews loaded.`} />
-            <KpiCard label="Not replied" source="Google" format={fmtInt} value={st.loaded ? st.notReplied : null} previous={null} higherIsBetter={false} />
-            <KpiCard label="Reply rate" source="Google" format={(n) => fmtPercent(n, 0)} value={st.replyRate} previous={null} />
-            <KpiCard label="New reviews · 90 days" source="Google" format={fmtInt} value={st.loaded ? st.last90 : null} previous={null} />
+          <section aria-label="Reputation summary" className="grid gap-4 sm:grid-cols-3 xl:grid-cols-6">
+            <StatCard label="Google rating" value={stars5(p?.rating ?? local.reviews?.rating ?? null)} tone={(p?.rating ?? 0) >= 4.5 ? "good" : undefined} />
+            <StatCard label="Total reviews" value={fmtInt(p?.votes ?? local.reviews?.total ?? null)} />
+            <StatCard label="Replied" value={st.loaded ? fmtInt(st.replied) : "—"} tone="good" />
+            <StatCard label="Not replied" value={st.loaded ? fmtInt(st.notReplied) : "—"} tone={st.notReplied ? "bad" : undefined} />
+            <StatCard label="Reply rate" value={fmtPercent(st.replyRate, 0)} tone={st.replyRate == null ? undefined : st.replyRate >= 0.8 ? "good" : "warn"} />
+            <StatCard label="New · 90 days" value={st.loaded ? fmtInt(st.last90) : "—"} />
           </section>
+
+          {picks.length > 0 && <div className="mt-6"><Highlights items={picks.slice(0, 3)} /></div>}
 
           <div className="mt-6 grid gap-4 md:grid-cols-2 xl:grid-cols-4">
-            <BarList title={googleDist ? "Rating breakdown · all reviews" : "Rating breakdown · loaded reviews"} valueLabel="Reviews"
-              items={dist.map((d) => ({ label: stars(d.stars), value: d.count, detail: distTotal ? `${((d.count / distTotal) * 100).toFixed(0)}%` : undefined }))} />
-            <BarList title="Review sentiment · loaded reviews" valueLabel="Reviews" items={[
-              { label: "Positive (4-5★)", value: st.positive }, { label: "Neutral (3★)", value: st.neutral }, { label: "Negative (1-2★)", value: st.negative },
-            ]} />
-            {p?.topics?.length ? <BarList title="What reviewers talk about" valueLabel="Reviews mentioning it" items={p.topics.slice(0, 10).map((t) => ({ label: t.topic, value: t.count }))} /> : null}
-            <BarList title="Owner replies · loaded reviews" valueLabel="Reviews" items={[
-              { label: "Replied", value: st.replied }, { label: "Not replied", value: st.notReplied },
-              { label: "Unhappy (≤3★) without reply", value: st.unansweredNegative },
+            <BarList title="Ratings" valueLabel="Reviews" items={dist.map((d) => ({ label: stars(d.stars), value: d.count, detail: distTotal ? `${((d.count / distTotal) * 100).toFixed(0)}%` : undefined }))} />
+            <BarList title="Sentiment" valueLabel="Reviews" items={[{ label: "Positive", value: st.positive }, { label: "Neutral", value: st.neutral }, { label: "Negative", value: st.negative }]} />
+            <BarList title="Owner replies" valueLabel="Reviews" items={[{ label: "Replied", value: st.replied }, { label: "Not replied", value: st.notReplied }, { label: "Unhappy, no reply", value: st.unansweredNegative }]} />
+            <BarList title="What reviewers mention" valueLabel="Reviews" emptyText="No topics reported." items={(p?.topics ?? []).slice(0, 6).map((t) => ({ label: t.topic, value: t.count }))} />
+          </div>
+
+          <div className="mt-6">
+            <Tabs label="Local SEO views" items={[
+              {
+                key: "reviews", label: "Reviews", badge: reviewRows.length, content: (
+                  <div className="space-y-4">
+                    {velocity.length > 0 && velocity[0].data.length >= 2 && <MetricTrend title="New reviews per month" source="Google" options={velocity.slice(0, 1)} />}
+                    {reviewRows.length ? (
+                      <ResearchTable title="Recent reviews" rows={reviewRows} searchKeys={["author", "review", "reply"]} initialSort={{ key: "date", dir: "desc" }} pageSize={10} csvName={`reviews-${client.name}`}
+                        columns={[
+                          { key: "rating", label: "Rating", type: "int" }, { key: "author", label: "Author" }, { key: "date", label: "Date", type: "date" },
+                          { key: "review", label: "Review" }, { key: "replied", label: "Owner replied", type: "badge" }, { key: "sentiment", label: "Sentiment", type: "badge" },
+                        ]}
+                        facets={[{ key: "replied", label: "Owner reply" }, { key: "sentiment", label: "Sentiment" }]}
+                        presets={[{ label: "Not replied", where: [{ key: "replied", op: "eq", value: "No reply" }] }, { label: "Unhappy (≤3★)", where: [{ key: "rating", op: "lte", value: 3 }] }]} />
+                    ) : <p className="rounded-xl border border-dashed border-border p-4 text-sm text-muted">{waiting ? "Collecting reviews…" : local.reviewTask?.status === "failed" ? `Reviews couldn't be collected: ${local.reviewTask.error ?? "unknown error"}.` : "No reviews loaded yet."}</p>}
+                  </div>
+                ),
+              },
+              {
+                key: "map", label: "Map rankings", badge: grids.length, content: (
+                  <div className="space-y-4">
+                    {grids.length === 0 ? <p className="rounded-xl border border-dashed border-border p-4 text-sm text-muted">The first map scan runs in the next daily update.</p> : (
+                      <div className="grid gap-4 lg:grid-cols-2 xl:grid-cols-3">{grids.map(([kw, list]) => <GridCard key={kw} g={list[0]} />)}</div>
+                    )}
+                    {grids.some(([, l]) => l.length > 1) && <MetricTrend title="Map visibility over time (points in the top 3)" source="Google Maps" options={grids.filter(([, l]) => l.length > 1).map(([kw, l]) => ({ key: kw, label: kw, data: [...l].reverse().map((g) => ({ date: g.checkedAt.slice(0, 10), value: g.summary.top3 })) }))} />}
+                    {canEdit && <details className="rounded-xl border border-border bg-surface p-4"><summary className="cursor-pointer text-sm font-medium">Scan another keyword</summary><div className="mt-3"><GridForm canEdit={canEdit} suggestions={gridSuggestions} /></div></details>}
+                  </div>
+                ),
+              },
+              {
+                key: "competitors", label: "Competitors", badge: Math.max(0, rivalRows.length - 1), content: (
+                  <div className="space-y-4">
+                    {rivalRows.length > 1 ? (
+                      <ResearchTable title="Google profile comparison" rows={rivalRows} initialSort={{ key: "reviews", dir: "desc" }} csvName={`gbp-comparison-${client.name}`}
+                        columns={[
+                          { key: "business", label: "Business" }, { key: "rating", label: "Rating", type: "dec" }, { key: "reviews", label: "Reviews", type: "int" },
+                          { key: "last90", label: "New · 90 days", type: "int" }, { key: "reply_rate", label: "Reply rate %", type: "int" },
+                          { key: "negative", label: "Negative", type: "int" }, { key: "photos", label: "Photos", type: "int" }, { key: "category", label: "Category" },
+                        ]} />
+                    ) : <p className="rounded-xl border border-dashed border-border p-4 text-sm text-muted">Competitors are added automatically from the map scans.</p>}
+                    {velocity.length > 1 && <MetricTrend title="New reviews per month: you vs competitors" source="Google" options={velocity} />}
+                    {canEdit && <details className="rounded-xl border border-border bg-surface p-4"><summary className="cursor-pointer text-sm font-medium">Compare other businesses</summary><div className="mt-3"><RivalForm canEdit={canEdit} suggestions={[...new Set([...(p?.alsoSearch.map((a) => a.title) ?? []), ...gridRivals(local.grids, p?.title ?? local.identity.name).map((r) => r.name)])]} /></div></details>}
+                  </div>
+                ),
+              },
+              ...(p ? [{
+                key: "profile", label: "Profile", content: (
+                  <div className="grid gap-4 lg:grid-cols-2">
+                    <div className="rounded-xl border border-border bg-surface p-4">
+                      <dl className="grid grid-cols-[8rem_1fr] gap-x-3 gap-y-2 text-sm">
+                        {([
+                          ["Name", p.title], ["Category", [p.category, ...p.additional].filter(Boolean).join(" · ")], ["Address", p.address], ["Phone", p.phone], ["Website", p.url],
+                          ["Claimed", p.claimed == null ? null : p.claimed ? "Yes" : "No"], ["Photos", p.photos != null ? fmtInt(p.photos) : null], ["Q&A", p.questions != null ? fmtInt(p.questions) : null],
+                        ] as const).filter(([, v]) => v).map(([k, v]) => <div key={k} className="contents"><dt className="text-muted">{k}</dt><dd className="break-words">{v}</dd></div>)}
+                      </dl>
+                    </div>
+                    <div className="space-y-4">
+                      {p.hours.length > 0 && (
+                        <div className="rounded-xl border border-border bg-surface p-4">
+                          <h3 className="mb-2 text-sm font-semibold">Opening hours</h3>
+                          <dl className="grid grid-cols-[7rem_1fr] gap-y-1 text-sm">{p.hours.map((h) => <div key={h.day} className="contents"><dt className="capitalize text-muted">{h.day}</dt><dd>{h.open}</dd></div>)}</dl>
+                        </div>
+                      )}
+                      {p.attributes.length > 0 && (
+                        <div className="rounded-xl border border-border bg-surface p-4">
+                          <h3 className="mb-2 text-sm font-semibold">Attributes</h3>
+                          <ul className="flex flex-wrap gap-1.5 text-xs">{p.attributes.map((a) => <li key={a} className="rounded bg-surface-muted px-2 py-0.5 capitalize">{a}</li>)}</ul>
+                        </div>
+                      )}
+                    </div>
+                  </div>
+                ),
+              }] : []),
             ]} />
           </div>
-          {st.medianReplyDays != null && <p className="mt-2 text-xs text-muted">Typical reply time: {st.medianReplyDays < 1 ? "same day" : `${Math.round(st.medianReplyDays)} days`} after the review.</p>}
-
-          {velocity.length > 0 && velocity[0].data.length >= 2 && (
-            <div className="mt-6"><MetricTrend title="New reviews per month (review velocity)" source="Google" options={velocity} /></div>
-          )}
-
-          <section className="mt-6" aria-label="Reviews">
-            {reviewRows.length ? (
-              <ResearchTable title="Recent reviews" rows={reviewRows} searchKeys={["author", "review", "reply"]} initialSort={{ key: "date", dir: "desc" }} pageSize={15} csvName={`reviews-${client.name}`}
-                columns={[
-                  { key: "rating", label: "Rating", type: "int" }, { key: "author", label: "Author" }, { key: "date", label: "Date", type: "date" },
-                  { key: "review", label: "Review" }, { key: "replied", label: "Owner replied", type: "badge" }, { key: "reply", label: "Reply" },
-                  { key: "sentiment", label: "Sentiment", type: "badge" }, { key: "photos", label: "Photos", type: "int" },
-                ]}
-                facets={[{ key: "replied", label: "Owner reply" }, { key: "sentiment", label: "Sentiment" }]} ranges={[{ key: "rating", label: "Rating" }]}
-                presets={[{ label: "Not replied", where: [{ key: "replied", op: "eq", value: "No reply" }] }, { label: "Unhappy (≤3★)", where: [{ key: "rating", op: "lte", value: 3 }] }]}
-                note={`The ${reviewRows.length} newest reviews on Google, newest first.`} />
-            ) : (
-              <p className="rounded-xl border border-dashed border-border p-4 text-sm text-muted">{waiting ? "Reviews are being collected." : local.reviewTask?.status === "failed" ? `Reviews couldn't be collected: ${local.reviewTask.error ?? "unknown error"}.` : "No reviews loaded yet."}</p>
-            )}
-          </section>
-
-          {p && (
-            <section className="mt-6 grid gap-4 lg:grid-cols-2" aria-label="Business profile">
-              <div className="rounded-xl border border-border bg-surface p-4">
-                <h2 className="mb-2 text-sm font-semibold">Profile on Google</h2>
-                <dl className="grid grid-cols-[8rem_1fr] gap-x-3 gap-y-1.5 text-sm">
-                  {([
-                    ["Name", p.title], ["Category", [p.category, ...p.additional].filter(Boolean).join(" · ")], ["Rating", p.rating != null ? `${p.rating} from ${fmtInt(p.votes)} reviews` : null],
-                    ["Address", p.address], ["Phone", p.phone], ["Website", p.url], ["Claimed", p.claimed == null ? null : p.claimed ? "Yes" : "No"], ["Status", p.status?.replace(/_/g, " ")],
-                    ["Photos", p.photos != null ? fmtInt(p.photos) : null], ["Questions & answers", p.questions != null ? fmtInt(p.questions) : null], ["Price level", p.priceLevel],
-                    ["Services", p.services?.length ? p.services.join(", ") : null], ["Place ID", p.placeId], ["CID", p.cid],
-                  ] as const).filter(([, v]) => v).map(([k, v]) => <div key={k} className="contents"><dt className="text-muted">{k}</dt><dd className="break-words">{v}</dd></div>)}
-                </dl>
-                {p.description && <p className="mt-3 text-sm text-muted">{p.description}</p>}
-              </div>
-              <div className="space-y-4">
-                {p.hours.length > 0 && (
-                  <div className="rounded-xl border border-border bg-surface p-4">
-                    <h2 className="mb-2 text-sm font-semibold">Opening hours</h2>
-                    <dl className="grid grid-cols-[7rem_1fr] gap-y-1 text-sm">{p.hours.map((h) => <div key={h.day} className="contents"><dt className="capitalize text-muted">{h.day}</dt><dd>{h.open}</dd></div>)}</dl>
-                  </div>
-                )}
-                {p.attributes.length > 0 && (
-                  <div className="rounded-xl border border-border bg-surface p-4">
-                    <h2 className="mb-2 text-sm font-semibold">Attributes on the profile</h2>
-                    <ul className="flex flex-wrap gap-1.5 text-xs">{p.attributes.map((a) => <li key={a} className="rounded bg-surface-muted px-2 py-0.5 capitalize">{a}</li>)}</ul>
-                  </div>
-                )}
-                {p.alsoSearch.length > 0 && (
-                  <div className="rounded-xl border border-border bg-surface p-4">
-                    <h2 className="mb-2 text-sm font-semibold">People also search for</h2>
-                    <ul className="space-y-1 text-sm">{p.alsoSearch.map((a) => <li key={a.title} className="flex justify-between gap-2"><span>{a.title}</span><span className="shrink-0 text-muted">{a.rating ?? "—"}★ · {fmtInt(a.votes)} reviews</span></li>)}</ul>
-                  </div>
-                )}
-              </div>
-            </section>
-          )}
+          <div className="mt-6"><SpendLine budget={budget} /></div>
         </>
       )}
-
-      <section className="mt-8 space-y-3" aria-label="Map rank grid">
-        <div>
-          <h2 className="text-base font-semibold">Google Maps rank grid</h2>
-          <p className="text-sm text-muted">Where the business appears on Google Maps when people search from different spots around it. Each point is one live Maps search (about a quarter of a cent).</p>
-        </div>
-        <GridForm canEdit={canEdit} suggestions={gridSuggestions} />
-        {local.grids.length === 0 ? <p className="text-sm text-muted">No map scan yet.</p> : (
-          <Tabs label="Map scans" items={groupGrids(local.grids).map(([kw, list]) => ({
-            key: kw, label: kw, badge: list.length,
-            content: (
-              <div className="space-y-4">
-                <div className="grid gap-4 lg:grid-cols-2">{list.slice(0, 2).map((g) => <GridCard key={g.checkedAt} g={g} />)}</div>
-                {list.length > 1 && <MetricTrend title={`Map visibility for “${kw}” over time`} source="Google Maps" options={[
-                  { key: "found", label: "Points where found", data: [...list].reverse().map((g) => ({ date: g.checkedAt.slice(0, 10), value: g.summary.found })) },
-                  { key: "top3", label: "Points in the top 3", data: [...list].reverse().map((g) => ({ date: g.checkedAt.slice(0, 10), value: g.summary.top3 })) },
-                ]} />}
-              </div>
-            ),
-          }))} />
-        )}
-      </section>
-
-      <section className="mt-8 space-y-3" aria-label="Competitor profiles">
-        <div>
-          <h2 className="text-base font-semibold">How nearby competitors compare</h2>
-          <p className="text-sm text-muted">Rating, review count, reply habit and review velocity of competing businesses, from their Google profiles and newest 50 reviews.</p>
-        </div>
-        <RivalForm canEdit={canEdit} suggestions={[...new Set([...(p?.alsoSearch.map((a) => a.title) ?? []), ...gridRivals(local.grids, p?.title ?? local.identity.name).map((r) => r.name)])]} />
-        {rivalRows.length > 1 && (
-          <ResearchTable title="Business Profile comparison" rows={rivalRows} initialSort={{ key: "reviews", dir: "desc" }} csvName={`gbp-comparison-${client.name}`}
-            columns={[
-              { key: "business", label: "Business" }, { key: "rating", label: "Rating", type: "dec" }, { key: "reviews", label: "Reviews", type: "int" },
-              { key: "last90", label: "Reviews · 90 days", type: "int", hint: "From the newest reviews loaded" }, { key: "reply_rate", label: "Reply rate %", type: "int" },
-              { key: "negative", label: "Negative (1-2★)", type: "int" }, { key: "photos", label: "Photos", type: "int" }, { key: "category", label: "Main category" },
-              { key: "extra", label: "Extra categories", type: "int" }, { key: "claimed", label: "Claimed", type: "bool" },
-            ]} />
-        )}
-        {velocity.length > 1 && <MetricTrend title="Review velocity: you vs competitors" source="Google" options={velocity} />}
-      </section>
     </>
   );
 }

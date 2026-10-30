@@ -162,7 +162,7 @@ export default async function BacklinksPage() {
         {deep && <BarList title="Spam score of linking domains" valueLabel="Domains" items={spamMix} />}
       </div>
       {deep && anchorMix.length > 0 && <div className="mt-4"><BarList title="Anchor text mix" valueLabel="Backlinks" items={anchorMix} /></div>}
-      <p className="mt-2 text-xs text-muted">{fmtInt(s.referring_ips)} referring IPs · {fmtInt(s.referring_main_domains)} main domains · {fmtInt(s.crawled_pages)} pages of this site crawled by DataForSEO. A natural anchor mix is mostly the brand name and the web address; a jump in exact-keyword anchors is a warning sign.</p>
+      <p className="mt-2 text-xs text-muted">{fmtInt(s.referring_ips)} referring IPs · {fmtInt(s.referring_main_domains)} main domains</p>
 
       <section className="mt-8 space-y-3" aria-label="Recent link changes">
         <div className="flex flex-wrap items-end justify-between gap-2">

@@ -275,10 +275,9 @@ export default async function Ga4Page({ searchParams }: { searchParams: Promise<
             { key: "key_events", label: "Key event count", type: "int" }, { key: "revenue", label: "Revenue", type: "usd" },
           ]} searchKeys={["event"]} facets={[{ key: "key", label: "Type" }]} ranges={[{ key: "count", label: "Event count" }]}
             presets={[{ label: "Key events only", where: [{ key: "key_events", op: "gte", value: 1 }] }]}
-            initialSort={{ key: "count", dir: "desc" }} csvName={`ga4-events-${range.start}-${range.end}`}
-            note="Every event GA4 recorded in this period, all traffic (like GA4's Engagement › Events report). Leads usually show up as form_submit, phone or click events." />
+            initialSort={{ key: "count", dir: "desc" }} csvName={`ga4-events-${range.start}-${range.end}`} />
         ) : (
-          <p className="rounded-xl border border-dashed border-border p-4 text-sm text-muted">The full events list appears after the next GA4 sync (it needs the latest database update).</p>
+          <p className="rounded-xl border border-dashed border-border p-4 text-sm text-muted">Events appear after the next GA4 sync.</p>
         )}
       </section>
 

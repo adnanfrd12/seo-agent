@@ -6,7 +6,8 @@ import { AUTO_SHARE, BudgetError, getSettings, spend } from "@/lib/dataforseo/bu
 import { dfsConfigured } from "@/lib/dataforseo/client";
 import { runLighthouse, LH_EST } from "@/lib/dataforseo/lighthouse";
 import { fetchProfile, GRID_POINT_EST, gridRivals, localIdentity, PROFILE_EST, REVIEWS_EST, runGrid, startReviews, type Grid, type Profile } from "@/lib/dataforseo/local";
-import { refreshDeep, resolveTarget, type Row } from "@/lib/dataforseo/research";
+import { loadCompetitors } from "@/lib/dataforseo/competitors";
+import { ensure, refreshDeep, resolveTarget, SPECS, type Row } from "@/lib/dataforseo/research";
 import { serverEnv } from "@/lib/env";
 import { loggedRun } from "@/lib/jobs/log";
 import { createAdminClient } from "@/lib/supabase/admin";
@@ -20,18 +21,20 @@ function authorized(request: NextRequest): boolean {
 }
 
 const DAY = 86_400_000;
-const GRID_EVERY_DAYS = 7, LH_EVERY_DAYS = 7, RIVAL_EVERY_DAYS = 7, DEEP_EVERY_DAYS = 14;
-const SEED_KEYWORDS = 8, SEED_PROMPTS = 4, MAX_GRID_KEYWORDS = 3;
+const GRID_EVERY_DAYS = 7, LH_EVERY_DAYS = 7, RIVAL_EVERY_DAYS = 7, DEEP_EVERY_DAYS = 14, GAP_EVERY_DAYS = 14;
+const SEED_KEYWORDS = 10, SEED_PROMPTS = 5, MAX_GRID_KEYWORDS = 3;
 
 /**
  * Daily, after the research run. Everything here used to need a button; it now runs on its own for
  * ACTIVE clients (opened in the last 14 days), inside the automatic share of the daily DataForSEO budget:
- *   0. starter setup: when a client tracks no keywords or AI questions yet, the best ones are added
+ *   0. starter setup (once per client): tracked keywords are topped up to 10 (desktop and mobile) and
+ *      AI questions to 5, from the keywords the site already ranks for; removing one later is respected
  *   1. AI visibility (ChatGPT, Perplexity, Gemini via DataForSEO; Claude via the Anthropic key), weekly
  *   2. Google Maps rank grids for the keywords scanned before (or the business category), weekly
  *   3. Lighthouse on the home page and the top page, mobile and desktop, weekly
  *   4. Business Profiles and reviews of the competitors compared before (or "people also search"), weekly
  *   5. the backlink / top-pages deep dive, every two weeks
+ *   6. link gap (sites linking to each tracked competitor but not to the client), every two weeks
  * Every step skips what is still fresh, so a re-run the same day spends nothing. Manual buttons still work.
  */
 async function handle(request: NextRequest) {
@@ -53,45 +56,54 @@ async function handle(request: NextRequest) {
         return data ?? [];
       };
 
-      // 0. starter setup (free)
+      // 0. starter setup (free, once per client: what someone removes later is not added back)
       let seededKw = 0, seededQ = 0;
       for (const id of active) {
         const target = await resolveTarget(admin, id);
         if (!target) continue;
+        const { data: c } = await admin.from("clients").select("settings").eq("id", id).maybeSingle();
+        const cs = (c?.settings ?? {}) as Record<string, unknown>;
+        if (cs.tracking_seeded) continue;
         const ranked = ((await latest(id, "ranked_keywords"))[0]?.data ?? []) as Row[];
-        const best = ranked.filter((k) => typeof k.keyword === "string" && Number(k.position) <= 30).sort((a, b) => Number(b.volume ?? 0) - Number(a.volume ?? 0)).map((k) => String(k.keyword));
-        const { count: kwCount } = await admin.from("rank_keywords").select("id", { count: "exact", head: true }).eq("client_id", id);
-        if (kwCount === 0 && best.length) {
-          const rows = best.slice(0, SEED_KEYWORDS).flatMap((keyword) => (["desktop", "mobile"] as const).map((device) => ({ client_id: id, keyword, device, location_code: target.location_code, language_code: target.language_code })));
-          const { error } = await admin.from("rank_keywords").upsert(rows, { onConflict: "client_id,keyword,device,location_code", ignoreDuplicates: true });
-          if (!error) seededKw += rows.length;
-        }
+        if (!ranked.length) continue; // wait for the first keyword data
+        const best = ranked.filter((k) => typeof k.keyword === "string" && Number(k.position) <= 50).sort((a, b) => Number(b.volume ?? 0) - Number(a.volume ?? 0)).map((k) => String(k.keyword));
+        const { data: have } = await admin.from("rank_keywords").select("keyword").eq("client_id", id);
+        const current = [...new Set((have ?? []).map((r) => r.keyword as string))];
+        const keywords = [...current, ...best.filter((k) => !current.includes(k))].slice(0, Math.max(SEED_KEYWORDS, current.length));
+        const rows = keywords.flatMap((keyword) => (["desktop", "mobile"] as const).map((device) => ({ client_id: id, keyword, device, location_code: target.location_code, language_code: target.language_code })));
+        const { error: kErr, data: added } = await admin.from("rank_keywords").upsert(rows, { onConflict: "client_id,keyword,device,location_code", ignoreDuplicates: true }).select("id");
+        if (!kErr) seededKw += added?.length ?? 0;
         const { count: qCount } = await admin.from("ai_prompts").select("id", { count: "exact", head: true }).eq("client_id", id);
-        if (qCount === 0) {
+        if ((qCount ?? 0) < SEED_PROMPTS) {
           const me = await localIdentity(admin, id);
           const prof = ((await latest(id, "gbp_profile")).find((r) => r.params_hash === "self")?.data ?? null) as Profile | null;
           const category = prof?.category ?? null;
           const local = category && me?.city ? [`Who are the best ${category.toLowerCase()}s in ${me.city}? Recommend specific businesses.`] : [];
-          const prompts = [...local, ...suggestPrompts(best, local)].slice(0, SEED_PROMPTS);
+          const { data: haveQ } = await admin.from("ai_prompts").select("prompt").eq("client_id", id);
+          const existing = (haveQ ?? []).map((r) => String(r.prompt).toLowerCase());
+          const prompts = [...local, ...suggestPrompts(best, [...local, ...existing])].filter((q) => !existing.includes(q.toLowerCase())).slice(0, SEED_PROMPTS - (qCount ?? 0));
           if (prompts.length) {
-            const { error } = await admin.from("ai_prompts").upsert(prompts.map((prompt) => ({ client_id: id, prompt })), { onConflict: "client_id,prompt", ignoreDuplicates: true });
-            if (!error) seededQ += prompts.length;
+            const { error, data: addedQ } = await admin.from("ai_prompts").upsert(prompts.map((prompt) => ({ client_id: id, prompt })), { onConflict: "client_id,prompt", ignoreDuplicates: true }).select("id");
+            if (!error) seededQ += addedQ?.length ?? 0;
           }
         }
+        await admin.from("clients").update({ settings: { ...cs, tracking_seeded: new Date().toISOString().slice(0, 10) } }).eq("id", id);
       }
       out.seeded = { keywords: seededKw, questions: seededQ };
 
       // 1. AI visibility (weekly per question; the DataForSEO assistants respect the automatic budget inside runAiChecks)
       if (process.env.ANTHROPIC_API_KEY) {
+        // at most about two minutes per run, so the steps below always get their turn; the rest continues next run
+        const aiDeadline = Math.min(deadline - 90_000, Date.now() + 120_000);
         let checked = 0, cost = 0;
         const errors: string[] = [];
         for (const id of active) {
-          if (Date.now() > deadline - 90_000) break;
+          if (Date.now() > aiDeadline) break;
           const target = await resolveTarget(admin, id);
           if (!target) continue;
           const { data: s } = await admin.from("clients").select("settings").eq("id", id).maybeSingle();
           try {
-            const r = await runAiChecks(admin, id, target.domain, { deadline: deadline - 90_000, source: "auto", search: (s?.settings as { ai_search?: boolean } | null)?.ai_search !== false });
+            const r = await runAiChecks(admin, id, target.domain, { deadline: aiDeadline, source: "auto", search: (s?.settings as { ai_search?: boolean } | null)?.ai_search !== false });
             checked += r.checked; cost += r.cost; errors.push(...r.errors.slice(0, 2));
           } catch (e) { errors.push(e instanceof Error ? e.message : "failed"); }
         }
@@ -110,9 +122,15 @@ async function handle(request: NextRequest) {
         const rows = await latest(id, "maps_grid");
         const byKw = new Map<string, { g: Grid; at: string }>();
         for (const r of rows) { const g = r.data as Grid; if (!byKw.has(g.keyword)) byKw.set(g.keyword, { g, at: r.fetched_at as string }); }
-        if (!byKw.size) {
+        if (byKw.size < MAX_GRID_KEYWORDS) {
           const prof = ((await latest(id, "gbp_profile")).find((r) => r.params_hash === "self")?.data ?? null) as Profile | null;
-          if (prof?.category) byKw.set(`${prof.category.toLowerCase()} near me`, { g: { keyword: `${prof.category.toLowerCase()} near me`, size: 3, spacingKm: 2 } as Grid, at: "" });
+          const ranked = ((await latest(id, "ranked_keywords"))[0]?.data ?? []) as Row[];
+          const city = (me.city ?? "").toLowerCase();
+          const localKw = ranked.map((k) => String(k.keyword ?? "")).filter((k) => k && (/near me/.test(k) || (city && k.includes(city))));
+          for (const kw of [...(prof?.category ? [`${prof.category.toLowerCase()} near me`] : []), ...localKw]) {
+            if (byKw.size >= MAX_GRID_KEYWORDS) break;
+            if (!byKw.has(kw)) byKw.set(kw, { g: { keyword: kw, size: 3, spacingKm: 2 } as Grid, at: "" });
+          }
         }
         for (const { g, at } of [...byKw.values()].slice(0, MAX_GRID_KEYWORDS)) {
           if (age(at || null) < (GRID_EVERY_DAYS - 0.5) * DAY) continue;
@@ -182,6 +200,23 @@ async function handle(request: NextRequest) {
         if (rep.stoppedByBudget) break;
       }
       out.deepDive = { refreshed: deep };
+
+      // 6. link gap against each tracked competitor
+      let gaps = 0;
+      for (const id of active) {
+        if (Date.now() > deadline - 15_000) break;
+        const target = await resolveTarget(admin, id);
+        if (!target || !target.auto_refresh) continue;
+        const comp = await loadCompetitors(admin, id);
+        const { data: rows } = await admin.from("dfs_cache").select("params, fetched_at").eq("client_id", id).eq("endpoint", "link_gap");
+        const done = new Map((rows ?? []).map((r) => [String((r.params as { competitor?: string }).competitor ?? ""), r.fetched_at as string]));
+        for (const d of comp.tracked.slice(0, 3)) {
+          if (age(done.get(d)) < (GAP_EVERY_DAYS - 0.5) * DAY) continue;
+          if (!(await room(SPECS.link_gap.est))) break;
+          try { await ensure({ admin, clientId: id, source: "auto" }, SPECS.link_gap, target, { extra: d }); gaps++; } catch (e) { if (e instanceof BudgetError) break; }
+        }
+      }
+      out.linkGaps = { fetched: gaps };
       out.spentToday = Number((await spentNow()).toFixed(3));
       return out;
     });

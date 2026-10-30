@@ -276,8 +276,7 @@ export default async function SearchConsolePage({ searchParams }: { searchParams
           <ResearchTable title={`New search queries since ${bd.recent_start}`} rows={bd.new_queries.map((x) => ({ ...x, clicks: Number(x.clicks), impressions: Number(x.impressions), position: x.position == null ? null : Number(Number(x.position).toFixed(1)) }))}
             columns={[{ key: "query", label: "Query" }, { key: "clicks", label: "Clicks", type: "int" }, { key: "impressions", label: "Impressions", type: "int" }, { key: "position", label: "Avg position", type: "dec" }]}
             searchKeys={["query"]} initialSort={{ key: "impressions", dir: "desc" }} pageSize={10} csvName={`gsc-new-queries-${range.end}`}
-            empty="No new queries in the last 7 days of this range."
-            note="Queries that got impressions in the last 7 days of the range and none in the 28 days before: new demand Google is starting to show the site for." />
+            empty="No new queries in the last 7 days of this range." />
         </div>
       )}
 

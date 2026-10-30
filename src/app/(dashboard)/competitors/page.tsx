@@ -1,5 +1,5 @@
 import Link from "next/link";
-import { AlertTriangle, Info, TrendingUp } from "lucide-react";
+import { AlertTriangle, TrendingUp } from "lucide-react";
 import { KpiCard } from "@/components/dashboard/kpi-card";
 import { EmptyState } from "@/components/dashboard/page-header";
 import { TabHeader } from "@/components/dashboard/tab-header";
@@ -162,15 +162,6 @@ export default async function CompetitorsPage() {
         <SpendLine budget={budget} />
       </div>
 
-      <div className="mb-5 flex gap-3 rounded-xl border border-border bg-surface p-4 text-sm">
-        <Info className="mt-0.5 size-4 shrink-0 text-accent" aria-hidden />
-        <p className="text-muted">
-          <strong className="text-foreground">How to read this page.</strong> Rankings are positions DataForSEO observed in Google results. Keyword counts, traffic and traffic value are
-          <strong className="text-foreground"> modelled estimates</strong> (volume × position), not measured visits, and competitor figures are never from their own analytics.
-          Treat them as a consistent yardstick for comparison. The gap and threat text below is derived from that data.
-        </p>
-      </div>
-
       <section aria-label="Headline comparison" className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
         <KpiCard label="Your ranking keywords" source="DFS" format={fmtInt} value={me?.keywords ?? null} previous={me && me.change !== null && me.keywords !== null ? me.keywords - me.change : null} hint="Keywords you rank for in Google's top 100; change is since the first stored snapshot." />
         <KpiCard label="Your est. traffic / month" source="DFS" format={fmtInt} value={me?.traffic ?? null} previous={null} hint="Modelled from search volume and position." />
@@ -258,26 +249,25 @@ export default async function CompetitorsPage() {
 
         <section aria-label="Competitor research">
           <h2 className="mb-1 text-base font-semibold">Competitor research</h2>
-          <p className="mb-3 text-sm text-muted">Rankings, winning pages, link authority, results-page features, AI answers and Google profiles side by side. Built from data that refreshes automatically: weekly for pages and links, and with every Rank Tracking, AI Visibility and Local SEO check.</p>
+
           <Tabs label="Competitor research" items={[
             { key: "matrix", label: "Rankings matrix", badge: matrix.length, content: matrix.length ? (
               <ResearchTable title="Where you and each competitor rank for your tracked keywords" rows={matrix} searchKeys={["keyword", "leader"]} csvName={`ranking-matrix-${target.domain}`} initialSort={{ key: "volume", dir: "desc" }}
                 columns={[
                   { key: "keyword", label: "Keyword" }, { key: "device", label: "Device", type: "badge" }, { key: "volume", label: "Volume", type: "int" }, { key: "you", label: "You", type: "int" },
                   ...rivalsList.map((d, i) => ({ key: `c${i}`, label: d, type: "int" as const })), { key: "leader", label: "Ranks #1" },
-                ]} note="From the latest Rank Tracking check. A competitor's position shows when it is in the top 10; empty means not in the top 10 (for you: not in the top 30)." />
+                ]} note="Empty = not in the top 10 (you: top 30)." />
             ) : <p className="rounded-xl border border-dashed border-border p-4 text-sm text-muted">Track keywords on the Rank Tracking tab to compare positions here.</p> },
             { key: "pages", label: "Their top pages", badge: compPages.length, content: compPages.length ? (
               <ResearchTable title="The pages competitors win with" rows={compPages} searchKeys={["page", "competitor"]} facets={[{ key: "competitor", label: "Competitor" }]} initialSort={{ key: "traffic", dir: "desc" }} csvName={`competitor-pages-${target.domain}`}
                 columns={[{ key: "competitor", label: "Competitor" }, { key: "page", label: "Page", type: "url" }, { key: "traffic", label: "Est. traffic", type: "dec" }, { key: "keywords", label: "Keywords", type: "int" }, { key: "top3", label: "In top 3", type: "int" }, { key: "value", label: "Traffic value", type: "usd" }]}
-                note="Each tracked competitor's 20 strongest pages by estimated organic traffic (DataForSEO Labs, refreshed weekly)." />
+ />
             ) : <p className="rounded-xl border border-dashed border-border p-4 text-sm text-muted">Collected with the next weekly competitor analysis.</p> },
             { key: "links", label: "Link authority", badge: authority.length, content: authority.length > 1 ? (
               <div className="space-y-4">
                 <ResearchTable title="Backlink profiles" rows={authority} initialSort={{ key: "referring_domains", dir: "desc" }}
                   columns={[{ key: "site", label: "Site" }, { key: "rank", label: "Domain rank", type: "int" }, { key: "referring_domains", label: "Referring domains", type: "int" }, { key: "backlinks", label: "Backlinks", type: "int" }, { key: "spam", label: "Spam", type: "spam" }]} />
                 <BarList title="Referring domains" valueLabel="Domains" items={authority.map((a) => ({ label: String(a.site), value: Number(a.referring_domains ?? 0) }))} />
-                <p className="text-xs text-muted">Sites linking to competitors but not to you are on the Backlinks tab (Link gap).</p>
               </div>
             ) : <p className="rounded-xl border border-dashed border-border p-4 text-sm text-muted">Collected with the next weekly competitor analysis.</p> },
             { key: "serp", label: "Map pack & ads", content: packCount.size || adCount.size ? (
@@ -289,12 +279,12 @@ export default async function CompetitorsPage() {
             { key: "ai", label: "AI answers", badge: aiRows.length, content: aiRows.length ? (
               <ResearchTable title="Who the AI assistants name" rows={aiRows} initialSort={{ key: "mentions", dir: "desc" }} csvName={`ai-share-of-voice-${target.domain}`}
                 columns={[{ key: "brand", label: "Brand" }, ...usedEngines.map((e) => ({ key: e, label: ENGINES[e].label, type: "int" as const })), { key: "mentions", label: "Mentions", type: "int" }, { key: "detection", label: "Share of answers %", type: "int" }, { key: "position", label: "Avg position", type: "dec" }, { key: "sentiment", label: "Sentiment", type: "int" }, { key: "citations", label: "Citations", type: "int" }]}
-                note="From the latest AI Visibility check. Open that tab for the competition map, citations and sentiment." />
+ />
             ) : <p className="rounded-xl border border-dashed border-border p-4 text-sm text-muted">Add questions on the AI Visibility tab to see who the assistants recommend.</p> },
             { key: "gbp", label: "Google profiles", badge: gbpRows.length, content: gbpRows.length > 1 ? (
               <ResearchTable title="Business Profile comparison" rows={gbpRows} initialSort={{ key: "reviews", dir: "desc" }}
                 columns={[{ key: "business", label: "Business" }, { key: "rating", label: "Rating", type: "dec" }, { key: "reviews", label: "Reviews", type: "int" }, { key: "last90", label: "Reviews · 90 days", type: "int" }, { key: "reply", label: "Reply rate %", type: "int" }]}
-                note="From Local SEO & Reviews, which also has the map rank grid and review velocity." />
+ />
             ) : <p className="rounded-xl border border-dashed border-border p-4 text-sm text-muted">Compare nearby businesses on the <Link href="/local-seo" className="text-accent hover:underline">Local SEO &amp; Reviews</Link> tab.</p> },
           ]} />
         </section>
