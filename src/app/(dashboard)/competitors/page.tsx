@@ -221,7 +221,7 @@ export default async function CompetitorsPage() {
         <section aria-label="Keyword analysis">
           <h2 className="mb-3 text-base font-semibold">Keyword analysis</h2>
           <div className="mb-3 space-y-1">
-            <KeywordGapForm canEdit={canEdit} suggestions={[...comp.tracked, ...(comp.auto?.data ?? []).map((a) => a.domain)]} />
+            <KeywordGapForm canEdit={canEdit} suggestions={[...new Set([...comp.tracked, ...(comp.auto?.data ?? []).map((a) => a.domain.toLowerCase())])]} />
             <p className="text-xs text-muted">Content gap against any site you type: keywords it ranks top-20 for that you don&apos;t rank for. About 3 cents, stored for 7 days, counted in the daily spend limit. Results appear as their own tab below.</p>
           </div>
           {gapsBy.length === 0 && sharedBy.length === 0 && onDemand.length === 0 ? (

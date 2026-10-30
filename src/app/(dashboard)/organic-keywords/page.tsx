@@ -134,10 +134,9 @@ export default async function OrganicKeywordsPage() {
             ranges={[{ key: "traffic", label: "Est. traffic" }, { key: "keywords", label: "Keywords" }]}
             columns={[
               { key: "page", label: "Page", type: "url" }, { key: "traffic", label: "Est. traffic", type: "dec" }, { key: "keywords", label: "Keywords", type: "int" },
-              { key: "top3", label: "In top 3", type: "int" }, { key: "top10", label: "In top 10", type: "int" }, { key: "p11_20", label: "On page 2", type: "int" },
-              { key: "value", label: "Traffic value", type: "usd", hint: "What the same clicks would cost in Google Ads" },
-              { key: "new", label: "New", type: "int" }, { key: "up", label: "Up", type: "int" }, { key: "down", label: "Down", type: "int" }, { key: "lost", label: "Lost", type: "int" },
-            ]} note={`All keywords each page ranks for in the top 100 (DataForSEO Labs relevant pages, updated ${relevant.fetchedAt.slice(0, 10)}).`} />
+              { key: "top10", label: "Top 10", type: "int" }, { key: "value", label: "Value", type: "usd", hint: "What the same clicks would cost in Google Ads" },
+              { key: "new", label: "New", type: "int" }, { key: "lost", label: "Lost", type: "int" },
+            ]} />
         ) : (
           <ResearchTable title="Top pages by organic traffic" rows={[...pages.values()]} searchKeys={["url"]} initialSort={{ key: "traffic", dir: "desc" }}
             columns={[

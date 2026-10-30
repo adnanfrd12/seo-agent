@@ -35,7 +35,7 @@ const REF_COLS: Col[] = [
 const SPAM_PRESET = { label: "High spam (≥ 50)", where: [{ key: "spam", op: "gte" as const, value: 50 }] };
 
 function Bars({ title, items, total }: { title: string; items: Named[] | undefined; total: number | null }) {
-  return <BarList title={title} valueLabel="Backlinks" items={(items ?? []).map((x) => ({ label: x.name, value: x.count, detail: total ? `${((x.count / total) * 100).toFixed(0)}%` : undefined }))} emptyText="Not reported." />;
+  return <BarList title={title} valueLabel="Backlinks" items={(items ?? []).map((x) => ({ label: x.name || "Unknown", value: x.count, detail: total ? `${((x.count / total) * 100).toFixed(0)}%` : undefined }))} emptyText="Not reported." />;
 }
 
 export default async function BacklinksPage() {

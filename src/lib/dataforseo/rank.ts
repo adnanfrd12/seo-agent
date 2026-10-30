@@ -29,6 +29,10 @@ const sameSite = (domain: string | null, site: string) => { const d = bare(domai
 export interface RankSerp {
   features: string[];
   local_pack: { title: string | null; domain: string | null; rating: number | null; own: boolean }[];
+  /** the client's place in the map pack (1-3), null when it isn't there */
+  pack_position?: number | null;
+  /** where the search was made from: the business location for local businesses, else the country */
+  searched_from?: string;
   ads: string[];
   ai_overview: { domain: string | null; url: string | null; title: string | null }[];
   featured_snippet: string | null;
@@ -68,6 +72,11 @@ export function locate(items: Record<string, unknown>[], site: string, cid: stri
       local_pack: items.filter((i) => i.type === "local_pack").slice(0, 5).map((i) => ({
         title: str(i.title)?.slice(0, 100) ?? null, domain: isGoogle(str(i.domain)) ? null : str(i.domain), rating: num(obj(i.rating).value), own: (!!cid && str(i.cid) === cid) || sameSite(str(i.domain), site),
       })),
+      pack_position: (() => {
+        const pack = items.filter((i) => i.type === "local_pack");
+        const i = pack.findIndex((p) => (!!cid && str(p.cid) === cid) || sameSite(isGoogle(str(p.domain)) ? null : str(p.domain), site));
+        return i >= 0 ? i + 1 : null;
+      })(),
       ads: [...new Set(items.filter((i) => i.type === "paid").map((i) => bare(str(i.domain))).filter(Boolean))].slice(0, 8),
       ai_overview: refs.filter((r) => !isGoogle(str(r.domain))).slice(0, 10).map((r) => ({ domain: str(r.domain), url: str(r.url), title: str(r.title)?.slice(0, 120) ?? null })),
       featured_snippet: snippet ? str(snippet.domain) : null,
@@ -94,14 +103,20 @@ export async function refreshKeywordMetrics(ctx: Ctx, target: Target, keywords: 
   return cost;
 }
 
-export async function checkKeyword(ctx: Ctx, target: Target, kw: RankKeyword, depth = RANK_DEPTH, cid: string | null = null): Promise<{ position: number | null; cost: number }> {
+export interface LocalPlace { cid: string | null; lat: number | null; lng: number | null; city: string | null }
+
+export async function checkKeyword(ctx: Ctx, target: Target, kw: RankKeyword, depth = RANK_DEPTH, place: LocalPlace | null = null): Promise<{ position: number | null; cost: number }> {
   await assertBudget(ctx.admin, ctx.clientId, rankEstimate(1, depth), ctx.source);
+  // a local business is searched from its own location (Google ranks local results by distance); others country-wide
+  const local = place?.lat != null && place.lng != null;
+  const where = local ? { location_coordinate: `${place!.lat},${place!.lng},10` } : { location_code: kw.location_code };
   // the advanced result also carries the map pack, ads and AI Overview on the same page, at the same price
   const { result, cost } = await dfsPost("/serp/google/organic/live/advanced", {
-    keyword: kw.keyword, location_code: kw.location_code, language_code: kw.language_code, device: kw.device, depth,
+    keyword: kw.keyword, ...where, language_code: kw.language_code, device: kw.device, depth,
   }, { timeoutMs: 110_000, attempts: 1 }); // a 100-result search can take over a minute; one attempt, so it is never billed twice
   await recordSpend(ctx.admin, ctx.clientId, "rank", cost, ctx.source);
-  const found = locate(arr(result?.items), bare(target.domain), cid);
+  const found = locate(arr(result?.items), bare(target.domain), place?.cid ?? null);
+  found.serp.searched_from = local ? (place!.city ?? "the business location") : "country";
   const row = { client_id: ctx.clientId, keyword_id: kw.id, checked_on: new Date().toISOString().slice(0, 10), position: found.position, url: found.url, depth, top: found.top, cost };
   const saved = await ctx.admin.from("rank_checks").upsert({ ...row, serp: found.serp }, { onConflict: "keyword_id,checked_on" });
   // before migration 21 the serp column doesn't exist: keep the position anyway
@@ -115,7 +130,7 @@ export interface RankRun { checked: number; skipped: number; cost: number; stopp
 export async function runRankChecks(ctx: Ctx, target: Target, opts: { force?: boolean; deadline?: number } = {}): Promise<RankRun> {
   const run: RankRun = { checked: 0, skipped: 0, cost: 0, stopped: null, errors: [] };
   // the Business Profile id, so the client's own map-pack listing is recognised
-  const cid = (await localIdentity(ctx.admin, ctx.clientId))?.cid ?? null;
+  const place = await localIdentity(ctx.admin, ctx.clientId);
   const { data: kws } = await ctx.admin.from("rank_keywords").select("*").eq("client_id", ctx.clientId).order("created_at").limit(MAX_RANK_KEYWORDS);
   const { data: last } = await ctx.admin.from("rank_checks").select("keyword_id, checked_on").eq("client_id", ctx.clientId).order("checked_on", { ascending: false }).limit(2000);
   const lastOn = new Map<string, string>();
@@ -126,7 +141,7 @@ export async function runRankChecks(ctx: Ctx, target: Target, opts: { force?: bo
   // a live Google search takes 10-30 seconds, so a few run side by side
   for (let i = 0; i < due.length && !run.stopped; i += RANK_PARALLEL) {
     if (opts.deadline && Date.now() > opts.deadline) { run.stopped = "time"; break; }
-    const results = await Promise.allSettled(due.slice(i, i + RANK_PARALLEL).map((kw) => checkKeyword(ctx, target, kw, RANK_DEPTH, cid)));
+    const results = await Promise.allSettled(due.slice(i, i + RANK_PARALLEL).map((kw) => checkKeyword(ctx, target, kw, RANK_DEPTH, place)));
     results.forEach((r, j) => {
       if (r.status === "fulfilled") { run.checked++; run.cost += r.value.cost; return; }
       const e = r.reason;
@@ -149,6 +164,8 @@ export interface RankRow {
   id: string; keyword: string; device: string; position: number | null; previous: number | null; best: number | null; url: string | null;
   checkedOn: string | null; change: number | null; history: { date: string; position: number | null }[]; top: RankTop[]; volume: number | null;
   difficulty: number | null; cpc: number | null; intent: string | null; serp: RankSerp | null;
+  /** position in the Google map pack (1-3), null when not in it */
+  pack: number | null;
 }
 
 /** Everything the page and alerts read. `change` > 0 means the keyword moved up (a lower position number). */
@@ -180,6 +197,7 @@ export async function loadRanks(supabase: SupabaseClient, clientId: string): Pro
       change: cur && prev ? eff(prev.position) - eff(cur.position) : null,
       history: [...h].reverse().map((x) => ({ date: x.checked_on, position: x.position })), top: cur?.top ?? [],
       volume: m?.volume ?? null, difficulty: m?.difficulty ?? null, cpc: m?.cpc ?? null, intent: m?.intent ?? null, serp: cur?.serp ?? null,
+      pack: cur?.serp?.pack_position ?? ((cur?.serp?.local_pack.findIndex((p) => p.own) ?? -1) + 1 || null),
     };
   });
   return { ok: true, rows, lastChecked };

@@ -1,7 +1,7 @@
 import { BarList } from "@/components/charts/bar-list";
 import { MetricTrend } from "@/components/charts/metric-trend";
 import { Highlights } from "@/components/dashboard/highlights";
-import { KpiCard } from "@/components/dashboard/kpi-card";
+import { KpiCard, StatCard } from "@/components/dashboard/kpi-card";
 import { EmptyState } from "@/components/dashboard/page-header";
 import { TabHeader } from "@/components/dashboard/tab-header";
 import { SpendLine } from "@/components/research/chrome";
@@ -76,9 +76,12 @@ export default async function RankTrackingPage() {
   const tableRows: Row[] = rows.map((r: RankRow) => ({
     ...r, serp: undefined, history: undefined, top: undefined,
     features: r.serp?.features.map(featureName).join(", ") ?? null,
-    in_pack: r.serp ? (r.serp.local_pack.some((p) => p.own) ? "Yes" : r.serp.local_pack.length ? "No" : "No map pack") : null,
+    in_pack: r.serp ? (r.pack ? `#${r.pack}` : r.serp.local_pack.length ? "Not in pack" : "No map pack") : null,
     in_ai: r.serp ? (r.serp.ai_overview.length === 0 ? "No AI Overview" : r.serp.ai_overview.some((a) => (a.domain ?? "").replace(/^www\./, "").toLowerCase().endsWith(self)) ? "Cited" : "Not cited") : null,
   }));
+  const checkedSerp = rows.filter((r) => r.serp);
+  const inPack = checkedSerp.filter((r) => r.pack).length, packFirst = checkedSerp.filter((r) => r.pack === 1).length;
+  const from = checkedSerp.find((r) => r.serp?.searched_from)?.serp?.searched_from;
   const improved = rows.filter((r) => (r.change ?? 0) > 0).length, declined = rows.filter((r) => (r.change ?? 0) < 0).length;
   const unchanged = rows.filter((r) => r.change === 0).length;
   const dist = [
@@ -112,7 +115,9 @@ export default async function RankTrackingPage() {
         <p className="rounded-xl border border-dashed border-border p-6 text-sm text-muted">Keywords added. Their first positions arrive with the next daily run.</p>
       ) : (
         <>
-          <section aria-label="Ranking summary" className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
+          <section aria-label="Ranking summary" className="grid gap-4 sm:grid-cols-2 xl:grid-cols-3">
+            <StatCard label="In the Google map pack" value={`${inPack} of ${checkedSerp.length}`} sub={`#1 for ${packFirst}`} tone={inPack ? "good" : undefined} />
+            <StatCard label="Searched from" value={from === "country" || !from ? "United States" : from} sub="the business location, like a nearby customer" />
             <KpiCard label="Average position" source="DFS" format={(n) => (n == null ? "—" : n.toFixed(1))} value={avg} previous={prevPoint?.avg ?? null} higherIsBetter={false} hint="Across keywords found in the top 30. Lower is better." />
             <KpiCard label="In the top 3" source="DFS" format={fmtInt} value={top3} previous={null} />
             <KpiCard label="In the top 10" source="DFS" format={fmtInt} value={top10} previous={prevPoint?.top10 ?? null} />
@@ -140,7 +145,7 @@ export default async function RankTrackingPage() {
                 { key: "url", label: "Ranking page", type: "url" }, { key: "device", label: "Device", type: "badge" },
                 { key: "volume", label: "Volume", type: "int", hint: "Monthly Google searches (DataForSEO estimate)" }, { key: "difficulty", label: "KD", type: "int", hint: "Keyword difficulty, 0-100" },
                 { key: "cpc", label: "CPC", type: "usd", hint: "Average cost per click in Google Ads" }, { key: "intent", label: "Intent", type: "badge" },
-                { key: "features", label: "On the results page", hint: "SERP features Google showed for this search" }, { key: "in_pack", label: "In map pack", type: "badge" },
+                { key: "features", label: "On the results page", hint: "SERP features Google showed for this search" }, { key: "in_pack", label: "Map pack", type: "badge", hint: "Place in Google's map pack (the 3 businesses on the map)" },
                 { key: "in_ai", label: "AI Overview", type: "badge" }, { key: "checkedOn", label: "Checked", type: "date" },
               ]}
               ranges={[{ key: "position", label: "Position" }, { key: "best", label: "Best" }, { key: "volume", label: "Volume" }, { key: "difficulty", label: "KD" }]} facets={[{ key: "device", label: "Device" }, { key: "intent", label: "Intent" }, { key: "in_pack", label: "Map pack" }, { key: "in_ai", label: "AI Overview" }]}
