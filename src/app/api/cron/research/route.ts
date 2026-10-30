@@ -144,7 +144,7 @@ async function handle(request: NextRequest) {
               const target = await resolveTarget(admin, id);
               if (!target || !target.auto_refresh) continue;
               try {
-                const r = await runRankChecks({ admin, clientId: id, source: "auto" }, target, { deadline });
+                const r = await runRankChecks({ admin, clientId: id, source: "auto" }, target, { deadline: deadline - 40_000 });
                 ranked += r.checked; rankedCost += r.cost;
                 if (r.stopped === "budget") { rankStopped = "budget"; break; }
               } catch { /* tables not created yet, or one client failing, never stops the rest */ }
@@ -178,7 +178,7 @@ async function handle(request: NextRequest) {
             let core = 0;
             let coreStopped: string | null = null;
             for (const id of stale) {
-              if (Date.now() > deadline) { coreStopped = "time"; break; }
+              if (Date.now() > deadline - 40_000) { coreStopped = "time"; break; } // one client can take ~30 s; leave room for alerts
               if ((await spentNow()) >= cap * AUTO_SHARE) { coreStopped = "budget"; break; }
               const target = await resolveTarget(admin, id); // derives the domain from Bing / Search Console / Business Profile
               if (!target || !target.auto_refresh) continue;

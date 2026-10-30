@@ -14,6 +14,7 @@ import { arr, num, obj, str, type Ctx, type Target } from "./research";
 export const RANK_DEPTH = 30;
 export const RANK_EVERY_DAYS = 7;
 export const MAX_RANK_KEYWORDS = 50;
+const RANK_PARALLEL = 4;
 export const rankEstimate = (keywords: number, depth = RANK_DEPTH) => Number((keywords * (depth <= 10 ? 0.002 : depth <= 30 ? 0.005 : 0.0155)).toFixed(4));
 
 export interface RankKeyword { id: string; keyword: string; device: "desktop" | "mobile"; location_code: number; language_code: string; created_at: string }
@@ -100,18 +101,19 @@ export async function runRankChecks(ctx: Ctx, target: Target, opts: { force?: bo
   const lastOn = new Map<string, string>();
   for (const r of last ?? []) if (!lastOn.has(r.keyword_id as string)) lastOn.set(r.keyword_id as string, r.checked_on as string);
   const cutoff = new Date(Date.now() - (RANK_EVERY_DAYS - 0.5) * 86_400_000).toISOString().slice(0, 10);
-  for (const kw of (kws ?? []) as RankKeyword[]) {
-    const prev = lastOn.get(kw.id);
-    if (!opts.force && prev && prev > cutoff) { run.skipped++; continue; }
+  const due = ((kws ?? []) as RankKeyword[]).filter((kw) => { const prev = lastOn.get(kw.id); return opts.force || !prev || prev <= cutoff; });
+  run.skipped = (kws?.length ?? 0) - due.length;
+  // a live Google search takes 10-30 seconds, so a few run side by side
+  for (let i = 0; i < due.length && !run.stopped; i += RANK_PARALLEL) {
     if (opts.deadline && Date.now() > opts.deadline) { run.stopped = "time"; break; }
-    try {
-      const r = await checkKeyword(ctx, target, kw, RANK_DEPTH, cid);
-      run.checked++; run.cost += r.cost;
-    } catch (e) {
-      if (e instanceof BudgetError) { run.stopped = "budget"; run.errors.push(e.message); break; }
-      run.errors.push(`${kw.keyword}: ${e instanceof Error ? e.message : "failed"}`);
-      if (e instanceof DfsError && ["auth", "payment", "config"].includes(e.kind)) { run.stopped = "provider"; break; }
-    }
+    const results = await Promise.allSettled(due.slice(i, i + RANK_PARALLEL).map((kw) => checkKeyword(ctx, target, kw, RANK_DEPTH, cid)));
+    results.forEach((r, j) => {
+      if (r.status === "fulfilled") { run.checked++; run.cost += r.value.cost; return; }
+      const e = r.reason;
+      if (e instanceof BudgetError) { run.stopped = "budget"; run.errors.push(e.message); return; }
+      run.errors.push(`${due[i + j].keyword}: ${e instanceof Error ? e.message : "failed"}`);
+      if (e instanceof DfsError && ["auth", "payment", "config"].includes(e.kind)) run.stopped = "provider";
+    });
   }
   // volume / difficulty / CPC for keywords that have none or are over a month old (one call for all of them)
   const monthAgo = new Date(Date.now() - 30 * 86_400_000).toISOString().slice(0, 10);
