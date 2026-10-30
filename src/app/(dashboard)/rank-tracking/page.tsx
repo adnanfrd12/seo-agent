@@ -118,10 +118,10 @@ export default async function RankTrackingPage() {
           <section aria-label="Ranking summary" className="grid gap-4 sm:grid-cols-2 xl:grid-cols-3">
             <StatCard label="In the Google map pack" value={`${inPack} of ${checkedSerp.length}`} sub={`#1 for ${packFirst}`} tone={inPack ? "good" : undefined} />
             <StatCard label="Searched from" value={from === "country" || !from ? "United States" : from} sub="the business location, like a nearby customer" />
-            <KpiCard label="Average position" source="DFS" format={(n) => (n == null ? "—" : n.toFixed(1))} value={avg} previous={prevPoint?.avg ?? null} higherIsBetter={false} hint="Across keywords found in the top 30. Lower is better." />
-            <KpiCard label="In the top 3" source="DFS" format={fmtInt} value={top3} previous={null} />
-            <KpiCard label="In the top 10" source="DFS" format={fmtInt} value={top10} previous={prevPoint?.top10 ?? null} />
-            <KpiCard label={`Not in top ${RANK_DEPTH}`} source="DFS" format={fmtInt} value={missing} previous={null} higherIsBetter={false} />
+            <KpiCard label="Organic average position" source="DFS" format={(n) => (n == null ? "—" : n.toFixed(1))} value={avg} previous={prevPoint?.avg ?? null} higherIsBetter={false} hint="Across keywords found in the top 30. Lower is better." />
+            <KpiCard label="Organic top 3" source="DFS" format={fmtInt} value={top3} previous={null} />
+            <KpiCard label="Organic top 10" source="DFS" format={fmtInt} value={top10} previous={prevPoint?.top10 ?? null} />
+            <KpiCard label={`Not in organic top ${RANK_DEPTH}`} source="DFS" format={fmtInt} value={missing} previous={null} higherIsBetter={false} />
           </section>
           <p className="mt-2 text-xs text-muted">
             Since the previous check: <span className="text-positive">{improved} improved</span> · <span className="text-negative">{declined} declined</span> · {unchanged} unchanged
