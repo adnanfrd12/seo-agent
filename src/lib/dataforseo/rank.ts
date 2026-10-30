@@ -2,6 +2,7 @@ import "server-only";
 import type { SupabaseClient } from "@supabase/supabase-js";
 import { assertBudget, BudgetError, recordSpend } from "./budget";
 import { DfsError, dfsPost } from "./client";
+import { localIdentity } from "./local";
 import { arr, num, obj, str, type Ctx, type Target } from "./research";
 
 /**
@@ -32,7 +33,7 @@ export interface RankSerp {
 }
 
 /** Position of the site among the organic results (first match), plus the top 10 and the rest of the page for context. */
-export function locate(items: Record<string, unknown>[], site: string): { position: number | null; url: string | null; top: RankTop[]; serp: RankSerp } {
+export function locate(items: Record<string, unknown>[], site: string, cid: string | null = null): { position: number | null; url: string | null; top: RankTop[]; serp: RankSerp } {
   const organic = items.filter((i) => i.type === "organic");
   const mine = organic.find((i) => sameSite(str(i.domain), site));
   const refs = items.filter((i) => i.type === "ai_overview").flatMap((i) => arr(i.references));
@@ -44,10 +45,10 @@ export function locate(items: Record<string, unknown>[], site: string): { positi
     serp: {
       features: [...new Set(items.map((i) => str(i.type)).filter((t): t is string => !!t && t !== "organic"))],
       local_pack: items.filter((i) => i.type === "local_pack").slice(0, 5).map((i) => ({
-        title: str(i.title)?.slice(0, 100) ?? null, domain: str(i.domain), rating: num(obj(i.rating).value), own: sameSite(str(i.domain), site),
+        title: str(i.title)?.slice(0, 100) ?? null, domain: /(^|\.)google\.com$/.test(str(i.domain) ?? "") ? null : str(i.domain), rating: num(obj(i.rating).value), own: (!!cid && str(i.cid) === cid) || sameSite(str(i.domain), site),
       })),
       ads: [...new Set(items.filter((i) => i.type === "paid").map((i) => bare(str(i.domain))).filter(Boolean))].slice(0, 8),
-      ai_overview: refs.slice(0, 10).map((r) => ({ domain: str(r.domain), url: str(r.url), title: str(r.title)?.slice(0, 120) ?? null })),
+      ai_overview: refs.filter((r) => !/(^|\.)google\.com$/.test(str(r.domain) ?? "")).slice(0, 10).map((r) => ({ domain: str(r.domain), url: str(r.url), title: str(r.title)?.slice(0, 120) ?? null })),
       featured_snippet: snippet ? str(snippet.domain) : null,
     },
   };
@@ -72,14 +73,14 @@ export async function refreshKeywordMetrics(ctx: Ctx, target: Target, keywords: 
   return cost;
 }
 
-export async function checkKeyword(ctx: Ctx, target: Target, kw: RankKeyword, depth = RANK_DEPTH): Promise<{ position: number | null; cost: number }> {
+export async function checkKeyword(ctx: Ctx, target: Target, kw: RankKeyword, depth = RANK_DEPTH, cid: string | null = null): Promise<{ position: number | null; cost: number }> {
   await assertBudget(ctx.admin, ctx.clientId, rankEstimate(1, depth), ctx.source);
   // the advanced result also carries the map pack, ads and AI Overview on the same page, at the same price
   const { result, cost } = await dfsPost("/serp/google/organic/live/advanced", {
     keyword: kw.keyword, location_code: kw.location_code, language_code: kw.language_code, device: kw.device, depth,
   });
   await recordSpend(ctx.admin, ctx.clientId, "rank", cost, ctx.source);
-  const found = locate(arr(result?.items), bare(target.domain));
+  const found = locate(arr(result?.items), bare(target.domain), cid);
   const row = { client_id: ctx.clientId, keyword_id: kw.id, checked_on: new Date().toISOString().slice(0, 10), position: found.position, url: found.url, depth, top: found.top, cost };
   const saved = await ctx.admin.from("rank_checks").upsert({ ...row, serp: found.serp }, { onConflict: "keyword_id,checked_on" });
   // before migration 21 the serp column doesn't exist: keep the position anyway
@@ -92,6 +93,8 @@ export interface RankRun { checked: number; skipped: number; cost: number; stopp
 /** Checks every keyword that has no result newer than RANK_EVERY_DAYS (all of them when `force`), stopping at the spend cap. */
 export async function runRankChecks(ctx: Ctx, target: Target, opts: { force?: boolean; deadline?: number } = {}): Promise<RankRun> {
   const run: RankRun = { checked: 0, skipped: 0, cost: 0, stopped: null, errors: [] };
+  // the Business Profile id, so the client's own map-pack listing is recognised
+  const cid = (await localIdentity(ctx.admin, ctx.clientId))?.cid ?? null;
   const { data: kws } = await ctx.admin.from("rank_keywords").select("*").eq("client_id", ctx.clientId).order("created_at").limit(MAX_RANK_KEYWORDS);
   const { data: last } = await ctx.admin.from("rank_checks").select("keyword_id, checked_on").eq("client_id", ctx.clientId).order("checked_on", { ascending: false }).limit(2000);
   const lastOn = new Map<string, string>();
@@ -102,7 +105,7 @@ export async function runRankChecks(ctx: Ctx, target: Target, opts: { force?: bo
     if (!opts.force && prev && prev > cutoff) { run.skipped++; continue; }
     if (opts.deadline && Date.now() > opts.deadline) { run.stopped = "time"; break; }
     try {
-      const r = await checkKeyword(ctx, target, kw);
+      const r = await checkKeyword(ctx, target, kw, RANK_DEPTH, cid);
       run.checked++; run.cost += r.cost;
     } catch (e) {
       if (e instanceof BudgetError) { run.stopped = "budget"; run.errors.push(e.message); break; }
