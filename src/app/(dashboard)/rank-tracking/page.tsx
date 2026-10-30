@@ -47,7 +47,7 @@ export default async function RankTrackingPage() {
   const { dropped, gained } = movers(rows);
 
   const picks: Highlight[] = [];
-  if (dropped.length) picks.push({ tone: "bad", title: `${dropped.length} keyword${dropped.length > 1 ? "s" : ""} dropped`, detail: dropped.slice(0, 3).map((r) => `“${r.keyword}” ${r.previous ?? "30+"} → ${r.position ?? `not in top ${RANK_DEPTH}`}`).join("; ") + ".", action: "Check those pages for lost content, links or technical problems (Site Audit)." });
+  if (dropped.length) picks.push({ tone: "bad", title: `${dropped.length} keyword${dropped.length > 1 ? "s" : ""} dropped`, detail: dropped.slice(0, 3).map((r) => `“${r.keyword}” ${r.previous ?? `${RANK_DEPTH}+`} → ${r.position ?? `not in top ${RANK_DEPTH}`}`).join("; ") + ".", action: "Check those pages for lost content, links or technical problems (Site Audit)." });
   if (gained.length) picks.push({ tone: "good", title: `${gained.length} keyword${gained.length > 1 ? "s" : ""} moved up`, detail: gained.slice(0, 3).map((r) => `“${r.keyword}” ${r.previous ?? `${RANK_DEPTH}+`} → ${r.position}`).join("; ") + "." });
   const near = found.filter((r) => (r.position as number) >= 4 && (r.position as number) <= 10).length;
   if (near) picks.push({ tone: "info", title: `${near} keyword${near > 1 ? "s are" : " is"} just below the top 3`, detail: "Positions 4-10 get a fraction of the clicks of the top 3.", action: "Improve those pages' content, titles and internal links first." });
@@ -85,7 +85,8 @@ export default async function RankTrackingPage() {
     { label: "Top 3", value: found.filter((r) => (r.position as number) <= 3).length },
     { label: "4 to 10", value: found.filter((r) => (r.position as number) >= 4 && (r.position as number) <= 10).length },
     { label: "11 to 20", value: found.filter((r) => (r.position as number) >= 11 && (r.position as number) <= 20).length },
-    { label: `21 to ${RANK_DEPTH}`, value: found.filter((r) => (r.position as number) >= 21).length },
+    { label: "21 to 50", value: found.filter((r) => (r.position as number) >= 21 && (r.position as number) <= 50).length },
+    { label: `51 to ${RANK_DEPTH}`, value: found.filter((r) => (r.position as number) >= 51).length },
     { label: `Not in top ${RANK_DEPTH}`, value: missing },
   ];
   const deviceAvg = (["desktop", "mobile"] as const).map((d) => {

@@ -11,7 +11,8 @@ import { arr, num, obj, str, type Ctx, type Target } from "./research";
  * and movement come from our own data. Nothing is fetched when a page is opened; a weekly job and a
  * manual "check now" are the only triggers, and both go through the daily spend cap.
  */
-export const RANK_DEPTH = 30;
+// the top 100, so a site ranking on pages 3-10 still gets a real position (measured $0.0155 per search)
+export const RANK_DEPTH = 100;
 export const RANK_EVERY_DAYS = 7;
 export const MAX_RANK_KEYWORDS = 50;
 const RANK_PARALLEL = 4;
@@ -33,23 +34,42 @@ export interface RankSerp {
   featured_snippet: string | null;
 }
 
+const isGoogle = (d: string | null | undefined) => /(^|\.)google\.com$/.test(d ?? "");
+
+/**
+ * The real website of an organic result. Google now often links results through google.com/goto, so the
+ * domain field reads "google.com"; the breadcrumb ("https://www.site.com › path › ...") still names the site.
+ */
+export function realSite(i: Record<string, unknown>): { domain: string | null; url: string | null } {
+  const domain = str(i.domain), url = str(i.url);
+  if (!isGoogle(domain)) return { domain, url };
+  const crumb = str(i.breadcrumb) ?? "";
+  const m = /^(https?:\/\/[^\s›]+)/.exec(crumb.trim());
+  if (!m) return { domain: null, url: null };
+  const path = crumb.split("›").slice(1).map((x) => x.trim()).filter((x) => x && !x.includes("...") && !x.includes("…"));
+  try {
+    const u = new URL(m[1]);
+    return { domain: u.hostname, url: `${u.origin}/${path.join("/")}${path.length ? "/" : ""}` };
+  } catch { return { domain: null, url: null }; }
+}
+
 /** Position of the site among the organic results (first match), plus the top 10 and the rest of the page for context. */
 export function locate(items: Record<string, unknown>[], site: string, cid: string | null = null): { position: number | null; url: string | null; top: RankTop[]; serp: RankSerp } {
-  const organic = items.filter((i) => i.type === "organic");
-  const mine = organic.find((i) => sameSite(str(i.domain), site));
+  const organic = items.filter((i) => i.type === "organic").map((i) => ({ item: i, ...realSite(i) }));
+  const mine = organic.find((i) => sameSite(i.domain, site));
   const refs = items.filter((i) => i.type === "ai_overview").flatMap((i) => arr(i.references));
   const snippet = items.find((i) => i.type === "featured_snippet");
   return {
-    position: mine ? num(mine.rank_group) : null,
-    url: mine ? str(mine.url) : null,
-    top: organic.slice(0, 10).map((i) => ({ position: num(i.rank_group) ?? 0, domain: str(i.domain), url: str(i.url), title: str(i.title)?.slice(0, 120) ?? null })),
+    position: mine ? num(mine.item.rank_group) : null,
+    url: mine ? mine.url : null,
+    top: organic.slice(0, 10).map((i) => ({ position: num(i.item.rank_group) ?? 0, domain: i.domain, url: i.url, title: str(i.item.title)?.slice(0, 120) ?? null })),
     serp: {
       features: [...new Set(items.map((i) => str(i.type)).filter((t): t is string => !!t && t !== "organic"))],
       local_pack: items.filter((i) => i.type === "local_pack").slice(0, 5).map((i) => ({
-        title: str(i.title)?.slice(0, 100) ?? null, domain: /(^|\.)google\.com$/.test(str(i.domain) ?? "") ? null : str(i.domain), rating: num(obj(i.rating).value), own: (!!cid && str(i.cid) === cid) || sameSite(str(i.domain), site),
+        title: str(i.title)?.slice(0, 100) ?? null, domain: isGoogle(str(i.domain)) ? null : str(i.domain), rating: num(obj(i.rating).value), own: (!!cid && str(i.cid) === cid) || sameSite(str(i.domain), site),
       })),
       ads: [...new Set(items.filter((i) => i.type === "paid").map((i) => bare(str(i.domain))).filter(Boolean))].slice(0, 8),
-      ai_overview: refs.filter((r) => !/(^|\.)google\.com$/.test(str(r.domain) ?? "")).slice(0, 10).map((r) => ({ domain: str(r.domain), url: str(r.url), title: str(r.title)?.slice(0, 120) ?? null })),
+      ai_overview: refs.filter((r) => !isGoogle(str(r.domain))).slice(0, 10).map((r) => ({ domain: str(r.domain), url: str(r.url), title: str(r.title)?.slice(0, 120) ?? null })),
       featured_snippet: snippet ? str(snippet.domain) : null,
     },
   };
@@ -79,7 +99,7 @@ export async function checkKeyword(ctx: Ctx, target: Target, kw: RankKeyword, de
   // the advanced result also carries the map pack, ads and AI Overview on the same page, at the same price
   const { result, cost } = await dfsPost("/serp/google/organic/live/advanced", {
     keyword: kw.keyword, location_code: kw.location_code, language_code: kw.language_code, device: kw.device, depth,
-  });
+  }, { timeoutMs: 110_000, attempts: 1 }); // a 100-result search can take over a minute; one attempt, so it is never billed twice
   await recordSpend(ctx.admin, ctx.clientId, "rank", cost, ctx.source);
   const found = locate(arr(result?.items), bare(target.domain), cid);
   const row = { client_id: ctx.clientId, keyword_id: kw.id, checked_on: new Date().toISOString().slice(0, 10), position: found.position, url: found.url, depth, top: found.top, cost };

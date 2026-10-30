@@ -65,8 +65,13 @@ async function handle(request: NextRequest) {
         const cs = (c?.settings ?? {}) as Record<string, unknown>;
         if (cs.tracking_seeded) continue;
         const ranked = ((await latest(id, "ranked_keywords"))[0]?.data ?? []) as Row[];
-        if (!ranked.length) continue; // wait for the first keyword data
-        const best = ranked.filter((k) => typeof k.keyword === "string" && Number(k.position) <= 50).sort((a, b) => Number(b.volume ?? 0) - Number(a.volume ?? 0)).map((k) => String(k.keyword));
+        // Search Console first: queries Google really shows the site for (top 30, most impressions), then DataForSEO's estimates
+        const end = new Date().toISOString().slice(0, 10), start = new Date(Date.now() - 30 * DAY).toISOString().slice(0, 10);
+        const gsc = await admin.rpc("get_gsc_keywords", { p_client_id: id, p_start: start, p_end: end, p_search_type: "web", p_device: null, p_country: null, p_search: null, p_sort: "impressions", p_dir: "desc", p_limit: 100, p_offset: 0 });
+        const seen = ((gsc.data as { rows?: { query: string; position: number | null; impressions: number }[] } | null)?.rows ?? [])
+          .filter((q) => q.position != null && Number(q.position) <= 30 && q.query.length >= 4 && q.query.length <= 80 && !/["?]/.test(q.query)).map((q) => q.query.toLowerCase());
+        if (!ranked.length && !seen.length) continue; // wait for the first keyword data
+        const best = [...new Set([...seen, ...ranked.filter((k) => typeof k.keyword === "string" && Number(k.position) <= 50).sort((a, b) => Number(b.volume ?? 0) - Number(a.volume ?? 0)).map((k) => String(k.keyword))])];
         const { data: have } = await admin.from("rank_keywords").select("keyword").eq("client_id", id);
         const current = [...new Set((have ?? []).map((r) => r.keyword as string))];
         const keywords = [...current, ...best.filter((k) => !current.includes(k))].slice(0, Math.max(SEED_KEYWORDS, current.length));
@@ -81,7 +86,7 @@ async function handle(request: NextRequest) {
           const local = category && me?.city ? [`Who are the best ${category.toLowerCase()}s in ${me.city}? Recommend specific businesses.`] : [];
           const { data: haveQ } = await admin.from("ai_prompts").select("prompt").eq("client_id", id);
           const existing = (haveQ ?? []).map((r) => String(r.prompt).toLowerCase());
-          const prompts = [...local, ...suggestPrompts(best, [...local, ...existing])].filter((q) => !existing.includes(q.toLowerCase())).slice(0, SEED_PROMPTS - (qCount ?? 0));
+          const prompts = [...local, ...suggestPrompts(best, [...local, ...existing], me?.city)].filter((q) => !existing.includes(q.toLowerCase())).slice(0, SEED_PROMPTS - (qCount ?? 0));
           if (prompts.length) {
             const { error, data: addedQ } = await admin.from("ai_prompts").upsert(prompts.map((prompt) => ({ client_id: id, prompt })), { onConflict: "client_id,prompt", ignoreDuplicates: true }).select("id");
             if (!error) seededQ += addedQ?.length ?? 0;

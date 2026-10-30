@@ -23,7 +23,7 @@ function GridCard({ g }: { g: Grid }) {
   return (
     <div className="rounded-xl border border-border bg-surface p-4">
       <p className="text-sm font-semibold">“{g.keyword}” <span className="font-normal text-muted">· {g.size}×{g.size}, {g.spacingKm} km apart · {g.checkedAt.slice(0, 10)}</span></p>
-      <div className="my-3 grid max-w-xs gap-1" style={{ gridTemplateColumns: `repeat(${g.size}, minmax(0, 1fr))` }}>
+      <div className="mx-auto my-3 grid max-w-[15rem] gap-1" style={{ gridTemplateColumns: `repeat(${g.size}, minmax(0, 1fr))` }}>
         {g.points.map((p) => (
           <div key={`${p.row}-${p.col}`} title={p.rank == null ? `Not in the top 20 here. Top: ${p.top.join(", ")}` : `#${p.rank} here. Top: ${p.top.join(", ")}`}
             className={`flex aspect-square items-center justify-center rounded-md text-xs font-semibold tabular-nums ${cellTone(p.rank)} ${p.row === (g.size - 1) / 2 && p.col === (g.size - 1) / 2 ? "ring-2 ring-foreground" : ""}`}>

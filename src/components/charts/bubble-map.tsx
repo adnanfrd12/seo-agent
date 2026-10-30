@@ -7,13 +7,14 @@ export interface Bubble { label: string; x: number; y: number; size: number; hig
  */
 export function BubbleMap({ title, items, xLabel, yLabel }: { title: string; items: Bubble[]; xLabel: string; yLabel: string }) {
   const w = 640, h = 300, pl = 44, pr = 16, pt = 14, pb = 34;
-  const maxX = Math.max(10, ...items.map((i) => i.x)), maxY = Math.max(3, ...items.map((i) => i.y));
+  // a little headroom so the largest bubbles at the edges aren't cut off
+  const maxX = Math.max(10, ...items.map((i) => i.x)) * 1.08, maxY = Math.max(3, ...items.map((i) => i.y)) + 0.4;
   const maxS = Math.max(1, ...items.map((i) => i.size));
   const x = (v: number) => pl + (v / maxX) * (w - pl - pr);
   const y = (v: number) => pt + ((v - 1) / Math.max(1, maxY - 1)) * (h - pt - pb);
   const r = (s: number) => 5 + Math.sqrt(s / maxS) * 16;
-  const ticksX = [0, 0.25, 0.5, 0.75, 1].map((t) => Math.round(t * maxX));
-  const ticksY = [...new Set([1, Math.ceil(maxY / 2), Math.ceil(maxY)])];
+  const ticksX = [0, 0.25, 0.5, 0.75, 1].map((t) => Math.round((t * maxX) / 1.08));
+  const ticksY = [...new Set([1, Math.ceil((maxY - 0.4) / 2), Math.floor(maxY)])];
   return (
     <figure className="rounded-xl border border-border bg-surface p-4">
       <figcaption className="mb-2 text-sm font-semibold">{title}</figcaption>
@@ -28,7 +29,11 @@ export function BubbleMap({ title, items, xLabel, yLabel }: { title: string; ite
               <circle cx={x(i.x)} cy={y(i.y)} r={r(i.size)} fill={i.highlight ? "var(--accent)" : "var(--muted)"} fillOpacity={i.highlight ? 0.85 : 0.35} stroke={i.highlight ? "var(--accent)" : "var(--muted)"} strokeWidth="1.5">
                 <title>{`${i.label}: named in ${i.x}% of answers, average position #${i.y}, ${i.size} mention${i.size === 1 ? "" : "s"}`}</title>
               </circle>
-              <text x={x(i.x) + r(i.size) + 3} y={y(i.y) + 4} fontSize="11" fontWeight={i.highlight ? 700 : 400} fill="var(--foreground)">{i.label.length > 24 ? `${i.label.slice(0, 23)}…` : i.label}</text>
+              {(() => {
+                // labels near the right edge go on the left of their bubble so they stay readable
+                const left = x(i.x) > w - 150;
+                return <text x={left ? x(i.x) - r(i.size) - 3 : x(i.x) + r(i.size) + 3} y={y(i.y) + 4} textAnchor={left ? "end" : "start"} fontSize="11" fontWeight={i.highlight ? 700 : 400} fill="var(--foreground)">{i.label.length > 22 ? `${i.label.slice(0, 21)}…` : i.label}</text>;
+              })()}
             </g>
           ))}
         </svg>

@@ -3,7 +3,7 @@ import { BarList } from "@/components/charts/bar-list";
 import { BubbleMap } from "@/components/charts/bubble-map";
 import { MetricTrend } from "@/components/charts/metric-trend";
 import { Highlights } from "@/components/dashboard/highlights";
-import { KpiCard } from "@/components/dashboard/kpi-card";
+import { StatCard } from "@/components/dashboard/kpi-card";
 import { EmptyState } from "@/components/dashboard/page-header";
 import { TabHeader } from "@/components/dashboard/tab-header";
 import { ResearchTable } from "@/components/research/research-table";
@@ -70,8 +70,6 @@ export default async function AiVisibilityPage() {
   const L = ai.latest;
   const named = L.filter((c) => c.mentioned);
   const positions = named.map((c) => c.position).filter((p): p is number => p != null);
-  const latestDay = ai.lastChecked;
-  const latestPositions = L.filter((c) => c.checked_on === latestDay && c.position != null).map((c) => c.position as number);
   const sentiments = named.map((c) => c.sentiment).filter((s): s is number => s != null);
   const ownCitations = L.reduce((a, c) => a + c.sources.filter((s) => s.domain === site || s.domain.endsWith(`.${site}`)).length, 0);
   const detected = ai.rows.filter((r) => Object.values(r.byEngine).some((c) => c && (c.mentioned || c.cited))).length;
@@ -150,14 +148,14 @@ export default async function AiVisibilityPage() {
       ) : (
         <>
           <section aria-label="AI visibility summary" className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
-            <KpiCard label="Visibility" source="AI" format={(n) => (n == null ? "—" : `${n}%`)} value={vis} previous={prevVis} hint="Share of AI answers that name the business." />
-            <KpiCard label="Top-3 visibility" source="AI" format={(n) => (n == null ? "—" : `${n}%`)} value={pctOf(positions.filter((p) => p <= 3).length, L.length)} previous={null} hint="Share of answers naming the business among the first three." />
-            <KpiCard label="Average position" source="AI" format={(n) => (n == null ? "—" : `#${n.toFixed(1)}`)} value={avg(positions)} previous={null} higherIsBetter={false} hint="Where the business is named when it is named (1 = first)." />
-            <KpiCard label="Latest position" source="AI" format={(n) => (n == null ? "—" : `#${n.toFixed(1)}`)} value={avg(latestPositions)} previous={null} higherIsBetter={false} hint={`From the answers checked on ${latestDay ?? "—"}.`} />
-            <KpiCard label="Sentiment score" source="AI" format={(n) => (n == null ? "—" : n.toFixed(0))} value={avg(sentiments)} previous={null} hint="0-100 for how favourably the answers describe the business (50 = neutral)." />
-            <KpiCard label="Your citations" source="AI" format={fmtInt} value={ownCitations} previous={null} hint={`Links to ${site} among ${fmtInt(citeRows.length)} sources cited.`} />
-            <KpiCard label="Detection rate" source="AI" format={(n) => (n == null ? "—" : `${n}%`)} value={pctOf(detected, checkedQuestions)} previous={null} hint="Share of questions where at least one assistant names or cites the business." />
-            <KpiCard label="Brands found" source="AI" format={fmtInt} value={brands.length} previous={null} hint="Different businesses named across the latest answers." />
+            <StatCard label="Visibility" value={vis == null ? "—" : `${vis}%`} sub={prevVis != null && prevVis !== vis ? `was ${prevVis}%` : "of answers name you"} tone={vis ? "good" : "bad"} />
+            <StatCard label="Top-3 visibility" value={`${pctOf(positions.filter((p) => p <= 3).length, L.length) ?? 0}%`} sub="named in the first three" />
+            <StatCard label="Average position" value={avg(positions) == null ? "—" : `#${avg(positions)!.toFixed(1)}`} sub="when named" />
+            <StatCard label="Detection rate" value={`${pctOf(detected, checkedQuestions) ?? 0}%`} sub={`${detected} of ${checkedQuestions} questions`} />
+            <StatCard label="Sentiment" value={avg(sentiments) == null ? "—" : avg(sentiments)!.toFixed(0)} sub="0-100 · 50 neutral" />
+            <StatCard label="Your citations" value={fmtInt(ownCitations)} sub={`of ${fmtInt(citeRows.length)} sources`} />
+            <StatCard label="Answers" value={fmtInt(L.length)} sub={`${ai.rows.length} questions × ${engines.length} assistants`} />
+            <StatCard label="Brands found" value={fmtInt(brands.length)} sub={rivals[0] ? `most named: ${rivals[0].name}` : undefined} />
           </section>
           {picks.length > 0 && <div className="mt-6"><Highlights items={picks.slice(0, 3)} /></div>}
 

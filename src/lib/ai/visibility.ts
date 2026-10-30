@@ -389,13 +389,19 @@ export function brandStats(s: AiSummary, site: string): BrandStat[] {
 }
 
 /** Starter prompts built from keywords the site already ranks for, in the way customers phrase questions. */
-export function suggestPrompts(keywords: string[], existing: string[]): string[] {
+export function suggestPrompts(keywords: string[], existing: string[], city?: string | null): string[] {
   const have = new Set(existing.map((e) => e.toLowerCase()));
   const out: string[] = [];
+  const where = (kw: string) => (city && !kw.includes(city.toLowerCase()) && !/near me/.test(kw) ? ` in ${city}` : "");
   for (const k of keywords) {
     const kw = k.trim().toLowerCase();
     if (kw.length < 4 || kw.length > 60) continue;
-    const q = /\b(near me|in [a-z ]+|best|how|what|why|cost|price)\b/.test(kw) ? `${kw[0].toUpperCase()}${kw.slice(1)}${/\?$/.test(kw) ? "" : "?"}` : `What are the best ${kw}? Recommend specific companies.`;
+    // phrased the way people ask an assistant: price questions as "How much...", the rest as "Who offers the best..."
+    const q = /^(how|what|why|where|who|which|can|do|does|is)\b/.test(kw)
+      ? `${kw[0].toUpperCase()}${kw.slice(1)}${/\?$/.test(kw) ? "" : "?"}`
+      : /\b(cost|price|prices|pricing)\b/.test(kw)
+        ? `How much does ${kw.replace(/\b(cost|price|prices|pricing)\b/, "").trim() || kw} cost${where(kw)}?`
+        : `Who offers the best ${kw.replace(/\bnear me\b/, "").trim()}${where(kw)}${/near me/.test(kw) ? " near me" : ""}? Recommend specific businesses.`;
     if (!have.has(q.toLowerCase()) && !out.includes(q)) out.push(q);
     if (out.length >= 8) break;
   }
