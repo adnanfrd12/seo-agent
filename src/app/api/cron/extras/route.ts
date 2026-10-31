@@ -1,13 +1,13 @@
 import { timingSafeEqual } from "node:crypto";
 import { NextResponse, type NextRequest } from "next/server";
 import { activeClientIds } from "@/lib/activity";
-import { LLM_EST, llmTopics, refreshLlmMentions } from "@/lib/ai/llm-mentions";
+import { BRAND_EST, brandNamesFor, LLM_EST, llmTopics, refreshBrandLookup, refreshLlmMentions } from "@/lib/ai/llm-mentions";
 import { runAiChecks, suggestPrompts } from "@/lib/ai/visibility";
 import { AUTO_SHARE, BudgetError, getSettings, spend } from "@/lib/dataforseo/budget";
 import { dfsConfigured } from "@/lib/dataforseo/client";
 import { runLighthouse, LH_EST } from "@/lib/dataforseo/lighthouse";
 import { fetchProfile, GRID_POINT_EST, gridRivals, localIdentity, PROFILE_EST, REVIEWS_EST, runGrid, startReviews, type Grid, type Profile } from "@/lib/dataforseo/local";
-import { loadCompetitors } from "@/lib/dataforseo/competitors";
+import { EXTRAS_MAX, extrasEstimate, loadCompetitors, refreshCompetitorExtras } from "@/lib/dataforseo/competitors";
 import { ensure, refreshDeep, resolveTarget, SPECS, type Row } from "@/lib/dataforseo/research";
 import { serverEnv } from "@/lib/env";
 import { loggedRun } from "@/lib/jobs/log";
@@ -37,6 +37,7 @@ const SEED_KEYWORDS = 10, SEED_PROMPTS = 5, MAX_GRID_KEYWORDS = 3;
  *   4. Business Profiles and reviews of the competitors compared before (or "people also search"), weekly
  *   5. the backlink / top-pages deep dive, every two weeks
  *   6. link gap (sites linking to each tracked competitor but not to the client), every two weeks
+ *   7. AI brand lookup (brand vs competitor brands in real AI answers) and competitor link history / top pages, weekly
  * Every step skips what is still fresh, so a re-run the same day spends nothing. Manual buttons still work.
  */
 async function handle(request: NextRequest) {
@@ -241,6 +242,30 @@ async function handle(request: NextRequest) {
         }
       }
       out.linkGaps = { fetched: gaps };
+
+      // 7. AI brand lookup (LLM Mentions for the brand and up to 3 competitor brands) and the competitor extras
+      //    (monthly link history and top pages per tracked competitor), weekly; ensure() skips what is fresh
+      let brandLookups = 0, compExtras = 0;
+      for (const id of active) {
+        if (Date.now() > deadline - 10_000) break;
+        const target = await resolveTarget(admin, id);
+        if (!target || !target.auto_refresh) continue;
+        const ctx = { admin, clientId: id, source: "auto" as const };
+        const brandAge = age((await latest(id, "llm_brand_history"))[0]?.fetched_at as string | undefined);
+        if (brandAge > 6.5 * DAY && (await room(4 * BRAND_EST))) {
+          const r = await refreshBrandLookup(ctx, target, await brandNamesFor(admin, id, target.domain.replace(/^www\./, "")));
+          brandLookups += r.fetched;
+        }
+        const comp = await loadCompetitors(admin, id);
+        const tracked = comp.tracked.slice(0, EXTRAS_MAX);
+        const freshHist = (await latest(id, "comp_history")).filter((r) => age(r.fetched_at as string) < 6.5 * DAY).length;
+        if (tracked.length && freshHist < tracked.length && (await room(extrasEstimate(tracked.length)))) {
+          const r = await refreshCompetitorExtras(ctx, target, tracked);
+          compExtras += r.fetched;
+          if (r.stoppedByBudget) break;
+        }
+      }
+      out.market = { brandLookups, competitorExtras: compExtras };
       out.spentToday = Number((await spentNow()).toFixed(3));
       return out;
     });

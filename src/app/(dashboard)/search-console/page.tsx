@@ -1,6 +1,6 @@
 import { ArrowDown, ArrowUp, Info } from "lucide-react";
 import { Columns } from "@/components/charts/ai-charts";
-import { PositionScatter, ShareDonut } from "@/components/charts/analytics-charts";
+import { PositionScatter, ShareDonut, StackedTimeBars } from "@/components/charts/analytics-charts";
 import { MetricTrend } from "@/components/charts/metric-trend";
 import { FilterSelect } from "@/components/dashboard/filter-select";
 import { KpiCard } from "@/components/dashboard/kpi-card";
@@ -38,6 +38,19 @@ const pick = (t: Totals | undefined, k: string) => (t?.has_data ? toNum(t[k]) : 
 const oneOf = <T extends string>(v: string | undefined, allowed: readonly T[], fallback: T): T =>
   allowed.includes(v as T) ? (v as T) : fallback;
 const cap = (s: string) => s.charAt(0).toUpperCase() + s.slice(1);
+
+/** Search Console's searchAppearance codes, as its own report names them. Unknown codes are title-cased. */
+const APPEARANCE_LABELS: Record<string, string> = {
+  AMP_BLUE_LINK: "AMP non-rich results", AMP_TOP_STORIES: "AMP top stories", BREADCRUMB: "Breadcrumbs",
+  EVENT: "Event", FAQ_RICH_RESULT: "FAQ rich results", HOWTO: "How-to rich results", JOB_LISTING: "Job listing",
+  JOB_DETAILS: "Job details", MERCHANT_LISTINGS: "Merchant listings", ORGANIC_SHOPPING: "Shopping (organic)",
+  PRODUCT_SNIPPETS: "Product snippets", RECIPE_FEATURE: "Recipe", RECIPE_RICH_SNIPPET: "Recipe rich results",
+  REVIEW_SNIPPET: "Review snippets", SPECIAL_ANNOUNCEMENT: "Special announcement", TRANSLATED_RESULT: "Translated results",
+  VIDEO: "Videos", WEBLITE: "Web Light results", LEARNING_VIDEOS: "Education videos", DISCUSSION_FORUMS: "Discussion forums",
+  PRACTICE_PROBLEMS: "Practice problems", MATH_SOLVERS: "Math solvers", SEARCH_APPEARANCE_PODCAST: "Podcasts",
+};
+const appearanceLabel = (code: string) =>
+  APPEARANCE_LABELS[code] ?? cap(code.toLowerCase().replace(/_/g, " "));
 
 /**
  * Positive = moved up the results page (e.g. from 8.0 to 5.0 is +3.0), which is good. `relative` keeps the
@@ -237,6 +250,35 @@ export default async function SearchConsolePage({ searchParams }: { searchParams
   type Bd = { value: string; clicks: number; impressions: number; ctr: number | null; position: number | null };
   const bd = bdRes.error ? null : (bdRes.data as { devices: Bd[]; countries: Bd[]; new_queries: { query: string; clicks: number; impressions: number; position: number | null }[]; recent_start: string });
   const bdRows = (list: Bd[]) => list.map((x) => ({ value: x.value.length <= 3 ? x.value.toUpperCase() : cap(x.value.toLowerCase()), clicks: Number(x.clicks), impressions: Number(x.impressions), ctr: x.ctr == null ? null : Number((Number(x.ctr) * 100).toFixed(2)), position: x.position == null ? null : Number(Number(x.position).toFixed(1)) }));
+  // search appearance (rich results etc., web search); absent until migration 22 is applied
+  const saRes = await supabase.rpc("get_gsc_search_appearance", args);
+  type SaType = { appearance: string; clicks: number; impressions: number; ctr: number | null; position: number | null; days: number };
+  const sa = saRes.error ? null : (saRes.data as { types: SaType[]; series: { date: string; appearance: string; impressions: number }[]; synced: boolean });
+  const saTypes = sa?.types ?? [];
+  const saKeys = saTypes.slice(0, 7).map((x) => ({ key: x.appearance, label: appearanceLabel(x.appearance) }));
+  const saSeries = (() => {
+    const byDate = new Map<string, Record<string, number>>();
+    for (const p of sa?.series ?? []) {
+      const row = byDate.get(p.date) ?? {};
+      const k = saKeys.some((x) => x.key === p.appearance) ? p.appearance : "__other";
+      row[k] = (row[k] ?? 0) + Number(p.impressions);
+      byDate.set(p.date, row);
+    }
+    // every day of the range, so gaps read as zero instead of being squeezed out
+    const out: ({ date: string } & Record<string, number | string | null>)[] = [];
+    for (let d = range.start; d <= range.end; d = new Date(Date.parse(`${d}T00:00:00Z`) + 86_400_000).toISOString().slice(0, 10)) {
+      out.push({ date: d, ...(byDate.get(d) ?? {}) });
+    }
+    return out;
+  })();
+  if (saTypes.length > saKeys.length) saKeys.push({ key: "__other", label: "Other" });
+  const saRows = saTypes.map((x) => ({
+    appearance: appearanceLabel(x.appearance), code: x.appearance, clicks: Number(x.clicks), impressions: Number(x.impressions),
+    ctr: x.ctr == null ? null : Number((Number(x.ctr) * 100).toFixed(2)), position: x.position == null ? null : Number(Number(x.position).toFixed(1)),
+    days: Number(x.days),
+  }));
+  const rangeDays = saSeries.length;
+
   // average clicks per weekday over the period (Search Console dates)
   const wd = Array.from({ length: 7 }, () => ({ sum: 0, days: 0 }));
   for (const p of t.current) {
@@ -308,6 +350,37 @@ export default async function SearchConsolePage({ searchParams }: { searchParams
             empty="No new queries in the last 7 days of this range." />
         </div>
       )}
+
+      <section aria-label="Search appearance" className="mt-6">
+        {!sa ? (
+          <p className="rounded-[10px] border border-dashed border-border p-4 text-sm text-muted">
+            Search appearance needs the latest database update (migration 20261031000022) and one Search Console sync.
+          </p>
+        ) : saRows.length === 0 ? (
+          <div className="rounded-[10px] border border-border bg-surface px-4 py-5 sm:px-5">
+            <h2 className="text-[15px] font-semibold">Search appearance</h2>
+            <p className="mt-1 text-sm text-muted">
+              {sa.synced
+                ? "Google reported no rich results (product or review snippets, videos, FAQ…) for this site in this period. Structured data on your pages can earn them."
+                : "Appears after the next Search Console sync."}
+            </p>
+          </div>
+        ) : (
+          <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
+            <StackedTimeBars title="Search appearance over time" sub="Impressions by result type · web search"
+              keys={saKeys} data={saSeries} valueLabel="Impressions" bucket={rangeDays > 45 ? "week" : "day"} />
+            <ResearchTable title="Search appearance · web search" rows={saRows}
+              columns={[
+                { key: "appearance", label: "Result type", hint: "How Google showed your page: product snippets, review stars, videos, FAQ and other rich results." },
+                { key: "clicks", label: "Clicks", type: "int" }, { key: "impressions", label: "Impressions", type: "int" },
+                { key: "ctr", label: "CTR %", type: "dec" }, { key: "position", label: "Avg position", type: "dec" },
+                { key: "days", label: "Days shown", type: "int" },
+              ]}
+              initialSort={{ key: "impressions", dir: "desc" }} pageSize={8} csvName={`gsc-search-appearance-${range.start}-${range.end}`}
+              note="Search Console can't split result types by device, country or query, so filters above don't apply here. A result can carry several types, so rows overlap and don't add up to the totals." />
+          </div>
+        )}
+      </section>
 
       <div className="mt-6 space-y-6">
         {tablesNarrowed && (

@@ -83,7 +83,7 @@ export default async function InsightsPage({ searchParams }: { searchParams: Pro
   ]);
 
   return (
-    <div className="mx-auto max-w-5xl">
+    <div>
       <TabHeader source={null} eyebrow="AI intelligence" title="AI SEO Insights" description="Evidence-based interpretation of your GA4, Search Console, Bing, Business Profile (incl. reviews and local rankings), Clarity and imported data. The numbers are calculated by the app; the AI only interprets them." guide={[
   { term: "Evidence", text: "Every recommendation cites numbers from your connected data. The AI interprets them; it never invents metrics." },
   { term: "Priority, confidence, effort", text: "Priority = expected importance, confidence = how strong the evidence is, effort = how much work it takes. Start with high priority and small effort." },
@@ -111,7 +111,7 @@ export default async function InsightsPage({ searchParams }: { searchParams: Pro
         <section className="mb-8 space-y-4">
           <div className="rounded-[10px] border border-border bg-surface p-5">
             <p className="text-xs font-semibold uppercase tracking-wider text-accent">Executive summary · {latest.range_start} → {latest.range_end}</p>
-            <p className="mt-2 leading-relaxed">{latest.output?.executive_summary}</p>
+            <p className="mt-2 max-w-[110ch] leading-relaxed">{latest.output?.executive_summary}</p>
             {sources.length > 0 && <p className="mt-3 text-xs text-muted">Data sources in this analysis: {sources.join(" · ")}</p>}
           </div>
           {/* one card, two columns: the lists rarely match in length, so a shorter one never leaves a half-empty card */}
@@ -160,7 +160,7 @@ export default async function InsightsPage({ searchParams }: { searchParams: Pro
         </section>
       )}
 
-      <section className="space-y-4" aria-label="Recommendations">
+      <section className="grid gap-4 2xl:grid-cols-2" aria-label="Recommendations">
         {current.map((r) => {
           const Icon = STATUS_ICON[r.implementation_status as keyof typeof STATUS_ICON];
           return (
@@ -196,7 +196,7 @@ export default async function InsightsPage({ searchParams }: { searchParams: Pro
             </article>
           );
         })}
-        {latest && current.length === 0 && <p className="text-sm text-muted">The last run produced no recommendations with valid supporting evidence.</p>}
+        {latest && current.length === 0 && <p className="text-sm text-muted 2xl:col-span-2">The last run produced no recommendations with valid supporting evidence.</p>}
       </section>
 
       {(runs ?? []).length > 0 && (

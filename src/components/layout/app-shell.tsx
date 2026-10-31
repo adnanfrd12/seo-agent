@@ -106,7 +106,7 @@ export function AppShell({ sidebarTop, header, children }: { sidebarTop: React.R
       )}
 
       <div className="flex min-w-0 flex-1 flex-col">
-        <div className="flex h-14 shrink-0 items-center gap-2 border-b border-border bg-surface px-2 md:px-8">
+        <div className="flex h-14 shrink-0 items-center gap-2 border-b border-border bg-surface px-2 md:px-6 xl:px-8 2xl:px-10">
           <button onClick={() => setDrawer(true)} aria-label="Open menu" className="grid size-11 place-items-center rounded-md hover:bg-surface-muted md:hidden">
             <Menu className="size-5" />
           </button>
@@ -116,7 +116,7 @@ export function AppShell({ sidebarTop, header, children }: { sidebarTop: React.R
           <header className="ml-auto flex items-center gap-2 md:gap-3">{header}</header>
         </div>
         <main className="relative flex-1 overflow-y-auto overscroll-contain">
-          <div className="mx-auto w-full max-w-[1280px] px-4 py-6 md:px-8 md:py-8">{children}</div>
+          <div className="w-full px-4 py-6 md:px-6 md:py-8 xl:px-8 2xl:px-10">{children}</div>
         </main>
       </div>
     </div>

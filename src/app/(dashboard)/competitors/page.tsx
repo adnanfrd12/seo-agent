@@ -10,8 +10,10 @@ import { ResearchTable, type Col } from "@/components/research/research-table";
 import { Tabs } from "@/components/research/tabs";
 import { fmtInt } from "@/lib/analytics/format";
 import { shiftDays, todayIn } from "@/lib/analytics/range";
-import { loadCompetitors } from "@/lib/dataforseo/competitors";
-import { Donut, StackedBars } from "@/components/charts/ai-charts";
+import { EXTRAS_MAX, extrasEstimate, loadCompetitorExtras, loadCompetitors, type PageType } from "@/lib/dataforseo/competitors";
+import { Donut, MultiLine, StackedBars, type LineMetric } from "@/components/charts/ai-charts";
+import { GroupedBars } from "@/components/charts/market-extra";
+import { MarketRefreshButton } from "@/components/market/refresh-button";
 import { BarList } from "@/components/charts/bar-list";
 import { cat } from "@/lib/charts/colors";
 import { brandStats, ENGINES, loadAi, type EngineKey } from "@/lib/ai/visibility";
@@ -121,8 +123,9 @@ export default async function CompetitorsPage() {
   const bare = (d: string | null | undefined) => (d ?? "").replace(/^www\./, "").toLowerCase();
   const self = bare(target.domain);
   const rivalsList = comp.tracked.slice(0, 4);
-  const [ranks, ai, cache, local] = await Promise.all([
+  const [ranks, ai, cache, local, extras] = await Promise.all([
     loadRanks(supabase, client.id), loadAi(supabase, client.id), loadCache(supabase, client.id), loadLocal(supabase, createAdminClient(), client.id),
+    loadCompetitorExtras(supabase, client.id, target.domain, comp.tracked),
   ]);
   const posIn = (top: { position: number; domain: string | null }[], d: string) => top.find((t) => { const x = bare(t.domain); return x === d || x.endsWith(`.${d}`); })?.position ?? null;
   const matrix: Row[] = ranks.ok ? ranks.rows.filter((r) => r.checkedOn).map((r) => ({
@@ -189,6 +192,49 @@ export default async function CompetitorsPage() {
     gapIntentItems.length > 0 && <Donut key="intent" title="What the keyword gaps are for" sub={`${fmtInt(mergedGaps.length)} gap keywords by search intent`} items={gapIntentItems}
       center={`${Math.round((gapIntentItems[0].value / Math.max(1, mergedGaps.length)) * 100)}%`} centerLabel={gapIntentItems[0].label.split(" · ")[0]} />,
   ].filter(Boolean);
+
+  /* ---------------------------------------------------------------- trends: rank history, link growth, reviews, content */
+  const extraDomains = [self, ...comp.tracked.slice(0, EXTRAS_MAX).map(bare)];
+  const dLabel = (d: string) => (d === self ? `${d} (you)` : d);
+  const dColor = (d: string, i: number) => cat(slot.get(d) ?? slot.get(`www.${d}`) ?? i);
+  const rankDates = [...new Set(extras.rankTrend.map((r) => r.date))];
+  const rankMetrics: LineMetric[] = [
+    { key: "avg", label: "Average position (top 10)", reverse: true, series: extraDomains.map((d, i) => ({ key: `r${i}`, label: dLabel(d), color: dColor(d, i), data: extras.rankTrend.filter((r) => r.domain === d).map((r) => ({ date: r.date, value: r.avg })) })) },
+    // the client's own checks go to 100 results: its full average next to the competitors' top-10 average
+    { key: "all", label: "Average position (you: top 100)", reverse: true, series: extraDomains.map((d, i) => ({ key: `r${i}`, label: d === self ? `${d} (you, top 100)` : `${d} (top 10)`, color: dColor(d, i), data: extras.rankTrend.filter((r) => r.domain === d).map((r) => ({ date: r.date, value: r.avgRanked })) })) },
+    { key: "top10", label: "Keywords in the top 10", series: extraDomains.map((d, i) => ({ key: `r${i}`, label: dLabel(d), color: dColor(d, i), data: extras.rankTrend.filter((r) => r.domain === d).map((r) => ({ date: r.date, value: r.top10 })) })) },
+  ];
+  const rankRows: Row[] = extras.rankTrend.map((r) => ({ date: r.date, site: dLabel(r.domain), avg: r.avg, top10: r.top10, all: r.domain === self ? r.avgRanked : null, ranked: r.domain === self ? r.ranked : null, checks: r.checks }));
+  const linkMetrics: LineMetric[] = [
+    { key: "rd", label: "Referring domains", series: extras.links.map((l, i) => ({ key: `l${i}`, label: dLabel(l.domain), color: dColor(l.domain, i), data: l.months.slice(-12).map((m) => ({ date: m.date, value: m.referring_domains })) })) },
+    { key: "bl", label: "Backlinks", series: extras.links.map((l, i) => ({ key: `l${i}`, label: dLabel(l.domain), color: dColor(l.domain, i), data: l.months.slice(-12).map((m) => ({ date: m.date, value: m.backlinks })) })) },
+  ];
+  const monthName = (iso: string) => new Date(`${iso.slice(0, 10)}T00:00:00Z`).toLocaleDateString("en-US", { month: "long", year: "numeric", timeZone: "UTC" });
+  const lastMonth = extras.links.map((l) => ({ l, m: l.months.at(-1) })).filter((x) => x.m);
+  const linkChange = lastMonth.map(({ l, m }) => ({ label: dLabel(l.domain), note: monthName(m!.date) + (m!.date >= today.slice(0, 7) ? " to date" : ""), values: { new_domains: m!.new_domains, lost_domains: m!.lost_domains, new_backlinks: m!.new_backlinks, lost_backlinks: m!.lost_backlinks } }));
+  const linkRows: Row[] = extras.links.map((l) => {
+    const last = l.months.at(-1), yearAgo = l.months.length > 12 ? l.months.at(-13) : l.months[0];
+    return { site: dLabel(l.domain), referring_domains: last?.referring_domains ?? null, change: last && yearAgo && last.referring_domains != null && yearAgo.referring_domains != null ? last.referring_domains - yearAgo.referring_domains : null,
+      new_domains: last?.new_domains ?? null, lost_domains: last?.lost_domains ?? null, new_backlinks: last?.new_backlinks ?? null, lost_backlinks: last?.lost_backlinks ?? null, month: last?.date ?? null };
+  });
+  // review velocity: new Google reviews per month over the last 6 months, from the stored reviews (newest first)
+  const months6 = Array.from({ length: 6 }, (_, i) => { const d = new Date(`${today.slice(0, 7)}-01T00:00:00Z`); d.setUTCMonth(d.getUTCMonth() - (5 - i)); return d.toISOString().slice(0, 7); });
+  const reviewSets = [
+    ...(local.reviews ? [{ name: `${local.profile?.data.title ?? "You"} (you)`, own: true, items: local.reviews.items, rating: local.profile?.data.rating ?? local.reviews.rating, total: local.profile?.data.votes ?? local.reviews.total }] : []),
+    ...local.rivals.filter((r) => r.reviews).map((r) => ({ name: (r.profile?.title ?? r.reviews!.name).split(/\s[|–-]\s/)[0], own: false, items: r.reviews!.items, rating: r.profile?.rating ?? r.reviews!.rating, total: r.profile?.votes ?? r.reviews!.total })),
+  ];
+  const reviewMetrics: LineMetric[] = [{ key: "rv", label: "New reviews per month", series: reviewSets.map((r, i) => ({ key: `v${i}`, label: r.name, color: cat(i), data: months6.map((m) => ({ date: `${m}-01`, value: r.items.filter((x) => x.date?.startsWith(m)).length })) })) }];
+  const reviewRows: Row[] = reviewSets.map((r) => {
+    const st = reviewStats(r.items);
+    return { business: r.name, rating: r.rating, reviews: r.total, last6: r.items.filter((x) => (x.date ?? "") >= `${months6[0]}-01`).length, last90: st.last90, reply: st.replyRate == null ? null : Math.round(st.replyRate * 100) };
+  });
+  const reviewBars = reviewRows.map((r) => ({ label: String(r.business), values: { last90: Number(r.last90 ?? 0), last6: Number(r.last6 ?? 0) } }));
+  // content: what kind of pages earn each site its traffic
+  const TYPES: { key: PageType; label: string }[] = [{ key: "service", label: "Service / product" }, { key: "location", label: "Location" }, { key: "guide", label: "Blog / guide" }, { key: "pricing", label: "Cost / pricing" }, { key: "other", label: "Other (home, about...)" }];
+  const contentRows: Row[] = extras.content.map((c) => ({ site: dLabel(c.domain), pages: c.pages, traffic: c.traffic, keywords: c.keywords, top_page: c.topPage, top_traffic: c.topTraffic, ...Object.fromEntries(TYPES.map((t) => [t.key, c.types[t.key]])) }));
+  const contentBars = extras.content.map((c) => ({ label: dLabel(c.domain), values: Object.fromEntries(TYPES.map((t) => [t.key, c.types[t.key]])), note: `${fmtInt(c.pages)} pages` }));
+  const extrasAt = [...extras.links.filter((l) => !l.own).map((l) => l.fetchedAt), ...extras.content.filter((c) => !c.own).map((c) => c.fetchedAt ?? "")].filter(Boolean).sort().at(-1)?.slice(0, 10) ?? null;
+  const dashed = "rounded-[10px] border border-dashed border-border p-4 text-sm text-muted";
 
   return (
     <>
@@ -264,6 +310,57 @@ export default async function CompetitorsPage() {
         </table>
         <p className="px-4 pb-3 pt-1 text-xs text-muted">Change = ranking keywords since the first stored snapshot for that site (from {summary[0]?.since}).</p>
       </div>
+
+      <section aria-label="Competitor trends" className="mt-8">
+        <div className="mb-3 flex flex-wrap items-end justify-between gap-3">
+          <div className="min-w-0">
+            <h2 className="text-base font-semibold">You vs competitors over time</h2>
+            <p className="text-xs text-muted">Rankings from your Rank Tracking checks; links, reviews and pages from DataForSEO{extrasAt ? ` (competitor links and pages updated ${extrasAt})` : ""}. Refreshes weekly.</p>
+          </div>
+          {canEdit && comp.tracked.length > 0 && <MarketRefreshButton action="compExtras" label="Fetch competitor links & pages" estimate={`≈$${extrasEstimate(Math.min(EXTRAS_MAX, comp.tracked.length)).toFixed(2)}`} />}
+        </div>
+        <Tabs label="Competitor trends" items={[
+          { key: "rank", label: "Rank history", badge: rankDates.length, content: rankRows.length ? (
+            <div className="space-y-4">
+              <MultiLine title="Average position on your tracked keywords" sub={`Each Rank Tracking check · keywords where the site is in Google's top 10 · lower is better${extras.rankTrend.some((r) => r.domain === self && r.ranked > 0) ? "" : ` · ${self} is not in the top 100 for these keywords yet`}`} metrics={rankMetrics} />
+              <ResearchTable title="Rank history by site" rows={rankRows} initialSort={{ key: "date", dir: "desc" }} pageSize={8} facets={[{ key: "site", label: "Site" }]} csvName={`competitor-rank-history-${target.domain}`}
+                columns={[{ key: "date", label: "Checked", type: "date" }, { key: "site", label: "Site" }, { key: "avg", label: "Avg position (top 10)", type: "dec" }, { key: "top10", label: "Keywords in top 10", type: "int" }, { key: "all", label: "Your avg position (top 100)", type: "dec" }, { key: "ranked", label: "Your keywords in top 100", type: "int" }, { key: "checks", label: "Keywords checked", type: "int" }]}
+                note="Rank checks store the top 10 results for every keyword, so competitors are compared inside the top 10; your own positions are checked to 100." />
+            </div>
+          ) : <p className={dashed}>Appears after the first Rank Tracking check.</p> },
+          { key: "links", label: "Link growth", badge: extras.links.length, content: extras.links.length ? (
+            <div className="space-y-4">
+              <MultiLine title="Referring domains, last 12 months" sub="Websites linking to each site, at the end of each month" metrics={linkMetrics} />
+              <GroupedBars title="Links earned and lost in the latest month" sub="New and lost referring domains and backlinks (DataForSEO backlink history)" valueLabel="Count" rows={linkChange}
+                keys={[{ key: "new_domains", label: "Referring domains gained", color: "var(--positive)" }, { key: "lost_domains", label: "Referring domains lost", color: "var(--negative)" }, { key: "new_backlinks", label: "Backlinks gained", color: "color-mix(in oklab, var(--positive) 45%, var(--surface))" }, { key: "lost_backlinks", label: "Backlinks lost", color: "color-mix(in oklab, var(--negative) 45%, var(--surface))" }]} />
+              <ResearchTable title="Link growth by site" rows={linkRows} initialSort={{ key: "referring_domains", dir: "desc" }} pageSize={6}
+                columns={[{ key: "site", label: "Site" }, { key: "referring_domains", label: "Referring domains", type: "int" }, { key: "change", label: "12-month change", type: "delta" }, { key: "new_domains", label: "Gained (month)", type: "int" }, { key: "lost_domains", label: "Lost (month)", type: "int" }, { key: "new_backlinks", label: "Backlinks gained", type: "int" }, { key: "lost_backlinks", label: "Backlinks lost", type: "int" }, { key: "month", label: "Month ending", type: "date" }]} />
+            </div>
+          ) : <p className={dashed}>Collected with the next weekly run{canEdit ? " (or “Fetch competitor links & pages”)" : ""}.</p> },
+          { key: "reviews", label: "Review velocity", badge: reviewSets.length, content: reviewSets.length ? (
+            <div className="space-y-4">
+              <div className="grid gap-4 lg:grid-cols-[minmax(0,1.6fr)_minmax(0,1fr)]">
+                <MultiLine title="New Google reviews per month" sub="Last 6 months, you and the nearby competitors compared on Local SEO" metrics={reviewMetrics} />
+                <GroupedBars title="Recent reviews" sub="New reviews in the last 90 days and 6 months" valueLabel="Reviews" rows={reviewBars}
+                  keys={[{ key: "last90", label: "Last 90 days", color: "var(--series)" }, { key: "last6", label: "Last 6 months", color: "color-mix(in oklab, var(--series) 40%, var(--surface))" }]} />
+              </div>
+              <ResearchTable title="Reviews compared" rows={reviewRows} initialSort={{ key: "last90", dir: "desc" }} pageSize={8}
+                columns={[{ key: "business", label: "Business" }, { key: "rating", label: "Rating", type: "dec" }, { key: "reviews", label: "Total reviews", type: "int" }, { key: "last90", label: "Reviews · 90 days", type: "int" }, { key: "last6", label: "Reviews · 6 months", type: "int" }, { key: "reply", label: "Owner response rate %", type: "int" }]}
+                note="From the newest reviews stored for each business (Google Business Profile via DataForSEO); response rate is over those reviews." />
+            </div>
+          ) : <p className={dashed}>Compare nearby businesses on the <Link href="/local-seo" className="text-foreground underline decoration-border-strong underline-offset-2 hover:decoration-foreground">Local SEO &amp; Reviews</Link> tab to see their review pace here.</p> },
+          { key: "content", label: "Content", badge: extras.content.length, content: extras.content.length ? (
+            <div className="space-y-4">
+              <StackedBars title="What kind of pages rank" sub="Each site's ranking pages by type (from the page address)" valueLabel="Pages" rows={contentBars}
+                keys={TYPES.map((t, i) => ({ key: t.key, label: t.label, color: t.key === "other" ? "var(--cat-other)" : cat(i) }))} />
+              <ResearchTable title="Content compared" rows={contentRows} initialSort={{ key: "traffic", dir: "desc" }} pageSize={6}
+                columns={[{ key: "site", label: "Site" }, { key: "pages", label: "Ranking pages", type: "int" }, { key: "traffic", label: "Est. traffic / mo", type: "int" }, { key: "keywords", label: "Keywords", type: "int" }, { key: "top_page", label: "Top page", type: "url" }, { key: "top_traffic", label: "Top page traffic", type: "int" },
+                  ...TYPES.map((t) => ({ key: t.key, label: t.label, type: "int" as const }))]}
+                note="Up to 100 pages per site, ordered by estimated traffic (DataForSEO Labs). Page types are read from the address, so they are a guide, not an exact count." />
+            </div>
+          ) : <p className={dashed}>Collected with the next weekly run.</p> },
+        ]} />
+      </section>
 
       <div className="mt-8 space-y-6">
         <section aria-label="Keyword analysis">

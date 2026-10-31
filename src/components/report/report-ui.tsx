@@ -100,8 +100,11 @@ export function TrendSet({ children }: { children: React.ReactNode }) {
   return <div className="sm:[&>.grid>*:last-child:nth-child(odd)]:col-span-2">{children}</div>;
 }
 
+/** Four tiles a row on wide screens (the PDF renders at 1240px, so it keeps three); the last row is always filled. */
+const TILE_FILL = "max-xl:[&>*:last-child:nth-child(odd)]:col-span-2 xl:max-2xl:[&>*:last-child:nth-child(3n+1)]:col-span-3 xl:max-2xl:[&>*:last-child:nth-child(3n+2)]:col-span-2 2xl:[&>*:last-child:nth-child(4n+1)]:col-span-4 2xl:[&>*:last-child:nth-child(4n+2)]:col-span-3 2xl:[&>*:last-child:nth-child(4n+3)]:col-span-2";
+
 export function TileGrid({ children }: { children: React.ReactNode }) {
-  return <div className={cn("grid grid-cols-2 gap-3 xl:grid-cols-3", FILL_ROW_3)}>{children}</div>;
+  return <div className={cn("grid grid-cols-2 gap-3 xl:grid-cols-3 2xl:grid-cols-4", TILE_FILL)}>{children}</div>;
 }
 
 /** Two lists of findings in one card (e.g. wins and watch list), so lists of different length never leave a half-empty card. */

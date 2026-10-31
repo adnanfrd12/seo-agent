@@ -3,7 +3,8 @@ import { Columns, Donut, Gauge, Heatmap, MultiLine, Panel, StackedBars, Themes, 
 import { BarList } from "@/components/charts/bar-list";
 import { BubbleMap } from "@/components/charts/bubble-map";
 import { MetricTrend } from "@/components/charts/metric-trend";
-import { Fill, SplitBar } from "@/components/charts/ops-charts";
+import { Fill, SplitBar, StackedColumns } from "@/components/charts/ops-charts";
+import { MarketRefreshButton } from "@/components/market/refresh-button";
 import { Highlights } from "@/components/dashboard/highlights";
 import { StatCard } from "@/components/dashboard/kpi-card";
 import { EmptyState } from "@/components/dashboard/page-header";
@@ -15,7 +16,7 @@ import { getSession } from "@/lib/analytics/client-context";
 import {
   AI_EVERY_DAYS, brandKey, brandStats, ENGINE_KEYS, ENGINES, enginesFrom, loadAi, promptEstimate, suggestPrompts, type AiCheck, type EngineKey,
 } from "@/lib/ai/visibility";
-import { LLM_LABEL, LLM_PLATFORMS, type LlmTopic } from "@/lib/ai/llm-mentions";
+import { BRAND_EST, BRAND_VIEW_LABEL, BRAND_VIEWS, LLM_LABEL, LLM_PLATFORMS, type BrandHistory, type BrandLookup, type BrandView, type LlmTopic } from "@/lib/ai/llm-mentions";
 import { fmtInt } from "@/lib/analytics/format";
 import { cat } from "@/lib/charts/colors";
 import { shiftDays, todayIn } from "@/lib/analytics/range";
@@ -158,7 +159,12 @@ export default async function AiVisibilityPage() {
     { key: "sent", label: "Sentiment", series: perf((l, b) => avg(l.map((c) => brandIn(c, b)?.sentiment).filter((p): p is number => p != null))) },
     { key: "mentions", label: "Mentions", series: perf((l, b) => l.filter((c) => hasBrand(c, b)).length) },
     { key: "cites", label: "Citations", series: perf((l, b) => { const d = b.own ? site : b.domain; return d ? l.reduce((a, c) => a + c.sources.filter((x) => onSite(x.domain, d)).length, 0) : null; }) },
+    { key: "mention_rate", label: "Mention rate %", unit: "%", series: perf((l, b) => pctOf(l.filter((c) => (b.own ? c.mentioned : !!brandIn(c, b))).length, l.length)) },
+    { key: "citation_rate", label: "Citation rate %", unit: "%", series: perf((l, b) => { const d = b.own ? site : b.domain; return d ? pctOf(l.filter((c) => c.sources.some((x) => onSite(x.domain, d))).length, l.length) : null; }) },
   ];
+  // answers that name a competitor but not you: the clearest openings
+  const gapAnswers = L.filter((c) => c.brands.some((b) => !b.own) && !c.mentioned && !c.brands.some((b) => b.own)).length;
+  const citedAnswers = L.filter((c) => c.cited).length;
 
   // share of voice (mentions) and where you are named
   const sovTotal = brands.reduce((a, b) => a + b.mentions, 0);
@@ -212,6 +218,23 @@ export default async function AiVisibilityPage() {
   const marketMix = mixSrc.slice(0, 5).map((g, i) => ({ label: onSite(g.key, site) ? `${g.key} (you)` : g.key, value: g.mentions, color: cat(i) }));
   if (mixSrc.length > 5) marketMix.push({ label: "Other", value: mixSrc.slice(5).reduce((a, g) => a + g.mentions, 0), color: "var(--cat-other)" });
 
+  // brand lookup (DataForSEO LLM Mentions): the brand and up to three competitor brands in real AI answers
+  const lookup = BRAND_VIEWS.map((v) => ({ v, d: cache.get<BrandLookup>(`llm_brand_${v}`) })).filter((x) => x.d?.data?.brands?.length && x.d.data.view === x.v);
+  const brandHist = cache.get<BrandHistory>("llm_brand_history");
+  const lookupBrands = lookup[0]?.d!.data.brands.map((b) => ({ brand: b.brand, own: b.own })) ?? [];
+  const metricOf = (v: BrandView, brand: string) => lookup.find((x) => x.v === v)?.d!.data.brands.find((x) => x.brand === brand);
+  const entityAll = lookupBrands.reduce((a, b) => a + (metricOf("entities", b.brand)?.mentions ?? 0), 0);
+  const lookupRows: Row[] = lookupBrands.map((b) => ({
+    brand: b.own ? `${b.brand} (you)` : b.brand, ...Object.fromEntries(lookup.flatMap(({ v }) => [[`${v}_m`, metricOf(v, b.brand)?.mentions ?? 0], [`${v}_v`, metricOf(v, b.brand)?.volume ?? null]])),
+    share: entityAll ? Math.round(((metricOf("entities", b.brand)?.mentions ?? 0) / entityAll) * 1000) / 10 : 0,
+  }));
+  const lookupSov = lookupBrands.map((b, i) => ({ label: b.own ? `${b.brand} (you)` : b.brand, value: metricOf("entities", b.brand)?.mentions ?? 0, color: cat(i) }));
+  const ownBrand = lookupBrands.find((b) => b.own)?.brand ?? "";
+  const ownLookup = lookup.map(({ v }) => ({ v, b: metricOf(v, ownBrand) }));
+  const lookupAt = [...lookup.map((x) => x.d!.fetchedAt), brandHist?.fetchedAt].filter(Boolean).sort().at(-1)?.slice(0, 10) ?? null;
+  const histMonths = brandHist?.data?.months ?? [];
+  const histLabel = (m: string) => new Date(`${m}-01T00:00:00Z`).toLocaleDateString("en-US", { month: "short", year: "2-digit", timeZone: "UTC" });
+
   const picks: Highlight[] = [];
   const vis = pctOf(named.length, L.length);
   if (vis != null && prevVis != null && vis !== prevVis) picks.push({ tone: vis > prevVis ? "good" : "bad", title: `AI visibility ${vis > prevVis ? "rose" : "fell"} from ${prevVis}% to ${vis}%`, detail: "Share of AI answers that name the business, compared with the check before." });
@@ -231,7 +254,7 @@ export default async function AiVisibilityPage() {
         <p className="rounded-[10px] border border-dashed border-border p-6 text-sm text-muted">Questions added. They are checked in the next daily run.</p>
       ) : (
         <>
-          <section aria-label="AI visibility summary" className="grid grid-cols-2 gap-3 lg:grid-cols-4 xl:grid-cols-4">
+          <section aria-label="AI visibility summary" className="grid grid-cols-2 gap-3 sm:grid-cols-5">
             <StatCard label="Visibility" value={vis == null ? "—" : `${vis}%`} sub={prevVis != null && prevVis !== vis ? `was ${prevVis}%` : "of answers name you"} tone={vis ? "good" : "bad"} />
             <StatCard label="Top-3 visibility" value={`${pctOf(positions.filter((p) => p <= 3).length, L.length) ?? 0}%`} sub="named in the first three" />
             <StatCard label="Average position" value={avg(positions) == null ? "—" : `#${avg(positions)!.toFixed(1)}`} sub={me?.avgPosition != null ? `all checks: #${me.avgPosition}` : "when named"} />
@@ -240,6 +263,8 @@ export default async function AiVisibilityPage() {
             <StatCard label="Your citations" value={fmtInt(ownCitations)} sub={`of ${fmtInt(citeRows.length)} sources`} />
             <StatCard label="Answers" value={fmtInt(L.length)} sub={`${ai.rows.length} questions × ${engines.length} assistants`} />
             <StatCard label="Brands found" value={fmtInt(brands.length)} sub={rivals[0] ? `most named: ${rivals[0].name}` : undefined} />
+            <StatCard label="Citation rate" value={`${pctOf(citedAnswers, L.length) ?? 0}%`} sub={`${citedAnswers} of ${L.length} answers cite your site`} tone={citedAnswers ? "good" : undefined} />
+            <StatCard label="Competitor gap" value={fmtInt(gapAnswers)} sub={`answers name a competitor, not you (${pctOf(gapAnswers, L.length) ?? 0}%)`} tone={gapAnswers ? "warn" : undefined} />
           </section>
           {picks.length > 0 && <div className="mt-6"><Highlights items={picks.slice(0, 4)} /></div>}
 
@@ -290,6 +315,32 @@ export default async function AiVisibilityPage() {
                       ]} ranges={[{ key: "detection", label: "Detection %" }, { key: "mentions", label: "Mentions" }]} />
                     <StackedBars title="Mentions by brand and assistant" sub="Who each assistant recommends" keys={engineKeys} rows={sovByEngine} valueLabel="Mentions" />
                     {ai.topSources.length > 0 && <BarList title="Websites cited instead of you" valueLabel="Answers citing them" items={ai.topSources.map((s) => ({ label: s.domain, value: s.count }))} />}
+                    <section className="space-y-3" aria-label="Brand lookup">
+                      <div className="flex flex-wrap items-end justify-between gap-3">
+                        <div className="min-w-0">
+                          <h3 className="text-sm font-semibold">Brand lookup</h3>
+                          <p className="text-xs text-muted">How often real US AI answers name your brand and the competitor brands the assistants name most (DataForSEO LLM Mentions){lookupAt ? ` · updated ${lookupAt}` : ""}. Refreshes weekly. “Named as a brand” counts ChatGPT answers that recognise the name as a business; “phrase in answer” counts the words anywhere in the answer, so a name that is also an everyday phrase is counted wherever the phrase appears.</p>
+                        </div>
+                        {canEdit && <MarketRefreshButton action="brand" label="Fetch brand lookup" estimate={`≈$${(4 * BRAND_EST).toFixed(2)}`} />}
+                      </div>
+                      {lookup.length === 0 ? <p className="rounded-[10px] border border-dashed border-border p-4 text-sm text-muted">Appears after the next weekly run{canEdit ? " (or “Fetch brand lookup”)" : ""}.</p> : (
+                        <>
+                          <div className="grid gap-3 sm:grid-cols-3">
+                            {ownLookup.map(({ v, b }) => (
+                              <StatCard key={v} label={BRAND_VIEW_LABEL[v]} value={fmtInt(b?.mentions ?? 0)} sub={b?.volume ? `${fmtInt(b.volume)} AI search volume` : b?.mentions ? "answers" : `${ownBrand} is not named`} tone={v === "entities" ? (b?.mentions ? "good" : "bad") : undefined} />
+                            ))}
+                          </div>
+                          <div className={`grid gap-4 ${histMonths.length ? "lg:grid-cols-2" : ""}`}>
+                            <Donut title="Share of voice in ChatGPT" sub="Answers naming each brand as a business (brand entities)" items={lookupSov}
+                              center={entityAll ? `${Math.round(((metricOf("entities", ownBrand)?.mentions ?? 0) / entityAll) * 100)}%` : "0%"} centerLabel="you" />
+                            {histMonths.length > 0 && <StackedColumns title={`${brandHist!.data.brand} named in ChatGPT, by month`} sub="Answers naming the brand as a business, since August 2025" valueLabel="Answers"
+                              keys={[{ key: "m", label: "Answers", color: "var(--series)" }]} columns={histMonths.map((m) => ({ label: histLabel(m.month), values: { m: m.mentions } }))} empty={`${brandHist!.data.brand} has not been named as a brand in ChatGPT answers since August 2025.`} />}
+                          </div>
+                          <ResearchTable title="Brand lookup" rows={lookupRows} initialSort={{ key: "entities_m", dir: "desc" }} pageSize={6}
+                            columns={[{ key: "brand", label: "Brand" }, ...lookup.flatMap(({ v }) => [{ key: `${v}_m`, label: BRAND_VIEW_LABEL[v], type: "int" as const }, { key: `${v}_v`, label: "AI search volume", type: "int" as const }]), { key: "share", label: "Share of voice % (ChatGPT, as a brand)", type: "dec" }]} />
+                        </>
+                      )}
+                    </section>
                     <section className="space-y-3" aria-label="AI market">
                       <div>
                         <h3 className="text-sm font-semibold">AI market for your topics</h3>

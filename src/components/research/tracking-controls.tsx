@@ -2,9 +2,9 @@
 
 import { useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
-import { Loader2, RefreshCw, X } from "lucide-react";
+import { Loader2, Pin, PinOff, RefreshCw, X } from "lucide-react";
 import { addAiPrompts, removeAiPrompt, runAiVisibilityNow, setAiEngines, setAiSearch } from "@/app/(dashboard)/ai-visibility/actions";
-import { addRankKeywords, checkRanksNow, removeRankKeyword } from "@/app/(dashboard)/rank-tracking/actions";
+import { addRankKeywords, checkRanksNow, removeRankKeyword, setRankSchedule, toggleRankPin } from "@/app/(dashboard)/rank-tracking/actions";
 
 const btn = "inline-flex items-center gap-1.5 rounded-lg bg-accent px-3 py-1.5 text-sm font-medium text-accent-foreground hover:opacity-90 disabled:opacity-60";
 const btn2 = "inline-flex items-center gap-1.5 rounded-lg border border-border px-3 py-1.5 text-sm font-medium hover:bg-surface-muted disabled:opacity-60";
@@ -67,10 +67,50 @@ export function RankControls({ canEdit, count, due, suggestions, estimate }: { c
         <button className={btn2} disabled={pending || count === 0} onClick={() => run(() => checkRanksNow(due === 0))}>
           {pending ? <Loader2 className="size-4 animate-spin" /> : <RefreshCw className="size-4" />} {due > 0 ? `Check ${due} keyword${due > 1 ? "s" : ""} now` : "Re-check all now"} <span className="opacity-70">(≈{estimate})</span>
         </button>
-        <span className="text-xs text-muted">Positions refresh weekly on their own for active clients. Each check looks at Google&apos;s top 30 results.</span>
+        <span className="text-xs text-muted">Positions refresh on the schedule above for active clients. Each check looks at Google&apos;s top 100 results.</span>
       </div>
       {note}
     </div>
+  );
+}
+
+/** Pin / unpin a tracked keyword (pinned keywords are listed first). */
+export function PinButton({ id, label, pinned }: { id: string; label: string; pinned: boolean }) {
+  const { pending, run } = useRun();
+  return (
+    <button aria-label={`${pinned ? "Unpin" : "Pin"} ${label}`} aria-pressed={pinned} title={pinned ? "Unpin" : "Pin to the top"} disabled={pending} onClick={() => run(() => toggleRankPin(id))}
+      className={`rounded p-1 hover:bg-surface-muted disabled:opacity-50 ${pinned ? "text-accent" : "text-muted hover:text-foreground"}`}>
+      {pending ? <Loader2 className="size-3.5 animate-spin" /> : pinned ? <PinOff className="size-3.5" /> : <Pin className="size-3.5" />}
+    </button>
+  );
+}
+
+const SCHEDULE_LABELS = [
+  { key: "daily", label: "Daily", note: "every morning" },
+  { key: "weekly", label: "Weekly", note: "every 7 days" },
+  { key: "monthly", label: "Monthly", note: "every 30 days" },
+] as const;
+
+/** Daily / weekly / monthly automatic checks, with what each costs a month for the keywords tracked now. */
+export function RankSchedulePicker({ canEdit, schedule, monthly, count }: { canEdit: boolean; schedule: "daily" | "weekly" | "monthly"; monthly: Record<"daily" | "weekly" | "monthly", number>; count: number }) {
+  const { pending, run, note } = useRun();
+  return (
+    <fieldset className="space-y-2" disabled={!canEdit || pending}>
+      <legend className="mb-1 text-xs font-semibold uppercase tracking-wide text-muted">Automatic check schedule {pending && <Loader2 className="ml-1 inline size-3.5 animate-spin" />}</legend>
+      <div className="grid gap-2 sm:grid-cols-3">
+        {SCHEDULE_LABELS.map((o) => (
+          <label key={o.key} className={`flex cursor-pointer items-start gap-2 rounded-lg border p-3 text-sm ${schedule === o.key ? "border-accent bg-surface-muted" : "border-border hover:bg-surface-muted"} ${!canEdit ? "cursor-default opacity-80" : ""}`}>
+            <input type="radio" name="rank-schedule" className="mt-0.5 accent-[var(--accent)]" checked={schedule === o.key} onChange={() => run(() => setRankSchedule(o.key))} />
+            <span className="min-w-0">
+              <span className="block font-medium">{o.label} <span className="font-normal text-muted">· {o.note}</span></span>
+              <span className="block text-xs tabular-nums text-muted">≈${monthly[o.key].toFixed(2)} a month for {count} keyword{count === 1 ? "" : "s"}</span>
+            </span>
+          </label>
+        ))}
+      </div>
+      {!canEdit && <p className="text-xs text-muted">Only owners and admins can change the schedule.</p>}
+      {note}
+    </fieldset>
   );
 }
 

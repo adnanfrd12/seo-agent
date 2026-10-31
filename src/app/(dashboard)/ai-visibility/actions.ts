@@ -2,7 +2,7 @@
 
 import { revalidatePath } from "@/lib/revalidate";
 import { getSession } from "@/lib/analytics/client-context";
-import { llmTopics, refreshLlmMentions } from "@/lib/ai/llm-mentions";
+import { brandNamesFor, llmTopics, refreshBrandLookup, refreshLlmMentions } from "@/lib/ai/llm-mentions";
 import { ENGINE_KEYS, ENGINES, enginesFrom, MAX_PROMPTS, promptEstimate, runAiChecks, type EngineKey } from "@/lib/ai/visibility";
 import { localIdentity } from "@/lib/dataforseo/local";
 import { resolveTarget, type Row } from "@/lib/dataforseo/research";
@@ -94,4 +94,17 @@ export async function runAiVisibilityNow(force: boolean): Promise<Result> {
   const warn = r.errors.length ? ` Some answers failed: ${[...new Set(r.errors)].slice(0, 2).join("; ")}.` : "";
   const bits = [r.checked ? `Checked ${r.checked} question${r.checked > 1 ? "s" : ""} ($${r.cost.toFixed(2)})` : "Nothing needed checking", r.skipped ? `${r.skipped} already checked this week` : "", r.stopped === "time" ? "ran out of time; press again to continue" : ""].filter(Boolean);
   return { ok: true, message: `${bits.join(". ")}.${warn}` };
+}
+
+/** The brand lookup (DataForSEO LLM Mentions for the brand and up to three competitor brands). Skipped while under a week old. */
+export async function refreshBrandLookupNow(): Promise<Result> {
+  const g = await guard();
+  if ("error" in g) return { ok: false, error: String(g.error) };
+  const target = await resolveTarget(g.db, g.client.id);
+  if (!target) return { ok: false, error: "Set the client's website first (connect Search Console, Bing or Business Profile)." };
+  const brands = await brandNamesFor(g.db, g.client.id, target.domain.replace(/^www\./, ""));
+  const r = await refreshBrandLookup({ admin: g.db, clientId: g.client.id, source: "manual" }, target, brands);
+  revalidatePath("/ai-visibility");
+  if (r.error && !r.fetched) return { ok: false, error: r.error };
+  return { ok: true, message: r.fetched ? `Brand lookup updated for ${brands.join(", ")} ($${r.cost.toFixed(2)}).` : "The brand lookup is less than a week old; nothing was fetched." };
 }

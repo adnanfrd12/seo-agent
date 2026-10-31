@@ -9,7 +9,9 @@ import { SpendLine, SpikeAlert, TargetSettings } from "@/components/research/chr
 import { LinkChangeCheck, LinkGapForm, RefreshControls } from "@/components/research/controls";
 import { ResearchTable, type Col } from "@/components/research/research-table";
 import { Tabs } from "@/components/research/tabs";
+import { BarList } from "@/components/charts/bar-list";
 import { fmtInt } from "@/lib/analytics/format";
+import { BrokenLinksCheck } from "./broken-links-check";
 import { detectLinkSpike, estimate, TIER1, TIER2, type LinkChanges } from "@/lib/dataforseo/research";
 import { pointAgo, profileSeries, researchPage } from "@/lib/dataforseo/view";
 
@@ -34,6 +36,34 @@ const REF_COLS: Col[] = [
   { key: "spam", label: "Spam", type: "spam" }, { key: "first_seen", label: "First seen", type: "date" }, { key: "lost", label: "Lost", type: "date" },
 ];
 const SPAM_PRESET = { label: "High spam (≥ 50)", where: [{ key: "spam", op: "gte" as const, value: 50 }] };
+
+/* ---------------------------------------------------------------- links to pages that no longer exist */
+const pathOnly = (u: unknown) => { try { return new URL(String(u)).pathname; } catch { return String(u ?? ""); } };
+const STOP = new Set(["the", "and", "for", "of", "a", "to", "in", "html", "htm", "php", "aspx", "index", "www", "com"]);
+const words = (path: string) => {
+  let p = path;
+  try { p = decodeURIComponent(path); } catch { /* keep as is */ }
+  return new Set(p.toLowerCase().split(/[^a-z0-9]+/).filter((w) => w.length > 1 && !STOP.has(w) && !/^\d+$/.test(w)));
+};
+/** The live page whose path shares most words with the dead one; only when the match is clear. */
+function closestLive(dead: string, live: string[]): string | null {
+  const d = words(pathOnly(dead));
+  if (!d.size) return null;
+  let best: { path: string; score: number } | null = null;
+  for (const p of live) {
+    const w = words(p);
+    const shared = [...d].filter((x) => w.has(x)).length;
+    const score = shared / new Set([...d, ...w]).size;
+    if (shared >= 2 && score >= 0.34 && (!best || score > best.score)) best = { path: p, score };
+  }
+  return best?.path ?? null;
+}
+const BROKEN_COLS: Col[] = [
+  { key: "domain", label: "Referring domain" }, { key: "from", label: "Linking page", type: "url" }, { key: "to", label: "Dead page on your site", type: "url" },
+  { key: "status", label: "Status", type: "int", hint: "HTTP status the dead page answers with" }, { key: "domain_rank", label: "Domain rank", type: "int", hint: "Strength of the linking site (0-1000)" },
+  { key: "kind", label: "Problem", type: "badge", hint: "Missing = the page is gone; blocked = the page exists but refused the link crawler" },
+  { key: "dofollow", label: "Follow", type: "bool" }, { key: "fix", label: "Suggested fix", hint: "A 301 redirect from the dead URL keeps the link's value" },
+];
 
 const named = (items: Named[] | undefined, total: number | null) => (items ?? []).map((x) => ({ label: x.name || "Unknown", value: x.count, detail: total ? `${((x.count / total) * 100).toFixed(0)}%` : undefined }));
 
@@ -96,6 +126,35 @@ export default async function BacklinksPage() {
   };
   const deep = Boolean(lists.backlinks);
   const changes = cache.get<LinkChanges>("link_changes");
+  // links pointing at pages that no longer exist, with the closest live page as the redirect target
+  const broken = cache.get<List>("broken_backlinks");
+  const audit = cache.get<{ rows?: { url: string; status: number | null }[] }>("audit")?.data;
+  const live = [...new Set([
+    ...(audit?.rows ?? []).filter((r) => r.status === 200).map((r) => pathOnly(r.url)),
+    ...((lists.pages?.data.rows ?? []) as Row[]).filter((r) => r.status === 200).map((r) => pathOnly(r.page)),
+    ...((cache.get<Row[]>("relevant_pages")?.data ?? []) as Row[]).map((r) => pathOnly(String(r.page ?? "").startsWith("http") ? r.page : `https://${String(r.page ?? "")}`)),
+  ].filter((p) => p && p !== "/"))];
+  const liveSet = new Set(["/", ...live]);
+  // 401/403/429 on a page we know works means the link crawler was refused (bot protection), not a missing page
+  const brokenAll: Row[] = ((broken?.data.rows ?? []) as Row[]).map((r) => {
+    const path = pathOnly(r.to), st = typeof r.status === "number" ? r.status : null;
+    if (st != null && [401, 403, 429].includes(st) && liveSet.has(path)) {
+      return { ...r, kind: "blocked", fix: `Page works; it answered ${st} to the link crawler. Let crawlers through the firewall / bot protection` };
+    }
+    const guess = r.redirect_to ? pathOnly(r.redirect_to) : closestLive(String(r.to ?? ""), live);
+    return { ...r, kind: "missing", fix: guess ? `301 redirect to ${guess}` : "Redirect to the relevant live page" };
+  });
+  const brokenRows = brokenAll.filter((r) => r.kind === "missing");
+  const blockedRows = brokenAll.filter((r) => r.kind === "blocked");
+  const byDead = new Map<string, { links: number; domains: Set<string> }>();
+  for (const r of brokenRows) {
+    const k = pathOnly(r.to), c = byDead.get(k) ?? { links: 0, domains: new Set<string>() };
+    c.links++;
+    if (r.domain) c.domains.add(String(r.domain));
+    byDead.set(k, c);
+  }
+  const deadPages = [...byDead.entries()].sort((a, b) => b[1].domains.size - a[1].domains.size || b[1].links - a[1].links).slice(0, 8);
+  const guessed = brokenRows.filter((r) => String(r.fix).startsWith("301")).length;
   const dofollowShare = s.backlinks ? ((s.dofollow ?? 0) / s.backlinks) * 100 : null;
   // derived from the stored lists (no extra calls)
   const domRows = (lists.domains?.data.rows ?? []) as Row[];
@@ -206,6 +265,49 @@ export default async function BacklinksPage() {
                 presets={[{ label: "Strong (link rank ≥ 100)", where: [{ key: "rank", op: "gte", value: 100 }] }, SPAM_PRESET]}
                 initialSort={{ key: "detected", dir: "desc" }} csvName={`link-changes-${target.domain}`}
                 note="Lists the strongest links by rank; very low-value links may not be shown. Backlink databases update continuously but not every day, so some days show no change." />)}
+      </section>
+
+      <section className="mt-8 space-y-3" aria-label="Links pointing at pages that no longer exist">
+        <div className="flex flex-wrap items-end justify-between gap-2">
+          <div className="min-w-0">
+            <h2 className="text-base font-semibold">Links pointing at pages that no longer exist{broken ? <span className="ml-2 rounded-md bg-surface-muted px-1.5 py-0.5 text-xs font-medium tabular-nums text-secondary">{fmtInt(brokenRows.length)}</span> : null}</h2>
+            <p className="text-sm text-muted">
+              Other sites still link to these URLs, but they answer with an error, so the link&apos;s value is lost. A 301 redirect to the closest live page recovers it: the easiest link wins there are.
+              {broken ? ` Checked ${broken.fetchedAt.slice(0, 10)} · refreshed weekly.` : " Checked weekly once there is a link profile."}
+            </p>
+          </div>
+          <BrokenLinksCheck canEdit={canEdit} checked={Boolean(broken)} />
+        </div>
+        {broken && blockedRows.length > 0 && (
+          <p role="note" className="rounded-[10px] border border-warn/40 bg-warn/10 p-3 text-sm">
+            <span className="font-medium">{fmtInt(blockedRows.length)} {brokenRows.length ? "more " : ""}link{blockedRows.length === 1 ? "" : "s"} from {fmtInt(new Set(blockedRows.map((r) => r.domain)).size)} sites point at pages that work</span>
+            <span className="text-muted"> ({[...new Set(blockedRows.map((r) => pathOnly(r.to)))].slice(0, 3).join(", ")}) but answered {[...new Set(blockedRows.map((r) => r.status))].join("/")} to DataForSEO&apos;s link crawler. That is usually bot protection or a firewall rule, not a missing page. If search engines got the same answer these links would count for less, so make sure the firewall lets search crawlers through. They are listed in the table as “blocked”.</span>
+          </p>
+        )}
+        {!broken ? null : brokenAll.length === 0 ? (
+          <p className="rounded-[10px] border border-dashed border-border p-4 text-sm text-muted">No backlinks point at missing pages. Nothing to recover.</p>
+        ) : (
+          <>
+            {brokenRows.length === 0 ? (
+              <p className="rounded-[10px] border border-dashed border-border p-4 text-sm text-muted">None of the linked pages is actually missing: every error came from a working page refusing the crawler (above). Nothing needs a redirect today.</p>
+            ) : (
+            <div className={`grid gap-4 ${deadPages.length > 1 ? "lg:grid-cols-[minmax(0,2fr)_minmax(0,3fr)]" : ""}`}>
+              <section className="grid grid-cols-2 gap-3" aria-label="Broken link totals">
+                <KpiCard label="Links to dead pages" source="DFS" format={fmtInt} value={brokenRows.length} previous={null} higherIsBetter={false} hint="Pages that are gone (404, 410, 5xx); crawler-blocked pages are counted separately" />
+                <KpiCard label="Dead pages linked" source="DFS" format={fmtInt} value={byDead.size} previous={null} higherIsBetter={false} />
+                <KpiCard label="Referring domains" source="DFS" format={fmtInt} value={new Set(brokenRows.map((r) => r.domain)).size} previous={null} />
+                <KpiCard label="Redirect target found" source="DFS" format={(n) => (n == null ? "—" : `${fmtInt(n)} of ${fmtInt(brokenRows.length)}`)} value={guessed} previous={null} hint="Dead URLs whose words clearly match a live page" />
+              </section>
+              {deadPages.length > 1 && <BarList title="Dead pages with the most linking sites" valueLabel="Domains · links" items={deadPages.map(([path, v]) => ({ label: path, value: v.domains.size, detail: `${v.links} link${v.links === 1 ? "" : "s"}` }))} />}
+            </div>
+            )}
+            <ResearchTable title={brokenRows.length ? "Links to recover" : "Links that got an error answer"} rows={[...brokenRows, ...blockedRows]} columns={BROKEN_COLS} searchKeys={["domain", "from", "to", "fix"]}
+              ranges={[{ key: "domain_rank", label: "Domain rank" }]} facets={[{ key: "kind", label: "Problem" }, { key: "fix", label: "Suggested fix" }]}
+              presets={[{ label: "Missing pages", where: [{ key: "kind", op: "eq", value: "missing" }] }, { label: "Dofollow", where: [{ key: "dofollow", op: "true" }] }, { label: "Strong sites (rank ≥ 100)", where: [{ key: "domain_rank", op: "gte", value: 100 }] }]}
+              initialSort={{ key: "domain_rank", dir: "desc" }} csvName={`links-to-dead-pages-${target.domain}`}
+              note={`${broken.data.total > brokenAll.length ? `Showing the ${brokenAll.length} strongest of ${fmtInt(broken.data.total)}. ` : ""}Suggested targets are matched on the words in the URL against live pages from the site audit and backlink data; check each before adding the redirect.`} />
+          </>
+        )}
       </section>
 
       <div className="mt-8">

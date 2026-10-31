@@ -38,6 +38,8 @@ async function upsertChunks(
 interface ReportJob {
   name: string;
   run: () => Promise<number>;
+  /** A failure here (e.g. a property without the feature, or a database not yet migrated) does not make the job partial. */
+  optional?: boolean;
 }
 
 /**
@@ -222,6 +224,70 @@ export async function syncGa4(
         return upsertChunks(admin, "ga4_dimension_metrics", [...map.values()], "resource_id,metric_date,dimension,value");
       },
     },
+    // Campaigns, site search and ecommerce items (generic ga4_dimension_metrics rows). Column use:
+    //   campaign    (sessionCampaignName): sessions, users = activeUsers, key_events
+    //   search_term (searchTerm):          event_count = eventCount, users = totalUsers
+    //   item        (itemName):            event_count = itemsViewed, sessions = itemsAddedToCart,
+    //                                      key_events = itemsPurchased, revenue = itemRevenue
+    // Many properties have no site search or ecommerce; they simply write 0 rows.
+    {
+      name: "campaign",
+      optional: true,
+      run: async () => {
+        const rows = await report(["date", "sessionCampaignName"], ["sessions", "activeUsers", "keyEvents"], { maxRows: 100_000 });
+        const map = new Map<string, Record<string, unknown>>();
+        for (const r of rows) {
+          const d = isoDate(dim(r, 0));
+          if (!d || met(r, 0) <= 0) continue;
+          const value = dim(r, 1) || "(not set)";
+          map.set(`${d}|${value}`, {
+            ...base, metric_date: d, dimension: "campaign", value,
+            sessions: met(r, 0), users: met(r, 1), key_events: met(r, 2),
+          });
+        }
+        return upsertChunks(admin, "ga4_dimension_metrics", [...map.values()], "resource_id,metric_date,dimension,value");
+      },
+    },
+    {
+      name: "search_term",
+      optional: true,
+      run: async () => {
+        const rows = await report(["date", "searchTerm"], ["eventCount", "totalUsers"], { maxRows: 100_000 });
+        const map = new Map<string, Record<string, unknown>>();
+        for (const r of rows) {
+          const d = isoDate(dim(r, 0));
+          // events without a search term (every non-search event) come back as "" / "(not set)"
+          const term = dim(r, 1).trim().slice(0, 300);
+          if (!d || !term || term === "(not set)" || met(r, 0) <= 0) continue;
+          const key = `${d}|${term.toLowerCase()}`;
+          const prev = map.get(key);
+          map.set(key, {
+            ...base, metric_date: d, dimension: "search_term", value: (prev?.value as string) ?? term,
+            sessions: 0, key_events: 0,
+            event_count: met(r, 0) + ((prev?.event_count as number) ?? 0), users: met(r, 1) + ((prev?.users as number) ?? 0),
+          });
+        }
+        return upsertChunks(admin, "ga4_dimension_metrics", [...map.values()], "resource_id,metric_date,dimension,value");
+      },
+    },
+    {
+      name: "item",
+      optional: true,
+      run: async () => {
+        const rows = await report(["date", "itemName"], ["itemsViewed", "itemsAddedToCart", "itemsPurchased", "itemRevenue"], { maxRows: 100_000 });
+        const map = new Map<string, Record<string, unknown>>();
+        for (const r of rows) {
+          const d = isoDate(dim(r, 0));
+          const item = dim(r, 1);
+          if (!d || !item || [0, 1, 2, 3].every((i) => met(r, i) === 0)) continue;
+          map.set(`${d}|${item}`, {
+            ...base, metric_date: d, dimension: "item", value: item, users: 0,
+            event_count: met(r, 0), sessions: met(r, 1), key_events: met(r, 2), revenue: Math.max(0, met(r, 3)),
+          });
+        }
+        return upsertChunks(admin, "ga4_dimension_metrics", [...map.values()], "resource_id,metric_date,dimension,value");
+      },
+    },
   ];
 
   const written: Record<string, number> = {};
@@ -235,6 +301,7 @@ export async function syncGa4(
       // rate limited: abandon and retry the whole (idempotent) job later instead of leaving a gap
       if (kind === "rate_limit") throw e;
       if (kind === "auth") authError = e;
+      if (job.optional && kind !== "auth") continue;
       failures[job.name] = (e instanceof Error ? e.message : "failed").slice(0, 300);
       if (authError) break; // no point continuing with a revoked token
     }

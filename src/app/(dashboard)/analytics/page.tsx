@@ -41,6 +41,16 @@ const pick = (t: Totals | undefined, k: string) => (t?.has_data ? toNum(t[k]) : 
 const oneOf = <T extends string>(v: string | undefined, allowed: readonly T[], fallback: T): T =>
   allowed.includes(v as T) ? (v as T) : fallback;
 
+/** A full-width card saying a report has nothing to show (spans both columns of its grid). */
+function EmptyPanel({ title, text }: { title: string; text: string }) {
+  return (
+    <div className="rounded-[10px] border border-border bg-surface px-4 py-5 sm:px-5 lg:col-span-2">
+      <h2 className="text-[15px] font-semibold">{title}</h2>
+      <p className="mt-1 text-sm text-muted">{text}</p>
+    </div>
+  );
+}
+
 export default async function Ga4Page({ searchParams }: { searchParams: Promise<SearchParams> }) {
   const { client } = await getSession();
   if (!client) return null;
@@ -135,8 +145,20 @@ export default async function Ga4Page({ searchParams }: { searchParams: Promise<
     ...(selected && !list.some((x) => x.value === selected) ? [{ value: selected, label: selected }] : []),
     ...list.map((x) => ({ value: x.value, label: x.value })),
   ];
+  const organic = channel === "Organic Search";
   const filters = (
     <div className="mb-5 flex flex-wrap items-end gap-3">
+      <div className="inline-flex rounded-lg border border-border bg-surface p-0.5 text-sm" role="group" aria-label="Traffic preset">
+        {([["All channels", null], ["Organic only", "Organic Search"]] as const).map(([label, value]) => {
+          const active = value ? organic : !channel;
+          return (
+            <Link key={label} href={withParams(PATH, sp, { channel: value, ts_page: null })} aria-current={active ? "true" : undefined}
+              className={`rounded-md px-3 py-1.5 font-medium ${active ? "bg-accent text-accent-foreground" : "hover:bg-surface-muted"}`}>
+              {label}
+            </Link>
+          );
+        })}
+      </div>
       {propertyOptions && (
         <FilterSelect label="Property" name="property" value={scope.ga4Pick?.id ?? ""} path={PATH} sp={sp}
           resetKeys={["ts_page", "tp_page"]} options={propertyOptions} />
@@ -183,11 +205,28 @@ export default async function Ga4Page({ searchParams }: { searchParams: Promise<
   const kpis = all;
 
   // extra breakdowns (cities, new vs returning); absent until the latest migration is applied and a sync has run
-  const [cityRes, userTypeRes, eventsRes] = await Promise.all([
+  const [cityRes, userTypeRes, eventsRes, campaignRes, termRes, itemRes] = await Promise.all([
     supabase.rpc("get_ga4_dimension", { ...args, p_dim: "city", p_limit: 15 }),
     supabase.rpc("get_ga4_dimension", { ...args, p_dim: "user_type", p_limit: 5 }),
     supabase.rpc("get_ga4_events", args),
+    // campaigns / site search / ecommerce items (all traffic); absent until migration 22 is applied
+    supabase.rpc("get_ga4_dimension_totals", { ...args, p_dim: "campaign", p_limit: 50 }),
+    supabase.rpc("get_ga4_dimension_totals", { ...args, p_dim: "search_term", p_limit: 100 }),
+    supabase.rpc("get_ga4_dimension_totals", { ...args, p_dim: "item", p_limit: 100 }),
   ]);
+  type DimTotal = { value: string; sessions: number; users: number; key_events: number; event_count: number; revenue: number };
+  const dimRows = (r: { data: unknown; error: unknown }) => (r.error ? null : ((r.data ?? []) as DimTotal[]));
+  const campaignsRaw = dimRows(campaignRes);
+  const campaigns = (campaignsRaw ?? []).map((c) => ({
+    campaign: c.value || "(not set)", sessions: Number(c.sessions), users: Number(c.users), key_events: Number(c.key_events),
+    rate: Number(c.sessions) > 0 ? Number(((Number(c.key_events) / Number(c.sessions)) * 100).toFixed(2)) : null,
+  }));
+  const onlyBuiltIn = campaigns.length > 0 && campaigns.every((c) => /^\(.*\)$/.test(c.campaign));
+  const terms = (dimRows(termRes) ?? []).map((x) => ({ term: x.value, count: Number(x.event_count), users: Number(x.users) }));
+  // item rows store: event_count = items viewed, sessions = added to cart, key_events = purchased, revenue = item revenue
+  const items = (dimRows(itemRes) ?? []).map((x) => ({
+    item: x.value, viewed: Number(x.event_count), carted: Number(x.sessions), purchased: Number(x.key_events), revenue: Number(x.revenue),
+  }));
   const totalEvents = pick(stats.current, "event_count");
   const events = (eventsRes.error ? [] : ((eventsRes.data ?? []) as { value: string; event_count: number; users: number; key_events: number; revenue: number }[]))
     .map((e) => ({
@@ -299,6 +338,61 @@ export default async function Ga4Page({ searchParams }: { searchParams: Promise<
           <p className="rounded-[10px] border border-dashed border-border p-4 text-sm text-muted">Events appear after the next GA4 sync.</p>
         )}
       </section>
+
+      {campaignsRaw === null ? (
+        <p className="mt-6 rounded-[10px] border border-dashed border-border p-4 text-sm text-muted">
+          Campaigns, site search and ecommerce items need the latest database update (migration 20261031000022) and one GA4 sync.
+        </p>
+      ) : (
+        <>
+          <section aria-label="Campaigns" className="mt-6 grid grid-cols-1 gap-4 lg:grid-cols-2">
+            {campaigns.length > 0 ? (
+              <>
+                <BarList title={`Sessions by campaign${filtered ? " · all traffic" : ""}`} valueLabel="Sessions · key-event rate"
+                  items={campaigns.slice(0, 10).map((c) => ({ label: c.campaign, value: c.sessions, detail: c.rate != null ? `${c.rate}%` : undefined }))} />
+                <ResearchTable title="Campaigns" rows={campaigns} columns={[
+                  { key: "campaign", label: "Campaign", hint: "GA4 session campaign. Values in brackets, like (organic) or (direct), are GA4 labels for visits without a tagged campaign." },
+                  { key: "sessions", label: "Sessions", type: "int" }, { key: "users", label: "Active users", type: "int", hint: "Summed per day." },
+                  { key: "key_events", label: "Key events", type: "int" }, { key: "rate", label: "Key-event rate %", type: "dec", hint: "Key events per 100 sessions." },
+                ]} searchKeys={["campaign"]} initialSort={{ key: "sessions", dir: "desc" }} pageSize={8}
+                  csvName={`ga4-campaigns-${range.start}-${range.end}`}
+                  note={onlyBuiltIn ? "Only GA4 built-in labels appear: no visit arrived through a tagged (utm_campaign) campaign in this period." : undefined} />
+              </>
+            ) : (
+              <EmptyPanel title="Campaigns" text="This GA4 property records no campaigns in this period." />
+            )}
+          </section>
+
+          <section aria-label="Site search" className="mt-4 grid grid-cols-1 gap-4 lg:grid-cols-2">
+            {terms.length > 0 ? (
+              <>
+                <BarList title="Top site search terms" valueLabel="Searches · all traffic" items={terms.slice(0, 10).map((x) => ({ label: x.term, value: x.count }))} />
+                <ResearchTable title="Site search terms" rows={terms} columns={[
+                  { key: "term", label: "Search term", hint: "What visitors typed into the website search box (GA4 searchTerm)." },
+                  { key: "count", label: "Event count", type: "int" }, { key: "users", label: "Total users", type: "int", hint: "Summed per day." },
+                ]} searchKeys={["term"]} initialSort={{ key: "count", dir: "desc" }} pageSize={8} csvName={`ga4-site-search-${range.start}-${range.end}`} />
+              </>
+            ) : (
+              <EmptyPanel title="Site search terms" text="This GA4 property records no site search terms in this period. They appear when enhanced measurement site search is on and visitors use the search box." />
+            )}
+          </section>
+
+          <section aria-label="Ecommerce items" className="mt-4 grid grid-cols-1 gap-4 lg:grid-cols-2">
+            {items.length > 0 ? (
+              <>
+                <BarList title="Most viewed items" valueLabel="Items viewed · purchased" items={items.slice(0, 10).map((x) => ({ label: x.item, value: x.viewed, detail: `${x.purchased} sold` }))} />
+                <ResearchTable title="Ecommerce items" rows={items} columns={[
+                  { key: "item", label: "Item name" }, { key: "viewed", label: "Items viewed", type: "int" },
+                  { key: "carted", label: "Added to cart", type: "int" }, { key: "purchased", label: "Purchased", type: "int" },
+                  { key: "revenue", label: "Item revenue", type: "usd" },
+                ]} searchKeys={["item"]} initialSort={{ key: "viewed", dir: "desc" }} pageSize={8} csvName={`ga4-items-${range.start}-${range.end}`} />
+              </>
+            ) : (
+              <EmptyPanel title="Ecommerce items" text="This GA4 property records no ecommerce items in this period (no view_item, add_to_cart or purchase events carrying items)." />
+            )}
+          </section>
+        </>
+      )}
 
       <div className="mt-6 space-y-6">
         <DataTable<SourceRow>

@@ -9,11 +9,12 @@ import { KpiCard } from "@/components/dashboard/kpi-card";
 import { EmptyState } from "@/components/dashboard/page-header";
 import { TabHeader } from "@/components/dashboard/tab-header";
 import { SpendLine } from "@/components/research/chrome";
-import { AuditProgress, AuditRun, LighthouseRun } from "@/components/research/audit-controls";
+import { AuditProgress, AuditRun, CruxRefresh, LighthouseRun } from "@/components/research/audit-controls";
+import { CruxPanel } from "@/components/charts/tracking-extra";
 import { ResearchTable } from "@/components/research/research-table";
 import { fmtInt } from "@/lib/analytics/format";
-import { loadAudit, pollAudit, type AuditIssue, type AuditPage, type Severity } from "@/lib/dataforseo/audit";
-import { loadLighthouse, type LhRow, type LhRun } from "@/lib/dataforseo/lighthouse";
+import { loadAudit, loadAuditRender, pollAudit, RENDER_MODES, type AuditIssue, type AuditPage, type Severity } from "@/lib/dataforseo/audit";
+import { loadCrux, loadLighthouse, type LhRow, type LhRun } from "@/lib/dataforseo/lighthouse";
 import { ScoreRing } from "@/components/charts/score-ring";
 import { Tabs } from "@/components/research/tabs";
 import { researchPage } from "@/lib/dataforseo/view";
@@ -221,7 +222,8 @@ export default async function SiteAuditPage() {
 
   const supabase = await createClient();
   const { result, task } = await loadAudit(supabase, client.id);
-  const lighthouse = await loadLighthouse(supabase, client.id);
+  const [lighthouse, crux, renderMode] = await Promise.all([loadLighthouse(supabase, client.id), loadCrux(supabase, client.id), loadAuditRender(createAdminClient(), client.id)]);
+  const cruxPanel = <CruxPanel run={crux.good} latest={crux.latest} right={<CruxRefresh canEdit={canEdit} />} />;
   const crawling = task?.data.status === "crawling";
   // a viewer arriving mid-crawl (or after it finished) collects the result right away instead of waiting for the daily job
   if (crawling && canEdit) after(async () => { try { await pollAudit(createAdminClient(), client.id); } catch { /* shown on the next visit */ } });
@@ -279,10 +281,10 @@ export default async function SiteAuditPage() {
 
       {crawling && <div className="mb-5"><AuditProgress crawled={task!.data.crawled ?? 0} max={task!.data.maxPages} /></div>}
       {failed && !crawling && <p role="alert" className="mb-5 rounded-[10px] border border-negative/40 bg-negative/10 p-3 text-sm text-negative">The last audit didn&apos;t complete: {failed}</p>}
-      <div className="mb-6"><AuditRun canEdit={canEdit} busy={crawling} hasResult={Boolean(r)} /></div>
+      <div className="mb-6"><AuditRun canEdit={canEdit} busy={crawling} hasResult={Boolean(r)} mode={renderMode} /></div>
 
       {!r ? (
-        !crawling && <><EmptyState title={`No audit for ${cache.target.domain} yet`} body="Nothing is crawled automatically when you open this page. Run the first audit above; the result is stored and refreshed weekly in the background." /><LighthouseSection runs={lighthouse} canEdit={canEdit} /></>
+        !crawling && <><EmptyState title={`No audit for ${cache.target.domain} yet`} body="Nothing is crawled automatically when you open this page. Run the first audit above; the result is stored and refreshed weekly in the background." /><LighthouseSection runs={lighthouse} canEdit={canEdit} />{cruxPanel}</>
       ) : (
         <>
           <Highlights items={picks.slice(0, 4)} stableNote="Nothing notable in this audit." />
@@ -294,8 +296,9 @@ export default async function SiteAuditPage() {
             <KpiCard label="Warnings" source="DFS" format={fmtInt} value={warnings} previous={prev?.warnings ?? null} higherIsBetter={false} />
             <KpiCard label="Healthy pages" source="DFS" format={(n) => (n === null ? "—" : `${fmtInt(n)} of ${fmtInt(r.pages)}`)} value={r.cleanPages} previous={null} hint="Pages with no errors or warnings." />
           </section>
-          <p className="mt-2 text-xs text-muted">Crawled {r.finishedAt.slice(0, 10)}{prev ? ` · compared with ${prev.date}` : ""}</p>
+          <p className="mt-2 text-xs text-muted">Crawled {r.finishedAt.slice(0, 10)} · crawl mode: <span className="font-medium text-foreground">{RENDER_MODES[r.render ?? "html"].label}</span>{r.render && r.render !== "html" ? " (JavaScript was run on each page)" : " (JavaScript not run)"}{prev ? ` · compared with ${prev.date}` : ""}</p>
           <LighthouseSection runs={lighthouse} canEdit={canEdit} />
+          {cruxPanel}
 
           <section aria-label="Audit charts" className="mt-6 space-y-4">
             <div className="grid gap-4 lg:grid-cols-3">

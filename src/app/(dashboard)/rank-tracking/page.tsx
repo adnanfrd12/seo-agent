@@ -8,15 +8,26 @@ import { EmptyState } from "@/components/dashboard/page-header";
 import { TabHeader } from "@/components/dashboard/tab-header";
 import { SpendLine } from "@/components/research/chrome";
 import { ResearchTable } from "@/components/research/research-table";
-import { RankControls, RemoveButton } from "@/components/research/tracking-controls";
+import { PinButton, RankControls, RankSchedulePicker, RemoveButton } from "@/components/research/tracking-controls";
 import { fmtInt } from "@/lib/analytics/format";
-import { shiftDays, todayIn } from "@/lib/analytics/range";
-import { loadRanks, movers, rankEstimate, RANK_DEPTH, RANK_EVERY_DAYS, type RankRow } from "@/lib/dataforseo/rank";
+import { localIdentity } from "@/lib/dataforseo/local";
+import { googleSearchUrl, loadRanks, loadRankSettings, movers, nextRankCheck, rankDueCutoff, rankEstimate, rankMonthlyCost, RANK_DEPTH, RANK_SCHEDULES, type RankRow } from "@/lib/dataforseo/rank";
 import { researchPage } from "@/lib/dataforseo/view";
 import type { Highlight } from "@/lib/overview/highlights";
+import { createAdminClient } from "@/lib/supabase/admin";
 import { createClient } from "@/lib/supabase/server";
 
 type Row = Record<string, unknown>;
+
+/** Due keywords and each keyword's next automatic check, from the client's schedule (kept out of the component: it reads the clock). */
+function schedulePlan(rows: RankRow[], days: number) {
+  const now = Date.now();
+  const cutoff = rankDueCutoff(days, now);
+  const next = new Map(rows.map((r) => [r.id, nextRankCheck(r.checkedOn, days, now)]));
+  const soonest = [...next.values()].sort()[0] ?? null;
+  return { due: rows.filter((r) => !r.checkedOn || r.checkedOn <= cutoff).length, next, soonest, dueThen: soonest ? [...next.values()].filter((t) => t === soonest).length : 0 };
+}
+const when = (iso: string) => new Date(iso).toLocaleString("en-US", { weekday: "short", month: "short", day: "numeric", hour: "2-digit", minute: "2-digit", timeZone: "UTC", timeZoneName: "short" });
 
 export default async function RankTrackingPage() {
   const page = await researchPage();
@@ -24,7 +35,9 @@ export default async function RankTrackingPage() {
   const { client, canEdit, configured, cache, budget } = page;
   const header = <TabHeader source="dfs" title="Rank Tracking" description="Google positions for your keywords on desktop and mobile, and what else is on each results page." guide={[
     { term: "Position", text: `Place among Google's organic results (1 = first). "Not in top ${RANK_DEPTH}" means it wasn't found.` },
-    { term: "Change", text: "Movement since the previous weekly check." },
+    { term: "Change", text: "Movement since the previous check." },
+    { term: "Next check", text: "When the daily job (07:30 UTC) next re-checks the keyword, from the chosen schedule. Runs for clients opened in the last 14 days with automatic refresh on, inside the daily spend cap." },
+    { term: "Pinned", text: "Keywords an owner pinned: they are listed first and shown as cards at the top." },
     { term: "Map pack / AI Overview", text: "Whether Google showed a map pack or AI Overview for the search, and whether the business is in it." },
     { term: "On the results page", text: "The extras Google showed for the search (map pack, AI Overview, People also ask, images, ads…). Each takes clicks away from the plain blue links." },
   ]} />;
@@ -32,7 +45,8 @@ export default async function RankTrackingPage() {
   if (!cache.target) return <>{header}<EmptyState title="No website to track yet" body="Connect Bing, Search Console or Business Profile for this client so the website can be detected, or ask an owner or admin to set it." action={{ href: "/integrations", label: "Open Integrations" }} /></>;
 
   const supabase = await createClient();
-  const { ok, rows, lastChecked } = await loadRanks(supabase, client.id);
+  const admin = createAdminClient();
+  const [{ ok, rows, lastChecked }, settings, place] = await Promise.all([loadRanks(supabase, client.id), loadRankSettings(admin, client.id), localIdentity(admin, client.id)]);
   if (!ok) return <>{header}<EmptyState title="Rank tracking needs one database update" body="Apply the latest database migration (20261030000020_rank_tracking_ai_visibility.sql) in the Supabase SQL editor, then reload this page." /></>;
 
   const tracked = new Set(rows.map((r) => r.keyword));
@@ -40,8 +54,11 @@ export default async function RankTrackingPage() {
   const suggestions = ranked.filter((k) => typeof k.keyword === "string" && !tracked.has(k.keyword as string) && Number(k.position) >= 4 && Number(k.position) <= 30)
     .sort((a, b) => Number(b.volume ?? 0) - Number(a.volume ?? 0)).slice(0, 8).map((k) => k.keyword as string);
 
-  const cutoff = shiftDays(todayIn("UTC"), -(RANK_EVERY_DAYS - 1));
-  const due = rows.filter((r) => !r.checkedOn || r.checkedOn <= cutoff).length;
+  const plan = schedulePlan(rows, settings.days);
+  const due = plan.due;
+  const pinned = new Set(settings.pinned.filter((id) => rows.some((r) => r.id === id)));
+  const liveUrl = (r: RankRow) => r.checkUrl ?? googleSearchUrl(r.keyword, r.serp?.searched_from && r.serp.searched_from !== "country" ? place : null);
+  const monthly = { daily: rankMonthlyCost(rows.length, RANK_SCHEDULES.daily), weekly: rankMonthlyCost(rows.length, RANK_SCHEDULES.weekly), monthly: rankMonthlyCost(rows.length, RANK_SCHEDULES.monthly) };
   const checkedRows = rows.filter((r) => r.checkedOn);
   const found = checkedRows.filter((r) => r.position !== null);
   const avg = found.length ? found.reduce((a, r) => a + (r.position as number), 0) / found.length : null;
@@ -76,8 +93,11 @@ export default async function RankTrackingPage() {
   const prevPoint = series.length >= 2 ? series[series.length - 2] : null;
 
   const featureName = (f: string) => f.replace(/_/g, " ");
-  const tableRows: Row[] = rows.map((r: RankRow) => ({
-    ...r, serp: undefined, history: undefined, top: undefined,
+  // pinned keywords first, then by position (not found last)
+  const ordered = [...rows].sort((a, b) => Number(pinned.has(b.id)) - Number(pinned.has(a.id)) || (a.position ?? 1e9) - (b.position ?? 1e9));
+  const tableRows: Row[] = ordered.map((r: RankRow) => ({
+    ...r, serp: undefined, history: undefined, top: undefined, checkUrl: undefined,
+    pinned: pinned.has(r.id) ? "★ pinned" : null, next_check: plan.next.get(r.id)?.slice(0, 10) ?? null, google: liveUrl(r),
     features: r.serp?.features.map(featureName).join(", ") ?? null,
     in_pack: r.serp ? (r.pack ? `#${r.pack}` : r.serp.local_pack.length ? "Not in pack" : "No map pack") : null,
     in_ai: r.serp ? (r.serp.ai_overview.length === 0 ? "No AI Overview" : r.serp.ai_overview.some((a) => (a.domain ?? "").replace(/^www\./, "").toLowerCase().endsWith(self)) ? "Cited" : "Not cited") : null,
@@ -133,7 +153,21 @@ export default async function RankTrackingPage() {
   return (
     <>
       {header}
-      <p className="mb-5 text-sm"><span className="font-semibold">{cache.target.domain}</span><span className="text-muted"> · {rows.length} keyword/device pairs{lastChecked ? ` · checked ${lastChecked}` : ""} · refreshes weekly</span></p>
+      <p className="mb-5 text-sm"><span className="font-semibold">{cache.target.domain}</span><span className="text-muted"> · {rows.length} keyword/device pairs{lastChecked ? ` · checked ${lastChecked}` : ""} · refreshes {settings.schedule}</span></p>
+
+      {rows.length > 0 && (
+        <section aria-label="Check schedule" className="mb-6 grid gap-4 rounded-[10px] border border-border bg-surface p-4 lg:grid-cols-[minmax(0,1fr)_minmax(0,2fr)]">
+          <div className="min-w-0">
+            <p className="text-xs font-semibold uppercase tracking-wide text-muted">Next automatic check</p>
+            <p className="mt-1 text-lg font-semibold tabular-nums">{plan.soonest ? when(plan.soonest) : "—"}</p>
+            <p className="mt-1 text-xs text-muted">
+              {plan.dueThen} of {rows.length} keyword{rows.length === 1 ? "" : "s"} due then · {settings.schedule} schedule · the daily job runs at 07:30 UTC for clients opened in the last 14 days, inside the daily spend cap
+              {cache.target.auto_refresh === false ? ". Automatic refresh is off for this client, so only “Check now” runs." : "."}
+            </p>
+          </div>
+          <RankSchedulePicker canEdit={canEdit} schedule={settings.schedule} monthly={monthly} count={rows.length} />
+        </section>
+      )}
 
       {rows.length === 0 ? <EmptyState title="No keywords tracked yet" body="Keywords are added automatically in the next daily run, or add your own below." /> : checkedRows.length === 0 ? (
         <p className="rounded-[10px] border border-dashed border-border p-6 text-sm text-muted">Keywords added. Their first positions arrive with the next daily run.</p>
@@ -151,6 +185,26 @@ export default async function RankTrackingPage() {
             Since the previous check: <span className="text-positive">{improved} improved</span> · <span className="text-negative">{declined} declined</span> · {unchanged} unchanged
             {deviceAvg.map((d) => ` · ${d.device} average ${d.avg == null ? "—" : `#${d.avg.toFixed(1)}`} (${d.n} keyword${d.n === 1 ? "" : "s"})`).join("")}
           </p>
+          {pinned.size > 0 && (
+            <section aria-label="Pinned keywords" className="mt-6">
+              <h2 className="mb-2 text-sm font-semibold">Pinned keywords</h2>
+              <ul className="grid gap-3 grid-cols-[repeat(auto-fit,minmax(min(100%,15rem),1fr))]">
+                {ordered.filter((r) => pinned.has(r.id)).map((r) => (
+                  <li key={r.id} className="min-w-0 rounded-[10px] border border-border bg-surface p-4">
+                    <div className="flex items-start justify-between gap-2">
+                      <p className="min-w-0 truncate text-sm font-medium" title={r.keyword}>★ {r.keyword}</p>
+                      {canEdit && <PinButton id={r.id} label={r.keyword} pinned />}
+                    </div>
+                    <p className="mt-1 text-2xl font-semibold tabular-nums">{r.position ?? <span className="text-base font-medium text-muted">Not in top {RANK_DEPTH}</span>}
+                      {r.change ? <span className={`ml-2 text-sm ${r.change > 0 ? "text-positive" : "text-negative"}`}>{r.change > 0 ? "▲" : "▼"} {Math.abs(r.change)}</span> : null}
+                    </p>
+                    <p className="mt-1 text-xs text-muted">{r.device}{r.pack ? ` · map pack #${r.pack}` : ""} · next check {plan.next.get(r.id)?.slice(0, 10) ?? "—"}</p>
+                    <a href={liveUrl(r)} target="_blank" rel="noopener noreferrer" className="mt-2 inline-block text-xs underline decoration-border-strong underline-offset-2 hover:decoration-foreground">Open the live Google results ↗</a>
+                  </li>
+                ))}
+              </ul>
+            </section>
+          )}
           {picks.length > 0 && <div className="mt-6"><Highlights items={picks.slice(0, 3)} /></div>}
           <div className={`mt-6 grid gap-4 ${series.length >= 2 ? "lg:grid-cols-3" : "md:grid-cols-2"}`}>
             {distChart}
@@ -170,8 +224,10 @@ export default async function RankTrackingPage() {
           )}
 
           <div className="mt-6">
-            <ResearchTable title="Tracked keywords" rows={tableRows} searchKeys={["keyword", "url"]} initialSort={{ key: "position", dir: "asc" }} csvName={`rankings-${cache.target.domain}`}
+            <ResearchTable title="Tracked keywords" rows={tableRows} searchKeys={["keyword", "url"]} csvName={`rankings-${cache.target.domain}`}
+              note={`Pinned keywords are listed first. “Live Google page” opens the same search on Google${rows.some((r) => !r.checkUrl) ? " (for checks made before the link was recorded, it is rebuilt from the keyword and the search location)" : ""}.`}
               columns={[
+                { key: "pinned", label: "Pin", type: "badge" },
                 { key: "keyword", label: "Keyword" }, { key: "position", label: "Position", type: "int", hint: `Place in Google's organic results; empty = not in the top ${RANK_DEPTH}` },
                 { key: "previous", label: "Change", type: "change", hint: "Movement since the previous check" }, { key: "best", label: "Best", type: "int" },
                 { key: "url", label: "Ranking page", type: "url" }, { key: "device", label: "Device", type: "badge" },
@@ -179,9 +235,11 @@ export default async function RankTrackingPage() {
                 { key: "cpc", label: "CPC", type: "usd", hint: "Average cost per click in Google Ads" }, { key: "intent", label: "Intent", type: "badge" },
                 { key: "features", label: "On the results page", hint: "SERP features Google showed for this search" }, { key: "in_pack", label: "Map pack", type: "badge", hint: "Place in Google's map pack (the 3 businesses on the map)" },
                 { key: "in_ai", label: "AI Overview", type: "badge" }, { key: "checkedOn", label: "Checked", type: "date" },
+                { key: "next_check", label: "Next check", type: "date", hint: "When the automatic job next re-checks it (UTC date)" },
+                { key: "google", label: "Live Google page", type: "url", hint: "The same search on Google, from the same location" },
               ]}
               ranges={[{ key: "position", label: "Position" }, { key: "best", label: "Best" }, { key: "volume", label: "Volume" }, { key: "difficulty", label: "KD" }]} facets={[{ key: "device", label: "Device" }, { key: "intent", label: "Intent" }, { key: "in_pack", label: "Map pack" }, { key: "in_ai", label: "AI Overview" }]}
-              presets={[{ label: "Top 3", where: [{ key: "position", op: "lte", value: 3 }] }, { label: "Top 10", where: [{ key: "position", op: "lte", value: 10 }] }, { label: "Page 2-3 (11-30)", where: [{ key: "position", op: "gte", value: 11 }] }, { label: "Improved", where: [{ key: "change", op: "gte", value: 1 }] }, { label: "Declined", where: [{ key: "change", op: "lte", value: -1 }] }]} />
+              presets={[...(pinned.size ? [{ label: `Pinned (${pinned.size})`, where: [{ key: "pinned", op: "eq" as const, value: "★ pinned" }] }] : []), { label: "Top 3", where: [{ key: "position", op: "lte", value: 3 }] }, { label: "Top 10", where: [{ key: "position", op: "lte", value: 10 }] }, { label: "Page 2-3 (11-30)", where: [{ key: "position", op: "gte", value: 11 }] }, { label: "Improved", where: [{ key: "change", op: "gte", value: 1 }] }, { label: "Declined", where: [{ key: "change", op: "lte", value: -1 }] }]} />
           </div>
 
           {serpRows.length > 0 && (
@@ -209,7 +267,7 @@ export default async function RankTrackingPage() {
           <summary className="cursor-pointer text-sm font-medium">Manage tracked keywords <span className="text-muted">({rows.length})</span></summary>
           <div className="mt-3"><RankControls canEdit={canEdit} count={rows.length} due={due} suggestions={suggestions} estimate={`$${rankEstimate(due || rows.length).toFixed(2)}`} /></div>
           <ul className="mt-3 flex flex-wrap gap-2 text-sm">
-            {rows.map((r) => <li key={r.id} className="inline-flex items-center gap-1 rounded-full border border-border py-0.5 pl-3 pr-1">{r.keyword}<span className="text-xs text-muted">({r.device})</span><RemoveButton kind="rank" id={r.id} label={r.keyword} /></li>)}
+            {ordered.map((r) => <li key={r.id} className="inline-flex items-center gap-1 rounded-full border border-border py-0.5 pl-3 pr-1">{r.keyword}<span className="text-xs text-muted">({r.device})</span><PinButton id={r.id} label={r.keyword} pinned={pinned.has(r.id)} /><RemoveButton kind="rank" id={r.id} label={r.keyword} /></li>)}
           </ul>
         </details>
       )}

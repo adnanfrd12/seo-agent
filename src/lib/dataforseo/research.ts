@@ -134,6 +134,15 @@ export const SPECS = {
     body: (t) => ({ target: t.domain, mode: "as_is", limit: 300, filters: ["is_lost", "=", true], order_by: ["rank,desc"] }),
     shape: (r) => ({ total: num(r?.total_count) ?? 0, rows: arr(r?.items).map(backlinkRow) }),
   },
+  // backlinks whose target page on our site answers 4xx/5xx: links worth recovering with a redirect (weekly, research job)
+  broken_backlinks: {
+    key: "broken_backlinks", tier: 2, ttlDays: 7, est: 0.03, path: "/backlinks/backlinks/live",
+    body: (t) => ({ target: t.domain, mode: "as_is", limit: 300, filters: ["is_broken", "=", true], order_by: ["rank,desc"] }),
+    shape: (r) => ({
+      total: num(r?.total_count) ?? 0,
+      rows: arr(r?.items).map((i) => ({ ...backlinkRow(i), status: num(i.url_to_status_code), redirect_to: str(i.url_to_redirect_target) })),
+    }),
+  },
   referring_domains: {
     key: "referring_domains", tier: 2, ttlDays: 14, est: 0.06, path: "/backlinks/referring_domains/live",
     body: (t) => ({ target: t.domain, limit: 1000, order_by: ["rank,desc"] }),

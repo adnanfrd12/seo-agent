@@ -1,4 +1,4 @@
-import { Columns } from "@/components/charts/ai-charts";
+import { FillColumns } from "@/components/charts/research-charts";
 import { BarList } from "@/components/charts/bar-list";
 import { DivergingBars, Fill } from "@/components/charts/ops-charts";
 import { TabHeader } from "@/components/dashboard/tab-header";
@@ -18,6 +18,8 @@ const s = (v: unknown) => (v == null ? "—" : String(v));
 const n = (v: unknown) => toNum(v);
 const url = (u: unknown) => { try { const x = new URL(String(u)); return `${x.host}${x.pathname}`; } catch { return s(u); } };
 const clampInt = (v: string | undefined, d: number, lo: number, hi: number) => { const x = Number(v); return Number.isFinite(x) ? Math.min(hi, Math.max(lo, Math.round(x))) : d; };
+
+const MUTED = "color-mix(in oklab, var(--series) 45%, var(--surface))";
 
 export default async function OpportunitiesPage({ searchParams }: { searchParams: Promise<SearchParams> }) {
   const { client } = await getSession();
@@ -48,7 +50,7 @@ export default async function OpportunitiesPage({ searchParams }: { searchParams
   ]) : [];
 
   return (
-    <div className="mx-auto max-w-6xl space-y-8">
+    <div className="space-y-8">
       <TabHeader source={null} eyebrow="Search Console" title="SEO Opportunities" description="Deterministic Search Console analysis: current period vs the equal-length period before it, Web search, rates re-weighted from totals." guide={[
   { term: "Quick wins", text: "Keywords already on page one or two that get fewer clicks than they could. Improving the title, description and content is the cheapest traffic gain." },
   { term: "Losing positions", text: "Keywords whose average position got worse versus the previous period." },
@@ -70,11 +72,11 @@ export default async function OpportunitiesPage({ searchParams }: { searchParams
       ) : (
         <>
           <section aria-label="Opportunity charts" className="space-y-4">
-            <Columns title="Opportunities found" sub={`${range.start} → ${range.end} vs the period before, above the thresholds`} valueLabel="Count" bins={[
-              { label: "Quick wins", value: o.quick_wins.length, highlight: true }, { label: "Moving up", value: o.improving_keywords.length }, { label: "Losing positions", value: o.declining_keywords.length },
-              { label: "Decaying pages", value: o.decaying_pages.length }, { label: "New queries", value: o.new_queries.length }, { label: "Cannibalized", value: o.cannibalization.length },
-            ]} />
-            <div className="grid gap-4 lg:grid-cols-2">
+            <div className="grid gap-4 lg:grid-cols-2 2xl:grid-cols-3">
+            <div className="flex min-w-0 flex-col lg:col-span-2 2xl:col-span-1 [&>section]:flex-1"><FillColumns title="Opportunities found" sub={`${range.start} → ${range.end} vs the period before, above the thresholds`} valueLabel="Count" empty="No opportunities above the thresholds." bins={[
+              { label: "Quick wins", value: o.quick_wins.length, color: "var(--series)" }, { label: "Moving up", value: o.improving_keywords.length, color: MUTED }, { label: "Losing positions", value: o.declining_keywords.length, color: MUTED },
+              { label: "Decaying pages", value: o.decaying_pages.length, color: MUTED }, { label: "New queries", value: o.new_queries.length, color: MUTED }, { label: "Cannibalized", value: o.cannibalization.length, color: MUTED },
+            ]} /></div>
               <Fill><BarList title="Quick-win potential" valueLabel="Score · position" emptyText="No quick wins above the thresholds."
                 items={o.quick_wins.slice(0, 8).map((x) => ({ label: s(x.query), value: Number((n(x.score) ?? 0).toFixed(1)), detail: `#${fmtDecimal(n(x.position))}` }))} /></Fill>
               <Fill><DivergingBars title="Position changes" sub="Positions gained (right) or lost (left) vs the previous period" format="dec" valueLabel="Positions" rows={moves} empty="No keyword moved beyond the threshold." /></Fill>

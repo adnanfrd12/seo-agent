@@ -47,7 +47,7 @@ export default async function HistoryPage({ searchParams }: { searchParams: Prom
   ]) : [];
 
   return (
-    <div className="mx-auto max-w-6xl space-y-6">
+    <div className="space-y-6">
       <TabHeader source={null} eyebrow="Reporting" title="Historical Reports" description={`Complete months from ${monthLabel(firstM)} to ${monthLabel(last)}. History starts when each source was connected (GA4 and Search Console import 90 days at connection).`} guide={[
   { term: "Complete months", text: "Only full calendar months are shown, so months are comparable." },
   { term: "History starts at connection", text: "Each source's history begins when it was connected; the earliest month can be partial." },

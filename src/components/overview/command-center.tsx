@@ -137,6 +137,16 @@ export function Hero({ clientName, rangeLabel, growth, status, comp, unseenAlert
 /* ------------------------------------------------------------------ KPI band */
 const v = (c: Compared | undefined | null, k: string, w: "current" | "previous" | "mom" | "yoy" = "current"): Num => (c?.[w]?.has_data ? toNum(c[w][k]) : null);
 
+/** Column counts per tile count, so every row is full: wide screens get one dense row instead of a half-empty second one. */
+const KPI_COLS: Record<number, string> = {
+  3: "sm:grid-cols-3",
+  4: "lg:grid-cols-4",
+  5: "md:grid-cols-3 xl:grid-cols-5",
+  6: "md:grid-cols-3 xl:grid-cols-6",
+  7: "lg:grid-cols-4 2xl:grid-cols-7",
+  8: "lg:grid-cols-4 2xl:grid-cols-8",
+};
+
 export function KpiBand({ d }: { d: ReportData }) {
   type Tile = { label: string; source: string; c: Compared | undefined | null; k: string; format: (n: Num) => string; lower?: boolean; hint?: string };
   const tiles: Tile[] = [];
@@ -154,7 +164,7 @@ export function KpiBand({ d }: { d: ReportData }) {
   if (d.bing?.totals.current?.has_data) tiles.push({ label: "Bing clicks", source: "Bing Webmaster", c: d.bing.totals, k: "clicks", format: fmtInt });
   if (tiles.length === 0) return null;
   return (
-    <section aria-label="Key metrics" className={cn("grid grid-cols-2 gap-3 lg:grid-cols-4", tiles.length > 6 ? "2xl:grid-cols-8" : tiles.length > 4 ? "xl:grid-cols-6" : "")}>
+    <section aria-label="Key metrics" className={cn("grid gap-3", tiles.length === 1 ? "grid-cols-1" : "grid-cols-2", KPI_COLS[tiles.length])}>
       {tiles.map((t) => (
         <KpiCard key={t.label} label={t.label} source={t.source} hint={t.hint} format={t.format} higherIsBetter={!t.lower}
           value={v(t.c, t.k)} previous={v(t.c, t.k, "previous")} mom={v(t.c, t.k, "mom")} yoy={v(t.c, t.k, "yoy")} />

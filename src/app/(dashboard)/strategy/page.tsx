@@ -63,7 +63,7 @@ export default async function StrategyPage({ searchParams }: { searchParams: Pro
   ]);
 
   return (
-    <div className="mx-auto max-w-5xl">
+    <div>
       <TabHeader source={null} eyebrow="AI intelligence" title="30-Day SEO Strategy" description="A prioritised, week-by-week plan generated from this period's evidence. Track progress as you go; future reports compare before and after, without claiming cause and effect." guide={[
   { term: "Weekly plan", text: "Week 1 fixes and quick wins, week 2 keyword and content work, week 3 user experience and conversion, week 4 measurement and next steps." },
   { term: "Evidence", text: "Each task cites the data behind it. Tasks without evidence are setup or measurement steps." },
@@ -90,7 +90,7 @@ export default async function StrategyPage({ searchParams }: { searchParams: Pro
         <>
           <div className="mb-6 rounded-[10px] border border-border bg-surface p-5">
             <p className="text-xs font-semibold uppercase tracking-wider text-accent">Plan based on {plan.period_start} → {plan.period_end}</p>
-            <p className="mt-2 leading-relaxed">{plan.summary}</p>
+            <p className="mt-2 max-w-[110ch] leading-relaxed">{plan.summary}</p>
             {sources.length > 0 && <p className="mt-2 text-xs text-muted">Data sources in this plan: {sources.join(" · ")}</p>}
             <p className="mt-3 text-sm text-muted">{done} of {all.length} tasks completed</p>
             <div className="mt-1 h-2 overflow-hidden rounded-full bg-surface-muted"><div className="h-full rounded-full bg-positive" style={{ width: `${all.length ? (done / all.length) * 100 : 0}%` }} /></div>
@@ -116,7 +116,7 @@ export default async function StrategyPage({ searchParams }: { searchParams: Pro
                   <span className="text-2xl font-semibold tabular-nums text-foreground">W{w}</span>
                   <span className="text-lg font-semibold">{WEEKS[w - 1]}</span>
                 </h2>
-                <div className="space-y-3">
+                <div className="grid gap-3 xl:grid-cols-2">
                   {all.filter((t) => t.week === w).map((t) => (
                     <article key={t.id} className={cn("rounded-[10px] border border-border bg-surface p-5 [overflow-wrap:anywhere]", t.status === "skipped" && "opacity-60", t.status === "completed" && "border-positive/40")}>
                       <div className="flex flex-wrap items-start justify-between gap-3">

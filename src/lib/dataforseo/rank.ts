@@ -18,6 +18,54 @@ export const MAX_RANK_KEYWORDS = 50;
 const RANK_PARALLEL = 4;
 export const rankEstimate = (keywords: number, depth = RANK_DEPTH) => Number((keywords * (depth <= 10 ? 0.002 : depth <= 30 ? 0.005 : 0.0155)).toFixed(4));
 
+/* ------------------------------------------------------------------ schedule, pins, next check */
+/** How often the automatic job re-checks a client's keywords; chosen per client (clients.settings.rank_schedule). */
+export const RANK_SCHEDULES = { daily: 1, weekly: RANK_EVERY_DAYS, monthly: 30 } as const;
+export type RankSchedule = keyof typeof RANK_SCHEDULES;
+export interface RankSettings { schedule: RankSchedule; days: number; pinned: string[] }
+export function rankSettingsOf(settings: unknown): RankSettings {
+  const s = obj(settings);
+  const schedule: RankSchedule = typeof s.rank_schedule === "string" && s.rank_schedule in RANK_SCHEDULES ? (s.rank_schedule as RankSchedule) : "weekly";
+  const pinned = Array.isArray(s.rank_pinned) ? s.rank_pinned.filter((x): x is string => typeof x === "string") : [];
+  return { schedule, days: RANK_SCHEDULES[schedule], pinned };
+}
+export async function loadRankSettings(db: SupabaseClient, clientId: string): Promise<RankSettings> {
+  const { data } = await db.from("clients").select("settings").eq("id", clientId).maybeSingle();
+  return rankSettingsOf(data?.settings);
+}
+/** Checks a month for `keywords` keyword/device pairs on a schedule (30 / days runs of one live search each). */
+export const rankMonthlyCost = (keywords: number, days: number) => Number((rankEstimate(keywords) * (30 / days)).toFixed(2));
+/** A keyword last checked on or before this date is due (half a day of slack so a daily job never skips a day). */
+export const rankDueCutoff = (days: number, at = Date.now()) => new Date(at - (days - 0.5) * 86_400_000).toISOString().slice(0, 10);
+/** The research job (vercel.json "30 7 * * *") runs once a day at 07:30 UTC. */
+export const RANK_CRON_UTC = { hour: 7, minute: 30 };
+/** When the daily job will next pick this keyword up: the first job run at which its last check is past the cutoff. */
+export function nextRankCheck(checkedOn: string | null, days: number, now: number): string {
+  const first = new Date(now);
+  first.setUTCHours(RANK_CRON_UTC.hour, RANK_CRON_UTC.minute, 0, 0);
+  if (first.getTime() <= now) first.setUTCDate(first.getUTCDate() + 1);
+  for (let i = 0; i < 40; i++) {
+    const t = first.getTime() + i * 86_400_000;
+    if (!checkedOn || checkedOn <= rankDueCutoff(days, t)) return new Date(t).toISOString();
+  }
+  return new Date(first.getTime() + 39 * 86_400_000).toISOString();
+}
+
+/**
+ * The live Google results page for a search, for when DataForSEO's own check_url wasn't stored (checks made
+ * before it was recorded). Local searches carry the same "uule" location DataForSEO uses: the business
+ * coordinates with a 10 km radius; others are United States wide.
+ */
+export function googleSearchUrl(keyword: string, place: { lat: number | null; lng: number | null } | null): string {
+  const base = `https://www.google.com/search?q=${encodeURIComponent(keyword)}&hl=en&gl=US&ie=UTF-8`;
+  if (place?.lat == null || place.lng == null) return base;
+  const proto = [
+    "role: 1", "producer: 12", "latlng {", `  latitude_e7: ${Math.round(place.lat * 1e7)}`, `  longitude_e7: ${Math.round(place.lng * 1e7)}`, "}", "radius: 10000", "provenance: 6", "",
+  ].join("\n");
+  // "a+" then the base64 text proto; the "+" stays literal, as in DataForSEO's own check_url
+  return `${base}&uule=a+${encodeURIComponent(Buffer.from(proto).toString("base64"))}`;
+}
+
 export interface RankKeyword { id: string; keyword: string; device: "desktop" | "mobile"; location_code: number; language_code: string; created_at: string }
 export interface RankTop { position: number; domain: string | null; url: string | null; title: string | null }
 export interface RankCheck { keyword_id: string; checked_on: string; position: number | null; url: string | null; depth: number; top: RankTop[] }
@@ -33,6 +81,8 @@ export interface RankSerp {
   pack_position?: number | null;
   /** where the search was made from: the business location for local businesses, else the country */
   searched_from?: string;
+  /** DataForSEO's link to the same live Google results page (same query, language and location) */
+  check_url?: string | null;
   ads: string[];
   ai_overview: { domain: string | null; url: string | null; title: string | null }[];
   featured_snippet: string | null;
@@ -117,6 +167,7 @@ export async function checkKeyword(ctx: Ctx, target: Target, kw: RankKeyword, de
   await recordSpend(ctx.admin, ctx.clientId, "rank", cost, ctx.source);
   const found = locate(arr(result?.items), bare(target.domain), place?.cid ?? null);
   found.serp.searched_from = local ? (place!.city ?? "the business location") : "country";
+  found.serp.check_url = str(result?.check_url);
   const row = { client_id: ctx.clientId, keyword_id: kw.id, checked_on: new Date().toISOString().slice(0, 10), position: found.position, url: found.url, depth, top: found.top, cost };
   const saved = await ctx.admin.from("rank_checks").upsert({ ...row, serp: found.serp }, { onConflict: "keyword_id,checked_on" });
   // before migration 21 the serp column doesn't exist: keep the position anyway
@@ -126,7 +177,7 @@ export async function checkKeyword(ctx: Ctx, target: Target, kw: RankKeyword, de
 
 export interface RankRun { checked: number; skipped: number; cost: number; stopped: string | null; errors: string[] }
 
-/** Checks every keyword that has no result newer than RANK_EVERY_DAYS (all of them when `force`), stopping at the spend cap. */
+/** Checks every keyword whose last result is older than the client's schedule (all of them when `force`), stopping at the spend cap. */
 export async function runRankChecks(ctx: Ctx, target: Target, opts: { force?: boolean; deadline?: number } = {}): Promise<RankRun> {
   const run: RankRun = { checked: 0, skipped: 0, cost: 0, stopped: null, errors: [] };
   // the Business Profile id, so the client's own map-pack listing is recognised
@@ -135,7 +186,8 @@ export async function runRankChecks(ctx: Ctx, target: Target, opts: { force?: bo
   const { data: last } = await ctx.admin.from("rank_checks").select("keyword_id, checked_on").eq("client_id", ctx.clientId).order("checked_on", { ascending: false }).limit(2000);
   const lastOn = new Map<string, string>();
   for (const r of last ?? []) if (!lastOn.has(r.keyword_id as string)) lastOn.set(r.keyword_id as string, r.checked_on as string);
-  const cutoff = new Date(Date.now() - (RANK_EVERY_DAYS - 0.5) * 86_400_000).toISOString().slice(0, 10);
+  const { days } = await loadRankSettings(ctx.admin, ctx.clientId);
+  const cutoff = rankDueCutoff(days);
   const due = ((kws ?? []) as RankKeyword[]).filter((kw) => { const prev = lastOn.get(kw.id); return opts.force || !prev || prev <= cutoff; });
   run.skipped = (kws?.length ?? 0) - due.length;
   // a live Google search takes 10-30 seconds, so a few run side by side
@@ -166,6 +218,8 @@ export interface RankRow {
   difficulty: number | null; cpc: number | null; intent: string | null; serp: RankSerp | null;
   /** position in the Google map pack (1-3), null when not in it */
   pack: number | null;
+  /** DataForSEO's link to the live results page of the newest check (null for checks made before it was stored) */
+  checkUrl: string | null;
 }
 
 /** Everything the page and alerts read. `change` > 0 means the keyword moved up (a lower position number). */
@@ -209,6 +263,7 @@ export async function loadRanks(supabase: SupabaseClient, clientId: string): Pro
       history: [...h].reverse().map((x) => ({ date: x.checked_on, position: x.position })), top: cur?.top ?? [],
       volume: m?.volume ?? null, difficulty: m?.difficulty ?? null, cpc: m?.cpc ?? null, intent: m?.intent ?? null, serp: cur?.serp ?? null,
       pack: cur?.serp?.pack_position ?? ((cur?.serp?.local_pack.findIndex((p) => p.own) ?? -1) + 1 || null),
+      checkUrl: cur?.serp?.check_url ?? null,
     };
   });
   return { ok: true, rows, lastChecked };

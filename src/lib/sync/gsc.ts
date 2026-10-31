@@ -133,5 +133,31 @@ export async function syncGsc(
     return upsertChunks(admin, "gsc_query_page_metrics", [...map.values()], "resource_id,metric_date,query,page");
   });
 
+  // Search appearance (product snippets, review snippets, videos, FAQ...), web search. The API refuses
+  // to group searchAppearance with any other dimension, so: list the types for the range, then ask
+  // for `date` filtered to each type (one call per type), which yields exact per-day rows.
+  // Optional: a site with no rich results, or a database without the table yet, is not a failure.
+  await step("search_appearance", async () => {
+    const types = await queryGsc(ctx, {
+      siteUrl: t.siteUrl, range, dimensions: ["searchAppearance"], searchType: "web", dataState: "all", maxRows: 5_000,
+    });
+    const out: Record<string, unknown>[] = [];
+    for (const type of types.map((r) => r.keys[0]).filter((x): x is string => !!x).slice(0, 40)) {
+      const rows = await queryGsc(ctx, {
+        siteUrl: t.siteUrl, range, dimensions: ["date"], searchType: "web", dataState: "all",
+        filters: [{ dimension: "searchAppearance", expression: type }],
+      });
+      for (const r of rows) {
+        const date = r.keys[0];
+        if (!isIso(date)) continue;
+        out.push({
+          ...base, metric_date: date, appearance: type,
+          clicks: r.clicks, impressions: r.impressions, position_x_impressions: weighted(r),
+        });
+      }
+    }
+    return upsertChunks(admin, "gsc_search_appearance_metrics", out, "resource_id,metric_date,appearance");
+  }, true);
+
   return { written, failures, authError };
 }

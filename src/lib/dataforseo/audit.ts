@@ -14,7 +14,20 @@ import { arr, num, obj, str, type Ctx, type Target } from "./research";
 export const PAGE_COST = 0.00015;
 export const AUDIT_SIZES = [50, 150, 300, 500] as const;
 export const DEFAULT_AUDIT_PAGES = 150;
-export const auditEstimate = (pages: number) => Number((pages * PAGE_COST + 0.002).toFixed(4));
+/**
+ * How pages are fetched. "html" reads the server's HTML only (cheapest). "js" runs the page's JavaScript first
+ * (enable_javascript), so content and links added by scripts are seen. "browser" also loads every resource and
+ * measures Core Web Vitals in a real browser (enable_browser_rendering). DataForSEO per-page prices:
+ * $0.00015, $0.0015 and $0.0051 (help-center "cost of On-Page API parameters").
+ */
+export const RENDER_MODES = {
+  html: { label: "HTML only", perPage: PAGE_COST },
+  js: { label: "Render JavaScript", perPage: 0.0015 },
+  browser: { label: "Full browser rendering", perPage: 0.0051 },
+} as const;
+export type RenderMode = keyof typeof RENDER_MODES;
+export const renderModeOf = (v: unknown): RenderMode => (typeof v === "string" && v in RENDER_MODES ? (v as RenderMode) : "html");
+export const auditEstimate = (pages: number, mode: RenderMode = "html") => Number((pages * RENDER_MODES[mode].perPage + 0.002).toFixed(4));
 const STALE_AFTER_MS = 3 * 3_600_000; // a crawl that hasn't finished after 3 hours is given up on
 
 export type Severity = "error" | "warning" | "notice";
@@ -23,6 +36,8 @@ export interface AuditPage { url: string; status: number | null; title: string |
 export interface AuditPoint { date: string; score: number | null; errors: number; warnings: number; pages: number }
 export interface AuditResult {
   domain: string; startedAt: string; finishedAt: string; pages: number; maxPages: number;
+  /** how pages were fetched; absent on audits stored before the option existed (those were HTML only) */
+  render?: RenderMode;
   /** DataForSEO's on-page score, 0-100 */
   score: number | null;
   metrics: { internalLinks: number | null; externalLinks: number | null; brokenLinks: number | null; duplicateTitle: number | null; duplicateDescription: number | null; duplicateContent: number | null; nonIndexable: number | null };
@@ -37,6 +52,7 @@ export interface AuditResult {
 export interface AuditTask {
   id: string; domain: string; maxPages: number; startedAt: string; status: "crawling" | "done" | "failed";
   crawled?: number; queued?: number; checkedAt?: string; error?: string; source: "auto" | "manual";
+  render?: RenderMode;
 }
 
 type Check = { key: string; label: string; severity: Severity; why: string; fix: string; test?: (p: Json) => boolean };
@@ -107,7 +123,7 @@ export function analyse(task: AuditTask, summary: Json, items: Json[], prev: Aud
   const score = num(dm.onpage_score) === null ? null : Math.round(num(dm.onpage_score) as number);
   const point: AuditPoint = { date: finishedAt.slice(0, 10), score, errors, warnings, pages: pages.length };
   return {
-    domain: task.domain, startedAt: task.startedAt, finishedAt, pages: pages.length, maxPages: task.maxPages, score,
+    domain: task.domain, startedAt: task.startedAt, finishedAt, pages: pages.length, maxPages: task.maxPages, score, render: task.render ?? "html",
     metrics: {
       internalLinks: num(dm.links_internal), externalLinks: num(dm.links_external), brokenLinks: num(dm.broken_links), duplicateTitle: num(dm.duplicate_title),
       duplicateDescription: num(dm.duplicate_description), duplicateContent: num(dm.duplicate_content), nonIndexable: num(dm.non_indexable),
@@ -128,18 +144,19 @@ const read = async <T,>(admin: SupabaseClient, clientId: string, endpoint: "audi
 };
 
 /** Starts a crawl (the only paid step). Refuses while one is already running. */
-export async function startAudit(ctx: Ctx, target: Target, maxPages: number): Promise<{ id: string; cost: number }> {
+export async function startAudit(ctx: Ctx, target: Target, maxPages: number, render: RenderMode = "html"): Promise<{ id: string; cost: number }> {
   const pages = Math.min(Math.max(Math.round(maxPages), 10), 500);
   const existing = await read<AuditTask>(ctx.admin, ctx.clientId, "audit_task");
   if (existing?.data.status === "crawling" && Date.now() - Date.parse(existing.data.startedAt) < STALE_AFTER_MS) {
     throw new DfsError("An audit is already running for this site. Its results appear here when it finishes.", "bad_request");
   }
-  await assertBudget(ctx.admin, ctx.clientId, auditEstimate(pages), ctx.source);
+  await assertBudget(ctx.admin, ctx.clientId, auditEstimate(pages, render), ctx.source);
   const { id, cost } = await dfsTaskPost("/on_page/task_post", {
     target: target.domain, max_crawl_pages: pages, crawl_delay: 1000, respect_sitemap: true, enable_www_redirect_check: true, tag: ctx.clientId.slice(0, 8),
+    ...(render === "js" ? { enable_javascript: true } : render === "browser" ? { enable_javascript: true, load_resources: true, enable_browser_rendering: true } : {}),
   });
   await recordSpend(ctx.admin, ctx.clientId, "audit", cost, ctx.source);
-  const task: AuditTask = { id, domain: target.domain, maxPages: pages, startedAt: new Date().toISOString(), status: "crawling", source: ctx.source, checkedAt: new Date().toISOString() };
+  const task: AuditTask = { id, domain: target.domain, maxPages: pages, startedAt: new Date().toISOString(), status: "crawling", source: ctx.source, checkedAt: new Date().toISOString(), render };
   await save(ctx.admin, ctx.clientId, "audit_task", task, cost);
   return { id, cost };
 }
@@ -174,6 +191,12 @@ export async function pollAudit(admin: SupabaseClient, clientId: string): Promis
   await save(admin, clientId, "audit", out);
   await save(admin, clientId, "audit_task", { ...task, status: "done", crawled: out.pages, checkedAt: out.finishedAt });
   return { state: "done" };
+}
+
+/** The crawl mode an owner chose last (clients.settings.audit_render); the weekly automatic audit uses it too. */
+export async function loadAuditRender(db: SupabaseClient, clientId: string): Promise<RenderMode> {
+  const { data } = await db.from("clients").select("settings").eq("id", clientId).maybeSingle();
+  return renderModeOf(obj(data?.settings).audit_render);
 }
 
 /** Everything the page and alerts read; no API calls. */

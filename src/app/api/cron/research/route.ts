@@ -4,11 +4,12 @@ import { activeClientIds } from "@/lib/activity";
 import { generateAlerts } from "@/lib/alerts";
 import { AUTO_SHARE, BudgetError, getSettings, spend } from "@/lib/dataforseo/budget";
 import { dfsConfigured } from "@/lib/dataforseo/client";
-import { DEFAULT_AUDIT_PAGES, auditEstimate, pollAudit, startAudit, type AuditTask } from "@/lib/dataforseo/audit";
+import { DEFAULT_AUDIT_PAGES, auditEstimate, loadAuditRender, pollAudit, startAudit, type AuditTask } from "@/lib/dataforseo/audit";
+import { CRUX_EVERY_DAYS, lighthouseUrls, refreshCrux } from "@/lib/dataforseo/lighthouse";
 import { runCompetitorAnalysis } from "@/lib/dataforseo/competitors";
 import { fetchProfile, localIdentity, pollReviews, PROFILE_EST, REVIEWS_EST, startReviews, type ReviewTask } from "@/lib/dataforseo/local";
 import { runRankChecks } from "@/lib/dataforseo/rank";
-import { refreshCore, resolveTarget, trackLinkChanges } from "@/lib/dataforseo/research";
+import { ensure, refreshCore, resolveTarget, SPECS, trackLinkChanges } from "@/lib/dataforseo/research";
 import { serverEnv } from "@/lib/env";
 import { loggedRun } from "@/lib/jobs/log";
 import { createAdminClient } from "@/lib/supabase/admin";
@@ -26,6 +27,8 @@ const STALE_DAYS = 7;
 const COMPETITOR_SHARE = 0.35;
 /** Cumulative share of the daily cap after which the daily new/lost backlink check stops. */
 const LINK_SHARE = 0.45;
+/** Cumulative share of the daily cap after which the weekly "links to missing pages" check stops. */
+const BROKEN_LINK_SHARE = 0.5;
 /** Cumulative share of the daily cap after which weekly site audits stop starting. */
 const AUDIT_SHARE = 0.55;
 const AUDIT_EVERY_DAYS = 7;
@@ -119,6 +122,21 @@ async function handle(request: NextRequest) {
             }
             out.linkChanges = { checked: links, changesFound: linkChanges, stopped: linksStopped };
 
+            // 1b2. weekly: backlinks pointing at pages that no longer exist (about 3 cents; skipped while the stored list is under 7 days old)
+            let brokenChecked = 0;
+            let brokenStopped: string | null = null;
+            for (const id of ids.filter((x) => active.has(x) && profiled.has(x))) {
+              if (Date.now() > deadline) { brokenStopped = "time"; break; }
+              if ((await spentNow()) + SPECS.broken_backlinks.est > cap * BROKEN_LINK_SHARE) { brokenStopped = "budget"; break; }
+              const target = await resolveTarget(admin, id);
+              if (!target || !target.auto_refresh) continue;
+              try {
+                const r = await ensure({ admin, clientId: id, source: "auto" }, SPECS.broken_backlinks, target);
+                if (!r.fromCache) brokenChecked++;
+              } catch (e) { if (e instanceof BudgetError) { brokenStopped = "budget"; break; } }
+            }
+            out.brokenBacklinks = { checked: brokenChecked, stopped: brokenStopped };
+
             // 1c. weekly site audit for active clients (about 2 cents each); the result is collected by the next poll
             const { data: audits } = await admin.from("dfs_cache").select("client_id, data, fetched_at").eq("endpoint", "audit_task");
             const lastAudit = new Map((audits ?? []).map((r) => [r.client_id as string, r.data as AuditTask]));
@@ -128,10 +146,12 @@ async function handle(request: NextRequest) {
               const t = lastAudit.get(id);
               if (t && (t.status === "crawling" || Date.now() - Date.parse(t.startedAt) < AUDIT_EVERY_DAYS * 86_400_000)) continue;
               if (Date.now() > deadline) { auditStopped = "time"; break; }
-              if ((await spentNow()) + auditEstimate(DEFAULT_AUDIT_PAGES) > cap * AUDIT_SHARE) { auditStopped = "budget"; break; }
+              // the crawl mode (HTML only / JavaScript / browser) an owner chose last on the Site Audit page
+              const render = await loadAuditRender(admin, id);
+              if ((await spentNow()) + auditEstimate(DEFAULT_AUDIT_PAGES, render) > cap * AUDIT_SHARE) { auditStopped = "budget"; break; }
               const target = await resolveTarget(admin, id);
               if (!target || !target.auto_refresh) continue;
-              try { await startAudit({ admin, clientId: id, source: "auto" }, target, DEFAULT_AUDIT_PAGES); started++; } catch (e) { if (e instanceof BudgetError) { auditStopped = "budget"; break; } }
+              try { await startAudit({ admin, clientId: id, source: "auto" }, target, DEFAULT_AUDIT_PAGES, render); started++; } catch (e) { if (e instanceof BudgetError) { auditStopped = "budget"; break; } }
             }
             out.audits = { started, stopped: auditStopped };
 
@@ -195,6 +215,21 @@ async function handle(request: NextRequest) {
       }
 
       // 2b. AI visibility now runs in the "extras" job (several assistants per question)
+
+      // 2c. weekly real-user Core Web Vitals (Chrome UX Report, free) for the pages Lighthouse tests
+      try {
+        const { data: lhRows } = await admin.from("dfs_cache").select("client_id").eq("endpoint", "lighthouse");
+        const { data: cruxRows } = await admin.from("dfs_cache").select("client_id, fetched_at").eq("endpoint", "crux");
+        const lastCrux = new Map<string, number>();
+        for (const r of cruxRows ?? []) lastCrux.set(r.client_id as string, Math.max(lastCrux.get(r.client_id as string) ?? 0, Date.parse(r.fetched_at as string)));
+        let crux = 0;
+        for (const id of new Set((lhRows ?? []).map((r) => r.client_id as string))) {
+          if (Date.now() > deadline) break;
+          if (Date.now() - (lastCrux.get(id) ?? 0) < CRUX_EVERY_DAYS * 86_400_000) continue;
+          try { if ((await refreshCrux(admin, id, await lighthouseUrls(admin, id))).source) crux++; } catch { /* retried tomorrow */ }
+        }
+        out.realUserData = { refreshed: crux };
+      } catch { /* never blocks the alerts */ }
 
       // 3. alerts for every client (reads stored data only)
       let alerts = 0;

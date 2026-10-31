@@ -57,10 +57,10 @@ export default async function ClarityPage() {
   ]} />;
   const connected = conn?.status === "connected";
 
-  if (metrics.error) return <div className="mx-auto max-w-6xl">{header}<Unavailable title="Database update needed" body="Apply migration 20261021000011 in Supabase to enable Clarity." /></div>;
+  if (metrics.error) return <div>{header}<Unavailable title="Database update needed" body="Apply migration 20261021000011 in Supabase to enable Clarity." /></div>;
   if (!connected && !(metrics.data ?? []).length) {
     return (
-      <div className="mx-auto max-w-6xl">
+      <div>
         {header}
         <EmptyState title="Clarity isn't connected" body="Connect Clarity with a Data Export API token on the Integrations page." action={{ href: "/integrations", label: "Go to Integrations" }} />
       </div>
@@ -147,7 +147,7 @@ export default async function ClarityPage() {
   ];
 
   return (
-    <div className="mx-auto max-w-6xl space-y-8">
+    <div className="space-y-8">
       {header}
       <div className="flex flex-wrap items-center justify-between gap-2 text-sm text-muted">
         <p>
@@ -162,7 +162,7 @@ export default async function ClarityPage() {
         <Unavailable title="No Clarity data stored yet" body="The first import runs right after connecting (it can take a minute); then one day is added per daily sync. Clarity's API only serves the last 1–3 days, so history builds up over time." />
       ) : (
         <>
-          <section aria-label="Totals" className="grid grid-cols-2 gap-3 lg:grid-cols-4">
+          <section aria-label="Totals" className="grid grid-cols-2 gap-3 md:grid-cols-3 lg:grid-cols-4 2xl:grid-cols-6">
             {tiles.map((t) => (
               <div key={t.label} className="rounded-[10px] border border-border bg-surface p-4">
                 <p className="text-[11px] font-semibold uppercase tracking-wider text-muted">{t.label}</p>

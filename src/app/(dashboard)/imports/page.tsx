@@ -50,7 +50,7 @@ export default async function ImportsPage({ searchParams }: { searchParams: Prom
   const comparable = ((metrics ?? []) as Metric[]).filter((m) => m.review_status === "accepted" && m.normalized_metric && COMPARABLE[m.normalized_metric]);
 
   return (
-    <div className="mx-auto max-w-5xl space-y-8">
+    <div className="space-y-8">
       <TabHeader source={null} eyebrow="Reporting" title="Import PDF Reports" description="Upload an existing SEO report. Figures are extracted for your review and kept separately from live API data." />
       {error ? <Unavailable title="Database update needed" body="Apply migration 20261021000011 in Supabase to enable report imports." />
         : !process.env.ANTHROPIC_API_KEY ? <Unavailable title="AI isn't configured" body="Report extraction needs ANTHROPIC_API_KEY." />

@@ -2,7 +2,7 @@ import "server-only";
 import type { SupabaseClient } from "@supabase/supabase-js";
 import { BudgetError } from "./budget";
 import { DfsError } from "./client";
-import { arr, ensure, hostOf, num, obj, str, type Ctx, type Json, type Row, type Spec, type Target } from "./research";
+import { arr, ensure, hostOf, num, obj, SPECS, str, type Ctx, type Json, type Row, type Spec, type Target } from "./research";
 
 /**
  * Daily competitor intelligence (DataForSEO Labs). Everything is stored, so the dashboard only ever
@@ -80,10 +80,10 @@ export const COMP_SPECS = {
       }).filter((x) => x.keyword),
     }),
   },
-  // the pages that earn each competitor its organic traffic (weekly)
+  // the pages that earn each competitor its organic traffic (weekly; up to 100, the same depth as the client's own top pages)
   comp_pages: {
-    key: "comp_pages", tier: 2, ttlDays: 7, est: 0.02, path: "/dataforseo_labs/google/relevant_pages/live",
-    body: (t, competitor) => ({ target: competitor, location_code: t.location_code, language_code: t.language_code, limit: 20, order_by: ["metrics.organic.etv,desc"] }),
+    key: "comp_pages", tier: 2, ttlDays: 7, est: 0.03, path: "/dataforseo_labs/google/relevant_pages/live",
+    body: (t, competitor) => ({ target: competitor, location_code: t.location_code, language_code: t.language_code, limit: 100, order_by: ["metrics.organic.etv,desc"] }),
     shape: (r) => arr(r?.items).map((i) => {
       const o = obj(obj(i.metrics).organic);
       return { page: str(i.page_address), traffic: num(o.etv), keywords: num(o.count), value: num(o.estimated_paid_traffic_cost), top3: (num(o.pos_1) ?? 0) + (num(o.pos_2_3) ?? 0) };
@@ -97,6 +97,13 @@ export const COMP_SPECS = {
       rank: num(r.rank), backlinks: num(r.backlinks), referring_domains: num(r.referring_domains), spam_score: num(r.backlinks_spam_score),
       broken_backlinks: num(r.broken_backlinks), referring_ips: num(r.referring_ips),
     },
+  },
+  // each competitor's monthly backlink history (referring domains, new and lost links), 13 months, weekly
+  comp_history: {
+    key: "comp_history", tier: 2, ttlDays: 7, est: 0.03, path: "/backlinks/history/live",
+    // from the first of the month 13 months back, so the stored answer's key stays the same all month
+    body: (_t, competitor) => { const d = new Date(); d.setUTCDate(1); d.setUTCMonth(d.getUTCMonth() - 13); return { target: competitor, date_from: d.toISOString().slice(0, 10) }; },
+    shape: (r) => SPECS.history.shape(r),
   },
 } satisfies Record<string, Spec>;
 
@@ -246,6 +253,98 @@ export async function loadCompetitors(supabase: SupabaseClient, clientId: string
     pages: byCompetitor("comp_pages").map((x) => ({ competitor: x.competitor, rows: x.data as Row[], fetchedAt: x.fetchedAt })),
     links: byCompetitor("comp_links") as CompetitorData["links"],
   };
+}
+
+/* ------------------------------------------------------------------ extras: rank history, link growth, content mix */
+export const EXTRAS_MAX = 3;
+export const extrasEstimate = (n: number) => Number((n * (COMP_SPECS.comp_history.est + COMP_SPECS.comp_pages.est) + SPECS.history.est).toFixed(2));
+
+/**
+ * Link history for each tracked competitor (max 3) and the client, and the competitors' top pages.
+ * Each call is skipped while its stored answer is fresh (a week; the client's own history 60 days).
+ */
+export async function refreshCompetitorExtras(ctx: Ctx, target: Target, tracked: string[], force = false): Promise<{ fetched: number; cost: number; errors: string[]; stoppedByBudget: boolean }> {
+  const rep = { fetched: 0, cost: 0, errors: [] as string[], stoppedByBudget: false };
+  const jobs: [Spec, string | undefined][] = [[SPECS.history, undefined], ...tracked.slice(0, EXTRAS_MAX).flatMap((d) => [[COMP_SPECS.comp_history, d], [COMP_SPECS.comp_pages, d]] as [Spec, string][])];
+  for (const [spec, extra] of jobs) {
+    try {
+      const r = await ensure(ctx, spec, target, { force, extra });
+      if (!r.fromCache) { rep.fetched++; rep.cost += r.cost; }
+    } catch (e) {
+      if (e instanceof BudgetError) { rep.stoppedByBudget = true; rep.errors.push(e.message); break; }
+      rep.errors.push(`${spec.key} ${extra ?? ""}: ${e instanceof Error ? e.message : "failed"}`);
+      if (e instanceof DfsError && ["auth", "payment", "config"].includes(e.kind)) break;
+    }
+  }
+  return rep;
+}
+
+export interface LinkMonth { date: string; referring_domains: number | null; backlinks: number | null; new_domains: number | null; lost_domains: number | null; new_backlinks: number | null; lost_backlinks: number | null }
+/** avg = average position where the site is in the top 10; ranked/avgRanked = the client's own positions up to 100 */
+export interface RankPoint { date: string; domain: string; avg: number | null; top10: number; checks: number; ranked: number; avgRanked: number | null }
+export type PageType = "service" | "location" | "guide" | "pricing" | "other";
+export interface ContentRow { domain: string; own: boolean; pages: number; traffic: number; keywords: number; topPage: string | null; topTraffic: number | null; types: Record<PageType, number>; fetchedAt: string | null }
+export interface CompetitorExtras {
+  rankTrend: RankPoint[];
+  links: { domain: string; own: boolean; months: LinkMonth[]; fetchedAt: string }[];
+  content: ContentRow[];
+}
+
+const STATES = "al|ak|az|ar|ca|co|ct|de|fl|ga|hi|id|il|in|ia|ks|ky|la|me|md|ma|mi|mn|ms|mo|mt|ne|nv|nh|nj|nm|ny|nc|nd|oh|ok|or|pa|ri|sc|sd|tn|tx|ut|vt|va|wa|wv|wi|wy|dc";
+const LOCATION = new RegExp(`/(locations?|areas?|service-areas?|cities|near-me|stores?)/|-(${STATES})(/|$)|/[a-z-]+-(${STATES})/|houston|dallas|austin|san-antonio|katy|sugar-land|pearland|the-woodlands|cypress`);
+/** A page's type from its address: pricing, guide/blog, location, service/product, or other (home, about, contact...). */
+export function pageType(url: string): PageType {
+  let path = url.toLowerCase();
+  try { path = new URL(/^https?:/.test(url) ? url : `https://${url}`).pathname.toLowerCase(); } catch { /* keep the raw text */ }
+  if (/cost|price|pricing|how-much|quote/.test(path)) return "pricing";
+  if (/\/(blog|news|articles?|guides?|resources|learn|insights|faq|tips|ideas|news-press)\/|\/(what|how|why|when|which|best|top|guide|can|do|does|is|are)-/.test(path)) return "guide";
+  if (LOCATION.test(path)) return "location";
+  if (/\/(services?|products?|signs?|signage|categories|solutions|led|neon|billboards?|displays?|lighting|wraps?|banners?|install|repair|custom)/.test(path)) return "service";
+  return "other";
+}
+
+const host = (d: string | null | undefined) => (d ?? "").toLowerCase().replace(/^www\./, "");
+const onDomain = (d: string | null | undefined, site: string) => { const x = host(d); return !!x && (x === site || x.endsWith(`.${site}`)); };
+
+/** Rank history (from the stored top 10 of every rank check), link history and the content mix, from storage only. */
+export async function loadCompetitorExtras(supabase: SupabaseClient, clientId: string, self: string, tracked: string[]): Promise<CompetitorExtras> {
+  const site = host(self);
+  const domains = [site, ...tracked.slice(0, EXTRAS_MAX).map(host)];
+  const [{ data: checks }, { data: cache }] = await Promise.all([
+    supabase.from("rank_checks").select("checked_on, position, top").eq("client_id", clientId).order("checked_on").limit(5000),
+    supabase.from("dfs_cache").select("endpoint, params, data, fetched_at").eq("client_id", clientId).in("endpoint", ["history", "comp_history", "comp_pages", "relevant_pages"]).order("fetched_at", { ascending: false }).limit(60),
+  ]);
+  // average position on the client's tracked keywords where each site is in the top 10 (the depth stored for other sites)
+  const byDate = new Map<string, { position: number | null; top: { position: number; domain: string | null }[] }[]>();
+  for (const c of checks ?? []) byDate.set(c.checked_on as string, [...(byDate.get(c.checked_on as string) ?? []), { position: c.position as number | null, top: (c.top ?? []) as { position: number; domain: string | null }[] }]);
+  const rankTrend: RankPoint[] = [];
+  for (const [date, list] of byDate) {
+    for (const d of domains) {
+      const pos = list.map((c) => (d === site ? (c.position != null && c.position <= 10 ? c.position : null) : (c.top.find((t) => onDomain(t.domain, d))?.position ?? null))).filter((p): p is number => p != null);
+      const all = d === site ? list.map((c) => c.position).filter((p): p is number => p != null) : pos;
+      const mean = (l: number[]) => (l.length ? Number((l.reduce((a, b) => a + b, 0) / l.length).toFixed(1)) : null);
+      rankTrend.push({ date, domain: d, avg: mean(pos), top10: pos.length, checks: list.length, ranked: all.length, avgRanked: mean(all) });
+    }
+  }
+  const rows = cache ?? [];
+  const firstFor = (endpoint: string, d: string) => rows.find((r) => r.endpoint === endpoint && host(String((r.params as Json).competitor ?? (r.params as Json).target ?? "")) === d);
+  const links = domains.flatMap((d) => {
+    const r = d === site ? rows.find((x) => x.endpoint === "history") : firstFor("comp_history", d);
+    return r && Array.isArray(r.data) ? [{ domain: d, own: d === site, months: (r.data as LinkMonth[]).filter((m) => m.date).slice(-13), fetchedAt: r.fetched_at as string }] : [];
+  });
+  const content = domains.flatMap((d): ContentRow[] => {
+    const r = d === site ? rows.find((x) => x.endpoint === "relevant_pages") : firstFor("comp_pages", d);
+    if (!r || !Array.isArray(r.data)) return [];
+    const pages = (r.data as { page: string | null; traffic: number | null; keywords: number | null }[]).filter((p) => p.page);
+    const types: Record<PageType, number> = { service: 0, location: 0, guide: 0, pricing: 0, other: 0 };
+    for (const p of pages) types[pageType(p.page!)]++;
+    const top = [...pages].sort((a, b) => (b.traffic ?? 0) - (a.traffic ?? 0))[0];
+    return [{
+      domain: d, own: d === site, pages: pages.length, traffic: Math.round(pages.reduce((a, p) => a + (p.traffic ?? 0), 0)), keywords: pages.reduce((a, p) => a + (p.keywords ?? 0), 0),
+      topPage: top?.page ?? null, topTraffic: top?.traffic == null ? null : Math.round(top.traffic), types, fetchedAt: r.fetched_at as string,
+    }];
+  });
+  return { rankTrend: rankTrend.sort((a, b) => a.date.localeCompare(b.date)), links, content };
 }
 
 export { hostOf };

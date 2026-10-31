@@ -43,8 +43,11 @@ export const gscAdapter: ProviderAdapter<DiscoveredResource> = {
 export interface GscQuery {
   siteUrl: string;
   range: DateRange;
-  dimensions: ("date" | "query" | "page" | "device" | "country")[];
+  /** searchAppearance cannot be combined with any other dimension (API rule); filter on it instead. */
+  dimensions: ("date" | "query" | "page" | "device" | "country" | "searchAppearance")[];
   searchType?: GscSearchType;
+  /** ANDed dimension filters, e.g. { dimension: "searchAppearance", expression: "PRODUCT_SNIPPETS" }. */
+  filters?: { dimension: "searchAppearance" | "query" | "page" | "device" | "country"; operator?: "equals" | "notEquals" | "contains"; expression: string }[];
   /** "all" includes fresh, not-yet-final days (re-fetched by later syncs); "final" lags 2-3 days. */
   dataState?: "final" | "all";
   /** Hard stop on total rows across pages. */
@@ -68,6 +71,12 @@ export async function queryGsc(ctx: AdapterContext, q: GscQuery): Promise<GscRow
         data_state: q.dataState ?? "all",
         row_limit: ROW_LIMIT,
         start_row: start,
+        ...(q.filters?.length && {
+          dimension_filter_groups: [{
+            groupType: "and",
+            filters: q.filters.map((f) => ({ dimension: f.dimension, operator: f.operator ?? "equals", expression: f.expression })),
+          }],
+        }),
       }),
     );
     rows.push(...res.rows);

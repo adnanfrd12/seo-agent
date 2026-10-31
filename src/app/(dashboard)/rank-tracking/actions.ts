@@ -4,7 +4,7 @@ import { revalidatePath } from "@/lib/revalidate";
 import { getSession } from "@/lib/analytics/client-context";
 import { BudgetError } from "@/lib/dataforseo/budget";
 import { DfsError, dfsConfigured } from "@/lib/dataforseo/client";
-import { MAX_RANK_KEYWORDS, rankEstimate, runRankChecks } from "@/lib/dataforseo/rank";
+import { MAX_RANK_KEYWORDS, RANK_SCHEDULES, rankEstimate, rankSettingsOf, runRankChecks, type RankSchedule } from "@/lib/dataforseo/rank";
 import { resolveTarget } from "@/lib/dataforseo/research";
 import { createAdminClient } from "@/lib/supabase/admin";
 
@@ -56,9 +56,44 @@ export async function checkRanksNow(force: boolean): Promise<Result> {
     const r = await runRankChecks({ admin: g.db, clientId: g.client.id, source: "manual" }, target, { force, deadline: Date.now() + 50_000 });
     revalidatePath("/rank-tracking");
     if (r.checked === 0 && r.errors.length) return { ok: false, error: r.errors[0] };
-    const bits = [r.checked ? `Checked ${r.checked} keyword${r.checked > 1 ? "s" : ""} ($${r.cost.toFixed(3)})` : "Nothing needed checking", r.skipped ? `${r.skipped} already checked this week` : "", r.stopped === "budget" ? "stopped at the daily spend limit" : r.stopped === "time" ? "ran out of time; press again to continue" : ""].filter(Boolean);
+    const bits = [r.checked ? `Checked ${r.checked} keyword${r.checked > 1 ? "s" : ""} ($${r.cost.toFixed(3)})` : "Nothing needed checking", r.skipped ? `${r.skipped} already checked recently` : "", r.stopped === "budget" ? "stopped at the daily spend limit" : r.stopped === "time" ? "ran out of time; press again to continue" : ""].filter(Boolean);
     return { ok: true, message: `${bits.join(". ")}.` };
   } catch (e) {
     return { ok: false, error: e instanceof BudgetError || e instanceof DfsError ? e.message : "Couldn't check rankings. Try again." };
   }
+}
+
+/** Merges keys into clients.settings (other settings are kept). */
+async function patchSettings(db: ReturnType<typeof createAdminClient>, clientId: string, patch: (cur: Record<string, unknown>) => Record<string, unknown>) {
+  const { data } = await db.from("clients").select("settings").eq("id", clientId).maybeSingle();
+  const cur = (data?.settings as Record<string, unknown>) ?? {};
+  return db.from("clients").update({ settings: { ...cur, ...patch(cur) } }).eq("id", clientId);
+}
+
+/** How often the automatic job re-checks this client's keywords: daily, weekly or monthly. */
+export async function setRankSchedule(schedule: RankSchedule): Promise<Result> {
+  const g = await guard();
+  if ("error" in g) return { ok: false, error: String(g.error) };
+  if (!(schedule in RANK_SCHEDULES)) return { ok: false, error: "Choose daily, weekly or monthly." };
+  const { error } = await patchSettings(g.db, g.client.id, () => ({ rank_schedule: schedule }));
+  if (error) return { ok: false, error: "Could not save the schedule." };
+  revalidatePath("/rank-tracking");
+  return { ok: true, message: `Positions are now checked ${schedule}.` };
+}
+
+/** Pins or unpins a tracked keyword; pinned keywords are shown first. */
+export async function toggleRankPin(id: string): Promise<Result> {
+  const g = await guard();
+  if ("error" in g) return { ok: false, error: String(g.error) };
+  const { data: kw } = await g.db.from("rank_keywords").select("id, keyword").eq("id", id).eq("client_id", g.client.id).maybeSingle();
+  if (!kw) return { ok: false, error: "That keyword isn't tracked any more." };
+  let pinned = false;
+  const { error } = await patchSettings(g.db, g.client.id, (cur) => {
+    const list = rankSettingsOf(cur).pinned;
+    pinned = !list.includes(id);
+    return { rank_pinned: pinned ? [...list, id].slice(-MAX_RANK_KEYWORDS) : list.filter((x) => x !== id) };
+  });
+  if (error) return { ok: false, error: "Could not save the pin." };
+  revalidatePath("/rank-tracking");
+  return { ok: true, message: `${pinned ? "Pinned" : "Unpinned"} “${kw.keyword as string}”.` };
 }
