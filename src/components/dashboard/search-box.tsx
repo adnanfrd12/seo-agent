@@ -14,10 +14,10 @@ export function SearchBox({
           ? []
           : [<input key={k} type="hidden" name={k} value={first(v)} />],
       )}
-      <Search className="pointer-events-none absolute left-2.5 size-4 text-muted" aria-hidden />
+      <Search className="pointer-events-none absolute left-2.5 size-3.5 text-faint" aria-hidden />
       <input
         type="search" name={name} defaultValue={current} placeholder={placeholder} aria-label={label} maxLength={200}
-        className="w-56 rounded-lg border border-border bg-surface py-1.5 pl-8 pr-7 text-sm outline-none focus-visible:ring-2 focus-visible:ring-accent"
+        className="h-8 w-56 rounded-md border border-border-strong bg-surface pl-8 pr-7 text-[13px] outline-none placeholder:text-faint focus-visible:ring-2 focus-visible:ring-accent"
       />
       {current && (
         <Link

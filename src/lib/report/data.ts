@@ -97,7 +97,8 @@ export async function loadReportData(
   const len = Math.round((Date.parse(range.end) - Date.parse(range.start)) / DAY) + 1;
   const prev = { p_client_id: clientId, p_start: shift(range.start, -len), p_end: shift(range.start, -1) };
 
-  const [overview, ga4Trend, gscTrend, ga4Summary, chCur, chPrev, landing, queries, pages, opps, gbpTrend, gbpSummary] = await Promise.all([
+  // everything in one parallel batch: each read is a round trip to the database
+  const [overview, ga4Trend, gscTrend, ga4Summary, chCur, chPrev, landing, queries, pages, opps, gbpTrend, gbpSummary, gbpExtras, bing, research, competitors, ai, clarity] = await Promise.all([
     supabase.rpc("get_seo_overview", args),
     supabase.rpc("get_analytics_trends", { ...args, p_provider: "ga4", p_granularity: "day", p_compare: compare }),
     supabase.rpc("get_analytics_trends", { ...args, p_provider: "gsc", p_granularity: "day", p_compare: compare, p_search_type: "web" }),
@@ -110,6 +111,12 @@ export async function loadReportData(
     supabase.rpc("get_gsc_opportunities", args),
     supabase.rpc("get_analytics_trends", { ...args, p_provider: "gbp", p_granularity: "day", p_compare: compare }),
     supabase.rpc("get_gbp_summary", args),
+    loadGbpExtras(supabase, clientId, range),
+    loadBing(supabase, clientId, range, compare),
+    loadResearch(supabase, clientId),
+    loadCompetitorsForReport(supabase, clientId),
+    loadAi(supabase, clientId),
+    loadClarity(supabase, clientId, range),
   ]);
 
   const errors = [overview, ga4Trend, gscTrend].filter((r) => r.error).map((r) => r.error!.message);
@@ -144,12 +151,8 @@ export async function loadReportData(
     topPages: ((pages.data as { rows?: Row[] } | null)?.rows ?? []),
     // a missing RPC (migration not yet applied) must not break the report
     opportunities: opps.error ? null : (opps.data as Opportunities),
-    ...(await loadGbpExtras(supabase, clientId, range)),
-    bing: await loadBing(supabase, clientId, range, compare),
-    research: await loadResearch(supabase, clientId),
-    competitors: await loadCompetitorsForReport(supabase, clientId),
-    ai: await loadAi(supabase, clientId),
-    clarity: await loadClarity(supabase, clientId, range),
+    ...gbpExtras,
+    bing, research, competitors, ai, clarity,
     errors: opps.error ? ["opportunities"] : [],
   };
 }

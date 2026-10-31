@@ -43,7 +43,7 @@ export function RankControls({ canEdit, count, due, suggestions, estimate }: { c
   const [device, setDevice] = useState<"desktop" | "mobile" | "both">("desktop");
   if (!canEdit) return <p className="text-xs text-muted">Only owners and admins can change tracked keywords.</p>;
   return (
-    <div className="space-y-3 rounded-xl border border-border bg-surface p-4">
+    <div className="space-y-3 rounded-[10px] border border-border bg-surface p-4">
       <div className="grid gap-3 sm:grid-cols-[1fr_auto] sm:items-end">
         <label className="text-sm">Keywords to track <span className="text-muted">(one per line)</span>
           <textarea className={`${field} mt-1 min-h-20`} value={text} onChange={(e) => setText(e.target.value)} placeholder={"led signs houston\nneon sign maker near me"} />
@@ -76,7 +76,8 @@ export function RankControls({ canEdit, count, due, suggestions, estimate }: { c
 
 const ENGINE_LABELS: { key: string; label: string; cost: string }[] = [
   { key: "chatgpt", label: "ChatGPT", cost: "3¢" }, { key: "perplexity", label: "Perplexity", cost: "1¢" },
-  { key: "gemini", label: "Gemini", cost: "4¢" }, { key: "claude", label: "Claude", cost: "5¢, your Anthropic key" },
+  { key: "gemini", label: "Gemini", cost: "4¢" }, { key: "ai_mode", label: "Google AI Mode", cost: "under 1¢" },
+  { key: "claude", label: "Claude", cost: "5¢, your Anthropic key" },
 ];
 
 export function AiControls({ canEdit, count, due, search, suggestions, estimate, engines }: { canEdit: boolean; count: number; due: number; search: boolean; suggestions: string[]; estimate: string; engines: string[] }) {
@@ -85,7 +86,7 @@ export function AiControls({ canEdit, count, due, search, suggestions, estimate,
   const toggle = (k: string, on: boolean) => run(() => setAiEngines(on ? [...engines, k] : engines.filter((e) => e !== k)));
   if (!canEdit) return <p className="text-xs text-muted">Only owners and admins can change tracked questions.</p>;
   return (
-    <div className="space-y-3 rounded-xl border border-border bg-surface p-4">
+    <div className="space-y-3 rounded-[10px] border border-border bg-surface p-4">
       <label className="block text-sm">Questions customers might ask an AI assistant <span className="text-muted">(one per line, up to 15)</span>
         <textarea className={`${field} mt-1 min-h-24`} value={text} onChange={(e) => setText(e.target.value)} placeholder={"Who are the best LED sign companies in Houston?\nWhere can I get a custom neon sign made?"} />
       </label>
@@ -117,7 +118,7 @@ export function AiControls({ canEdit, count, due, search, suggestions, estimate,
         <button className={btn2} disabled={pending || count === 0} onClick={() => run(() => runAiVisibilityNow(due === 0))}>
           {pending ? <Loader2 className="size-4 animate-spin" /> : <RefreshCw className="size-4" />} {due > 0 ? `Check ${due} question${due > 1 ? "s" : ""} now` : "Re-check all now"} <span className="opacity-70">(≈{estimate})</span>
         </button>
-        <span className="text-xs text-muted">Runs automatically every week. ChatGPT, Perplexity and Gemini answer through DataForSEO (inside the daily API budget); Claude uses your Anthropic key; Claude Sonnet 5.5 reads every answer for brands and sentiment.</span>
+        <span className="text-xs text-muted">Runs automatically every week. ChatGPT, Perplexity, Gemini and Google AI Mode answer through DataForSEO (inside the daily API budget); Claude uses your Anthropic key; Claude Sonnet 5.5 reads every answer for brands and sentiment.</span>
       </div>
       {note}
     </div>

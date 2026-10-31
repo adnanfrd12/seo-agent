@@ -1,4 +1,5 @@
-import { BarList } from "@/components/charts/bar-list";
+import { Donut } from "@/components/charts/ai-charts";
+import { Breakdown, FillColumns } from "@/components/charts/research-charts";
 import { MetricTrend } from "@/components/charts/metric-trend";
 import type { TrendPoint } from "@/components/charts/trend-chart";
 import { KpiCard } from "@/components/dashboard/kpi-card";
@@ -34,9 +35,7 @@ const REF_COLS: Col[] = [
 ];
 const SPAM_PRESET = { label: "High spam (≥ 50)", where: [{ key: "spam", op: "gte" as const, value: 50 }] };
 
-function Bars({ title, items, total }: { title: string; items: Named[] | undefined; total: number | null }) {
-  return <BarList title={title} valueLabel="Backlinks" items={(items ?? []).map((x) => ({ label: x.name || "Unknown", value: x.count, detail: total ? `${((x.count / total) * 100).toFixed(0)}%` : undefined }))} emptyText="Not reported." />;
-}
+const named = (items: Named[] | undefined, total: number | null) => (items ?? []).map((x) => ({ label: x.name || "Unknown", value: x.count, detail: total ? `${((x.count / total) * 100).toFixed(0)}%` : undefined }));
 
 export default async function BacklinksPage() {
   const page = await researchPage();
@@ -120,12 +119,17 @@ export default async function BacklinksPage() {
   const anchorTotal = [...anchorCounts.values()].reduce((x, y) => x + y, 0);
   const anchorMix = [...anchorCounts.entries()].sort((a, b) => b[1] - a[1]).map(([label, value]) => ({ label, value, detail: anchorTotal ? `${((value / anchorTotal) * 100).toFixed(0)}%` : undefined }));
 
+  const followDonut = (
+    <Donut title="Dofollow vs nofollow" sub="Only dofollow links pass ranking value" center={dofollowShare != null ? `${dofollowShare.toFixed(0)}%` : "—"} centerLabel="dofollow"
+      items={[{ label: `Dofollow · ${fmtInt(s.dofollow)}`, value: s.dofollow ?? 0, color: "var(--series)" }, { label: `Nofollow · ${fmtInt(s.nofollow)}`, value: s.nofollow ?? 0, color: "var(--series-prev)" }]} />
+  );
+
   return (
     <>
       {header}{chrome}
       {spike && <div className="mb-5"><SpikeAlert spike={spike} /></div>}
 
-      <section aria-label="Backlink profile" className="grid gap-4 sm:grid-cols-2 xl:grid-cols-5">
+      <section aria-label="Backlink profile" className="grid grid-cols-2 gap-3 lg:grid-cols-4 xl:grid-cols-5">
         <KpiCard label="Domain rank" source="DFS" format={fmtInt} value={s.rank} previous={month?.rank ?? null} hint="DataForSEO domain rank, 0-1000. Higher means a stronger link profile." />
         <KpiCard label="Backlinks" source="DFS" format={fmtInt} value={s.backlinks} previous={month?.backlinks ?? null} />
         <KpiCard label="Referring domains" source="DFS" format={fmtInt} value={s.referring_domains} previous={month?.referring_domains ?? null} />
@@ -151,17 +155,31 @@ export default async function BacklinksPage() {
         ]} />
       </div>
 
-      <div className="mt-6 grid gap-4 md:grid-cols-2 xl:grid-cols-4">
-        <Bars title="Link attributes" items={s.attributes} total={s.backlinks} />
-        <Bars title="Link types" items={s.types} total={s.backlinks} />
-        <Bars title="Top domain extensions" items={s.tld} total={s.backlinks} />
-        <Bars title="Top countries" items={s.countries} total={s.backlinks} />
-        <Bars title="Linking site types" items={s.platforms} total={s.backlinks} />
-        <Bars title="Where on the page links sit" items={s.semantic} total={s.backlinks} />
-        {deep && <BarList title="Referring domains by strength" valueLabel="Domains" items={strength} />}
-        {deep && <BarList title="Spam score of linking domains" valueLabel="Domains" items={spamMix} />}
+      {deep && (
+        <div className="mt-6 grid gap-4 lg:grid-cols-3">
+          {followDonut}
+          <FillColumns title="Referring domains by strength" sub="Linking domains by their domain rank" valueLabel="Domains"
+            bins={strength.map((b, i) => ({ label: b.label.split(" (")[0], value: b.value, detail: b.label, color: `color-mix(in oklab, var(--series) ${100 - i * 18}%, var(--surface))` }))} />
+          <Donut title="Spam score of linking domains" sub={`${fmtInt(domRows.length)} referring domains checked`} center={domRows.length ? `${Math.round((spamMix[2].value / domRows.length) * 100)}%` : "—"} centerLabel="toxic (41+)"
+            items={spamMix.map((b, i) => ({ label: `${b.label} · ${fmtInt(b.value)}`, value: b.value, color: ["var(--positive)", "var(--warn)", "var(--negative)"][i] }))} />
+        </div>
+      )}
+
+      {/* the breakdown's length changes with the selected list; the neighbour's columns stretch to match it */}
+      <div className={`mt-6 grid gap-4 ${!deep ? "lg:grid-cols-[minmax(0,3fr)_minmax(0,2fr)]" : anchorMix.length > 0 ? "lg:grid-cols-2" : ""}`}>
+        <Breakdown title="Backlink profile breakdown" sub="Share of all backlinks, as reported by DataForSEO" valueLabel="Backlinks" groups={[
+          { key: "attributes", label: "Attributes", items: named(s.attributes, s.backlinks) },
+          { key: "types", label: "Link types", items: named(s.types, s.backlinks) },
+          { key: "tld", label: "Extensions", items: named(s.tld, s.backlinks) },
+          { key: "countries", label: "Countries", items: named(s.countries, s.backlinks) },
+          { key: "platforms", label: "Site types", items: named(s.platforms, s.backlinks) },
+          { key: "semantic", label: "Placement", items: named(s.semantic, s.backlinks) },
+        ]} />
+        {!deep ? followDonut : anchorMix.length > 0 && (
+          <FillColumns title="Anchor text mix" sub="A natural profile is mostly brand names and varied phrases" valueLabel="Backlinks"
+            bins={anchorMix.map((a) => ({ label: a.label, value: a.value, detail: a.detail }))} />
+        )}
       </div>
-      {deep && anchorMix.length > 0 && <div className="mt-4"><BarList title="Anchor text mix" valueLabel="Backlinks" items={anchorMix} /></div>}
       <p className="mt-2 text-xs text-muted">{fmtInt(s.referring_ips)} referring IPs · {fmtInt(s.referring_main_domains)} main domains</p>
 
       <section className="mt-8 space-y-3" aria-label="Recent link changes">
@@ -177,9 +195,9 @@ export default async function BacklinksPage() {
           <LinkChangeCheck canEdit={canEdit} />
         </div>
         {changes && (changes.data.baseline && changes.data.events.length === 0
-          ? <p className="rounded-xl border border-dashed border-border p-4 text-sm text-muted">Baseline recorded. Changes will show from the next daily check.</p>
+          ? <p className="rounded-[10px] border border-dashed border-border p-4 text-sm text-muted">Baseline recorded. Changes will show from the next daily check.</p>
           : changes.data.events.length === 0
-            ? <p className="rounded-xl border border-dashed border-border p-4 text-sm text-muted">No new or lost links in the last 90 days of checks.</p>
+            ? <p className="rounded-[10px] border border-dashed border-border p-4 text-sm text-muted">No new or lost links in the last 90 days of checks.</p>
             : <ResearchTable title="New and lost links" rows={changes.data.events as unknown as Row[]} columns={[
                 { key: "kind", label: "Change", type: "badge" }, { key: "detected", label: "Detected", type: "date" }, { key: "domain", label: "Domain" }, { key: "from", label: "Linking page", type: "url" },
                 { key: "anchor", label: "Anchor" }, { key: "rank", label: "Link rank", type: "int" }, { key: "domain_rank", label: "Domain rank", type: "int" }, { key: "spam", label: "Spam", type: "spam" },
@@ -193,7 +211,7 @@ export default async function BacklinksPage() {
       <div className="mt-8">
         <h2 className="mb-3 text-base font-semibold">Link details</h2>
         {!deep ? (
-          <div className="rounded-xl border border-dashed border-border p-6 text-sm">
+          <div className="rounded-[10px] border border-dashed border-border p-6 text-sm">
             <p className="font-medium">The detailed lists haven&apos;t been loaded.</p>
             <p className="mt-1 text-muted">The deep dive fetches the backlink list (top 1,000 by rank), new and lost links, referring domains, anchors, linked pages and organic competitors in one go, then stores them for 14 days.</p>
           </div>

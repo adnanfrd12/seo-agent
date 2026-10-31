@@ -1,4 +1,6 @@
+import { Donut } from "@/components/charts/ai-charts";
 import { BarList } from "@/components/charts/bar-list";
+import { FillColumns } from "@/components/charts/research-charts";
 import { MetricTrend } from "@/components/charts/metric-trend";
 import { Highlights } from "@/components/dashboard/highlights";
 import { KpiCard, StatCard } from "@/components/dashboard/kpi-card";
@@ -24,6 +26,7 @@ export default async function RankTrackingPage() {
     { term: "Position", text: `Place among Google's organic results (1 = first). "Not in top ${RANK_DEPTH}" means it wasn't found.` },
     { term: "Change", text: "Movement since the previous weekly check." },
     { term: "Map pack / AI Overview", text: "Whether Google showed a map pack or AI Overview for the search, and whether the business is in it." },
+    { term: "On the results page", text: "The extras Google showed for the search (map pack, AI Overview, People also ask, images, ads…). Each takes clicks away from the plain blue links." },
   ]} />;
   if (!configured) return <>{header}<EmptyState title="DataForSEO isn't configured" body="Add DATAFORSEO_LOGIN and DATAFORSEO_PASSWORD to the environment, then redeploy." action={{ href: "/integrations", label: "Open Integrations" }} /></>;
   if (!cache.target) return <>{header}<EmptyState title="No website to track yet" body="Connect Bing, Search Console or Business Profile for this client so the website can be detected, or ask an owner or admin to set it." action={{ href: "/integrations", label: "Open Integrations" }} /></>;
@@ -106,16 +109,37 @@ export default async function RankTrackingPage() {
   const adCount = new Map<string, number>();
   for (const r of rows) for (const a of r.serp?.ads ?? []) adCount.set(a, (adCount.get(a) ?? 0) + 1);
   const advertisers = [...adCount.entries()].sort((a, b) => b[1] - a[1]).slice(0, 8);
+  const featCount = new Map<string, number>();
+  for (const r of checkedSerp) for (const f of new Set(r.serp!.features)) featCount.set(f, (featCount.get(f) ?? 0) + 1);
+  const features = [...featCount.entries()].sort((a, b) => b[1] - a[1]).slice(0, 10)
+    .map(([f, n]) => ({ label: featureName(f)[0].toUpperCase() + featureName(f).slice(1), value: n, detail: `${Math.round((n / checkedSerp.length) * 100)}%` }));
+  const packMix = [
+    { label: "#1", value: packFirst, color: "var(--positive)" },
+    { label: "#2–#3", value: inPack - packFirst, color: "color-mix(in oklab, var(--positive) 50%, var(--surface))" },
+    { label: "Not in pack", value: checkedSerp.filter((r) => !r.pack && r.serp!.local_pack.length).length, color: "var(--negative)" },
+    { label: "No pack", value: checkedSerp.filter((r) => !r.serp!.local_pack.length).length, color: "var(--series-prev)" },
+  ].map((m) => ({ ...m, label: `${m.label} · ${m.value}` }));
+  const aiMix = ["Cited", "Not cited", "No AI Overview"].map((k, i) => {
+    const n = tableRows.filter((r) => r.in_ai === k).length;
+    return { label: `${k === "No AI Overview" ? "None shown" : k} · ${n}`, value: n, color: ["var(--positive)", "var(--negative)", "var(--series-prev)"][i] };
+  });
+  const aiShown = aiMix[0].value + aiMix[1].value;
+  const movement = [
+    { label: "Improved", value: improved, color: "var(--positive)" }, { label: "Unchanged", value: unchanged, color: "var(--series-prev)" },
+    { label: "Declined", value: declined, color: "var(--negative)" },
+  ];
+  const distChart = <FillColumns title="Position distribution" sub="Tracked keyword/device pairs by organic position" valueLabel="Keywords" bins={dist.map((d, i) => ({ ...d, color: i < 2 ? "var(--series)" : i < 5 ? "color-mix(in oklab, var(--series) 45%, var(--surface))" : "var(--series-prev)" }))} />;
+  const moveChart = <FillColumns title="Movement since the previous check" sub="Keyword/device pairs whose organic position changed" valueLabel="Keywords" bins={movement} empty="No earlier check to compare with yet." />;
   return (
     <>
       {header}
       <p className="mb-5 text-sm"><span className="font-semibold">{cache.target.domain}</span><span className="text-muted"> · {rows.length} keyword/device pairs{lastChecked ? ` · checked ${lastChecked}` : ""} · refreshes weekly</span></p>
 
       {rows.length === 0 ? <EmptyState title="No keywords tracked yet" body="Keywords are added automatically in the next daily run, or add your own below." /> : checkedRows.length === 0 ? (
-        <p className="rounded-xl border border-dashed border-border p-6 text-sm text-muted">Keywords added. Their first positions arrive with the next daily run.</p>
+        <p className="rounded-[10px] border border-dashed border-border p-6 text-sm text-muted">Keywords added. Their first positions arrive with the next daily run.</p>
       ) : (
         <>
-          <section aria-label="Ranking summary" className="grid gap-4 sm:grid-cols-2 xl:grid-cols-3">
+          <section aria-label="Ranking summary" className="grid grid-cols-2 gap-3 lg:grid-cols-3">
             <StatCard label="In the Google map pack" value={`${inPack} of ${checkedSerp.length}`} sub={`#1 for ${packFirst}`} tone={inPack ? "good" : undefined} />
             <StatCard label="Searched from" value={from === "country" || !from ? "United States" : from} sub="the business location, like a nearby customer" />
             <KpiCard label="Organic average position" source="DFS" format={(n) => (n == null ? "—" : n.toFixed(1))} value={avg} previous={prevPoint?.avg ?? null} higherIsBetter={false} hint="Across keywords found in the top 30. Lower is better." />
@@ -128,13 +152,21 @@ export default async function RankTrackingPage() {
             {deviceAvg.map((d) => ` · ${d.device} average ${d.avg == null ? "—" : `#${d.avg.toFixed(1)}`} (${d.n} keyword${d.n === 1 ? "" : "s"})`).join("")}
           </p>
           {picks.length > 0 && <div className="mt-6"><Highlights items={picks.slice(0, 3)} /></div>}
-          <div className="mt-6"><BarList title="Position distribution" valueLabel="Keywords" items={dist} /></div>
+          <div className={`mt-6 grid gap-4 ${series.length >= 2 ? "lg:grid-cols-3" : "md:grid-cols-2"}`}>
+            {distChart}
+            <Donut title="Map pack position" sub={`Your place in the map pack across ${checkedSerp.length} checked searches`} items={packMix} center={checkedSerp.length ? `${Math.round((inPack / checkedSerp.length) * 100)}%` : "—"} centerLabel="in the pack" />
+            <Donut title="Google AI Overview" sub="Shown for the search, and whether it cites you" items={aiMix} center={aiShown ? `${Math.round((aiMix[0].value / aiShown) * 100)}%` : "—"} centerLabel="cited when shown" />
+            {series.length < 2 && moveChart}
+          </div>
 
           {series.length >= 2 && (
-            <div className="mt-6"><MetricTrend title="Rankings over time" source="DFS" options={[
-              { key: "avg", label: "Average position", data: series.filter((s) => s.avg !== null).map((s) => ({ date: s.date, value: s.avg })) },
-              { key: "top10", label: "Keywords in top 10", data: series.map((s) => ({ date: s.date, value: s.top10 })) },
-            ]} /></div>
+            <div className="mt-6 grid gap-4 lg:grid-cols-3">
+              <div className="min-w-0 lg:col-span-2"><MetricTrend title="Rankings over time" source="DFS" options={[
+                { key: "avg", label: "Average position", data: series.filter((s) => s.avg !== null).map((s) => ({ date: s.date, value: s.avg })) },
+                { key: "top10", label: "Keywords in top 10", data: series.map((s) => ({ date: s.date, value: s.top10 })) },
+              ]} /></div>
+              {moveChart}
+            </div>
           )}
 
           <div className="mt-6">
@@ -163,20 +195,17 @@ export default async function RankTrackingPage() {
             </div>
           )}
 
-          {leaders.length > 0 && (
-            <section className="mt-6 rounded-xl border border-border bg-surface p-4" aria-label="Who ranks above you">
-              <h2 className="text-sm font-semibold">Who ranks in the top 10 for your keywords</h2>
-
-              <ul className="grid gap-x-6 gap-y-1 text-sm sm:grid-cols-2">
-                {leaders.map(([d, v]) => <li key={d} className="flex justify-between gap-3"><span className="break-all">{d}</span><span className="shrink-0 tabular-nums text-muted">{v.n} keyword{v.n > 1 ? "s" : ""} · avg #{(v.sum / v.n).toFixed(1)}</span></li>)}
-              </ul>
-            </section>
+          {(leaders.length > 0 || features.length > 0) && (
+            <div className={`mt-6 grid gap-4 ${leaders.length > 0 && features.length > 0 ? "lg:grid-cols-2" : ""}`}>
+              {leaders.length > 0 && <BarList title="Who ranks in the top 10 for your keywords" valueLabel="Keywords · avg position" items={leaders.map(([d, v]) => ({ label: d, value: v.n, detail: `#${(v.sum / v.n).toFixed(1)}` }))} />}
+              {features.length > 0 && <BarList title="What else Google shows on your searches" valueLabel="Searches · share" items={features} />}
+            </div>
           )}
         </>
       )}
 
       {canEdit && (
-        <details className="mt-8 rounded-xl border border-border bg-surface p-4" open={rows.length === 0}>
+        <details className="mt-8 rounded-[10px] border border-border bg-surface p-4" open={rows.length === 0}>
           <summary className="cursor-pointer text-sm font-medium">Manage tracked keywords <span className="text-muted">({rows.length})</span></summary>
           <div className="mt-3"><RankControls canEdit={canEdit} count={rows.length} due={due} suggestions={suggestions} estimate={`$${rankEstimate(due || rows.length).toFixed(2)}`} /></div>
           <ul className="mt-3 flex flex-wrap gap-2 text-sm">

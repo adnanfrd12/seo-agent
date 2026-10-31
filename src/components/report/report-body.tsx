@@ -9,8 +9,9 @@ import { fmtDecimal, fmtDuration, fmtInt, fmtPercent, toNum, type Num } from "@/
 import { dailySeries } from "@/lib/analytics/trend";
 import { monthlyWins, notableDeclines, type Compared, type ReportData } from "@/lib/report/data";
 import {
-  BarRows, CHAPTER_COLORS, Chapter, Findings, ReportTable, SourceTag, StatTile, TileGrid, Unavailable,
+  BarRows, CHAPTER_COLORS, Chapter, FILL_ROW_4, Findings, FindingsPair, ReportTable, SourceTag, StatTile, TileGrid, TrendSet, Unavailable,
 } from "./report-ui";
+import { cn } from "@/lib/utils";
 
 type Row = Record<string, unknown>;
 const pick = (c: Compared, k: string) => (c.current?.has_data ? toNum(c.current[k]) : null);
@@ -64,7 +65,7 @@ export function ReportBody({ d, opts }: { d: ReportData; opts: ReportOptions }) 
   const o = d.opportunities;
   const spark = (t: ReportData["ga4Trend"], k: string) => dailySeries(t, k, r).map((p) => p.value);
   const detail = (href: string, label: string) => opts.variant === "dashboard"
-    ? <Link href={href} className="text-sm font-medium text-accent hover:underline">{label} →</Link> : null;
+    ? <Link href={href} className="text-sm font-medium text-foreground underline decoration-border-strong underline-offset-2 hover:decoration-foreground">{label} →</Link> : null;
 
   const organic = d.channels.find((c) => c.channel === "Organic Search");
   const ga4Ok = d.connected.ga4 && g.current?.has_data;
@@ -122,12 +123,9 @@ export function ReportBody({ d, opts }: { d: ReportData; opts: ReportOptions }) 
               value={d.gbpReviews.average} hint={`${d.gbpReviews.total} reviews, ${d.gbpReviews.newInRange} new in this period`} />}
           </TileGrid>
         )}
-        <div className="grid gap-4 lg:grid-cols-2">
-          <Findings title="Monthly wins" tone="good"
-            items={wins.length ? wins.slice(0, 6).map((w) => `${w.text} · ${w.source}`) : ["No metric improved by 10% or more with enough volume to be meaningful."]} />
-          <Findings title="Watch list" tone="bad"
-            items={declines.length ? declines.slice(0, 6).map((w) => `${w.text} · ${w.source}`) : ["No significant declines (10% or more) this period."]} />
-        </div>
+        <FindingsPair
+          left={{ title: "Monthly wins", tone: "good", items: wins.length ? wins.slice(0, 6).map((w) => `${w.text} · ${w.source}`) : ["No metric improved by 10% or more with enough volume to be meaningful."] }}
+          right={{ title: "Watch list", tone: "bad", items: declines.length ? declines.slice(0, 6).map((w) => `${w.text} · ${w.source}`) : ["No significant declines (10% or more) this period."] }} />
         <p className="text-xs text-muted">
           Comparisons are {opts.basisLabel}. A change is a win only if it is at least 10% and based on enough volume.
           Wins and declines are calculated from the data, not written by AI.
@@ -141,11 +139,11 @@ export function ReportBody({ d, opts }: { d: ReportData; opts: ReportOptions }) 
           <Unavailable title="Google Analytics 4 isn't connected or has no data for this period" body="Connect GA4 to see traffic by source, device and landing page." />
         ) : <>
           {!opts.executive && (
-            <MetricTrend title="Website traffic over time" source="GA4" expanded={opts.variant === "print"} options={[
+            <TrendSet><MetricTrend title="Website traffic over time" source="GA4" expanded={opts.variant === "print"} options={[
               { key: "sessions", label: "Sessions", data: dailySeries(d.ga4Trend, "sessions", r) },
               { key: "users", label: "Users", data: dailySeries(d.ga4Trend, "users", r) },
               { key: "engagement_rate", label: "Engagement", format: "percent", data: dailySeries(d.ga4Trend, "engagement_rate", r, "ratio") },
-            ]} />
+            ]} /></TrendSet>
           )}
           <div>
             <h3 className="mb-2 text-sm font-bold">Sessions by traffic channel</h3>
@@ -187,7 +185,7 @@ export function ReportBody({ d, opts }: { d: ReportData; opts: ReportOptions }) 
               ? "The location is connected but Google returned no performance data for this range yet (metrics arrive a few days late, and API access must be approved for the project)."
               : "Connect the Google account that manages the Business Profile on the Integrations page. Profile views (Search and Maps), call clicks, website clicks, direction requests and search keywords will appear here."} />
         ) : <>
-          <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
+          <div className={cn("grid gap-4 sm:grid-cols-2 xl:grid-cols-4", FILL_ROW_4)}>
             <StatTile label="Profile views" icon={Eye} color={CHAPTER_COLORS[2]} source="GBP" format={fmtInt}
               value={pick(b, "impressions")} previous={prevOf(b, "impressions")} mom={momOf(b, "impressions")} yoy={yoyOf(b, "impressions")} spark={spark(d.gbpTrend, "impressions")} />
             <StatTile label="Website clicks" icon={MousePointerClick} color={CHAPTER_COLORS[2]} source="GBP" format={fmtInt}
@@ -230,7 +228,7 @@ export function ReportBody({ d, opts }: { d: ReportData; opts: ReportOptions }) 
           )}
         </>}
           {d.gbpReviews && (
-            <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
+            <div className={cn("grid gap-4 sm:grid-cols-2 xl:grid-cols-4", FILL_ROW_4)}>
               <StatTile label="Average Google rating" icon={Trophy} color={CHAPTER_COLORS[2]} source="GBP" format={(v) => (v == null ? "—" : `${v.toFixed(2)} ★`)} value={d.gbpReviews.average} />
               <StatTile label="Total reviews" icon={Users} color={CHAPTER_COLORS[2]} source="GBP" format={fmtInt} value={d.gbpReviews.total} />
               <StatTile label="New reviews this period" icon={TrendingUp} color={CHAPTER_COLORS[2]} source="GBP" format={fmtInt} value={d.gbpReviews.newInRange}
@@ -252,7 +250,7 @@ export function ReportBody({ d, opts }: { d: ReportData; opts: ReportOptions }) 
           {d.gbpRecentReviews.length > 0 && (
             <div>
               <h3 className="mb-2 text-sm font-bold">Latest reviews</h3>
-              <ul className="grid gap-3 md:grid-cols-2">
+              <ul className="grid gap-3 md:grid-cols-2 md:[&>*:last-child:nth-child(odd)]:col-span-2">
                 {d.gbpRecentReviews.map((r, i) => (
                   <li key={i} className="report-avoid-break rounded-lg border border-border p-3 text-sm">
                     <p className="text-xs text-muted">{r.rating != null ? "★".repeat(r.rating) + "☆".repeat(5 - r.rating) : ""} · {r.reviewer ?? "Google user"} · {r.date ?? ""}</p>
@@ -272,7 +270,7 @@ export function ReportBody({ d, opts }: { d: ReportData; opts: ReportOptions }) 
         {!gscOk ? (
           <Unavailable title="Search Console isn't connected or has no data for this period" body="Connect Search Console to see clicks, impressions, CTR, position and keyword opportunities." />
         ) : <>
-          <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
+          <div className={cn("grid gap-4 sm:grid-cols-2 xl:grid-cols-4", FILL_ROW_4)}>
             <StatTile label="Total clicks" icon={MousePointerClick} color={CHAPTER_COLORS[3]} source="GSC" format={fmtInt}
               value={pick(s, "clicks")} previous={prevOf(s, "clicks")} mom={momOf(s, "clicks")} yoy={yoyOf(s, "clicks")} />
             <StatTile label="Impressions" icon={Eye} color={CHAPTER_COLORS[3]} source="GSC" format={fmtInt}
@@ -283,18 +281,18 @@ export function ReportBody({ d, opts }: { d: ReportData; opts: ReportOptions }) 
               value={pick(s, "position")} previous={prevOf(s, "position")} mom={momOf(s, "position")} yoy={yoyOf(s, "position")} />
           </div>
           {!opts.executive && (
-            <MetricTrend title="Organic search over time" source="GSC" expanded={opts.variant === "print"} options={[
+            <TrendSet><MetricTrend title="Organic search over time" source="GSC" expanded={opts.variant === "print"} options={[
               { key: "clicks", label: "Clicks", data: dailySeries(d.gscTrend, "clicks", r) },
               { key: "impressions", label: "Impressions", data: dailySeries(d.gscTrend, "impressions", r) },
               { key: "position", label: "Position", format: "decimal", reverseY: true, data: dailySeries(d.gscTrend, "position", r, "ratio") },
-            ]} />
+            ]} /></TrendSet>
           )}
           <Findings items={[
             changeText("Organic clicks", pick(s, "clicks"), prevOf(s, "clicks"), { basisLabel: opts.basisLabel }),
             changeText("Impressions", pick(s, "impressions"), prevOf(s, "impressions"), { basisLabel: opts.basisLabel }),
             changeText("Average position", pick(s, "position"), prevOf(s, "position"), { basisLabel: opts.basisLabel, lowerIsBetter: true, fmt: (n) => n.toFixed(1) }),
           ].filter((x): x is string => Boolean(x))} />
-          <div className="grid gap-6 lg:grid-cols-2">
+          <div className="grid items-start gap-6 lg:grid-cols-2 [&>*]:min-w-0">
             <ReportTable<Row> title="Top search queries" source="GSC" empty="No query data for this period." rows={d.topQueries.slice(0, opts.executive ? 5 : 10)}
               columns={[
                 { label: "Query", render: (x) => str(x.query) },
@@ -314,7 +312,7 @@ export function ReportBody({ d, opts }: { d: ReportData; opts: ReportOptions }) 
             <Unavailable title="Keyword opportunity analysis is being set up"
               body="Improving and declining keywords, new queries, decaying pages, possible cannibalization and quick wins appear once the latest database update is applied and Search Console has re-synced." />
           ) : !opts.executive && <>
-            <div className="grid gap-6 lg:grid-cols-2">
+            <div className="grid items-start gap-6 lg:grid-cols-2 [&>*]:min-w-0">
               <ReportTable<Row> title="Keywords moved up" source="GSC" empty="No keyword improved by a full position with enough impressions."
                 rows={o.improving_keywords.slice(0, 8)} columns={[
                   { label: "Keyword", render: (x) => str(x.query) },
@@ -349,7 +347,7 @@ export function ReportBody({ d, opts }: { d: ReportData; opts: ReportOptions }) 
                 { label: "Position", align: "right", render: (x) => fmtDecimal(num(x.position)) },
                 { label: "Score", align: "right", render: (x) => fmtDecimal(num(x.score)) },
               ]} />
-            <div className="grid gap-6 lg:grid-cols-2">
+            <div className="grid items-start gap-6 lg:grid-cols-2 [&>*]:min-w-0">
               <ReportTable<Row> title="Decaying pages" source="GSC" empty="No page lost 20%+ of its clicks (with at least 3 clicks before)."
                 rows={o.decaying_pages.slice(0, 8)} columns={[
                   { label: "Page", render: (x) => <span className="break-all">{urlLabel(x.page)}</span> },
@@ -384,7 +382,7 @@ export function ReportBody({ d, opts }: { d: ReportData; opts: ReportOptions }) 
           {!bg.totals.current?.has_data ? (
             <Unavailable title="No Bing data for this period" body={`Bing data is stored from ${bg.coverage?.first ?? "?"} to ${bg.coverage?.last ?? "?"}.`} />
           ) : <>
-            <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
+            <div className={cn("grid gap-4 sm:grid-cols-2 xl:grid-cols-4", FILL_ROW_4)}>
               <StatTile label="Bing clicks" icon={MousePointerClick} color={CHAPTER_COLORS[4]} source="Bing" format={fmtInt}
                 value={pick(bg.totals, "clicks")} previous={prevOf(bg.totals, "clicks")} mom={momOf(bg.totals, "clicks")} yoy={yoyOf(bg.totals, "clicks")} spark={spark(bg.trend, "clicks")} />
               <StatTile label="Bing impressions" icon={Eye} color={CHAPTER_COLORS[4]} source="Bing" format={fmtInt}
@@ -396,11 +394,11 @@ export function ReportBody({ d, opts }: { d: ReportData; opts: ReportOptions }) 
                 hint="Impression-weighted average of Bing's weekly query positions. Lower is better." />
             </div>
             {!opts.executive && (
-              <MetricTrend title="Bing search over time" source="Bing" expanded={opts.variant === "print"} options={[
+              <TrendSet><MetricTrend title="Bing search over time" source="Bing" expanded={opts.variant === "print"} options={[
                 { key: "clicks", label: "Clicks", data: dailySeries(bg.trend, "clicks", r) },
                 { key: "impressions", label: "Impressions", data: dailySeries(bg.trend, "impressions", r) },
                 { key: "ctr", label: "CTR", format: "percent", data: dailySeries(bg.trend, "ctr", r, "ratio") },
-              ]} />
+              ]} /></TrendSet>
             )}
             {gscOk && (
               <ReportTable<{ metric: string; google: string; bing: string }> title="Google vs Bing (this period)" source="GSC · Bing" empty="" rows={[
@@ -447,7 +445,7 @@ export function ReportBody({ d, opts }: { d: ReportData; opts: ReportOptions }) 
       {rs && (
         <Chapter n={no(CH.research)} id="ch-research" icon={Link2} title={CH.research}
           subtitle={`Who links to ${rs.domain} and which Google keywords it ranks for`} sources={["DataForSEO"]}>
-          <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
+          <div className={cn("grid gap-4 sm:grid-cols-2 xl:grid-cols-4", FILL_ROW_4)}>
             {rs.profile && <>
               <StatTile label="Domain rank" icon={Trophy} color={CHAPTER_COLORS[5]} source="DFS" format={fmtInt} value={rs.profile.rank} previous={rs.previous?.rank ?? null}
                 hint="DataForSEO domain rank, 0-1000. Higher is stronger." />

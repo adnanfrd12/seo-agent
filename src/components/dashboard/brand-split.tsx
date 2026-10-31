@@ -54,7 +54,7 @@ export function BrandSplit({ data, terms, canEdit }: { data: BrandSplitData; ter
     if (r.ok) router.refresh();
   });
   return (
-    <section className="rise rounded-xl border border-border bg-surface p-5" aria-labelledby="brand-h">
+    <section className="rise rounded-[10px] border border-border bg-surface p-5" aria-labelledby="brand-h">
       <h2 id="brand-h" className="text-sm font-semibold">Branded vs non-branded search</h2>
       <p className="mt-0.5 text-xs text-muted">Branded = queries that contain your name. A healthy site keeps winning non-branded searches, because those are customers who didn&apos;t know you yet.</p>
       {!data.has_data || totalImpr === 0 ? (
@@ -74,7 +74,8 @@ export function BrandSplit({ data, terms, canEdit }: { data: BrandSplitData; ter
                 branded {fmtPercent(data.branded.impressions ? data.branded.clicks / data.branded.impressions : null, 1)}.
               </p>
             </div>
-            <div className="grid gap-4 sm:grid-cols-2"><List title="Top branded queries" rows={data.top_branded} /><List title="Top non-branded queries" rows={data.top_non_branded} /></div>
+            {/* stacked, not side by side: the branded list is usually a line or two and would leave a tall blank column */}
+            <div className="grid content-start gap-5"><List title="Top non-branded queries" rows={data.top_non_branded} /><List title="Top branded queries" rows={data.top_branded} /></div>
           </div>
           <p className="mt-3 text-xs text-muted">Based on the queries Search Console reports; rare queries Google hides (anonymised) aren&apos;t included, so shares describe the visible queries.</p>
         </>

@@ -1,7 +1,9 @@
 import { CheckCircle2, CircleDashed, Eye, Link2 } from "lucide-react";
+import { Columns, Donut, Gauge, Heatmap, MultiLine, Panel, StackedBars, Themes, type LineMetric } from "@/components/charts/ai-charts";
 import { BarList } from "@/components/charts/bar-list";
 import { BubbleMap } from "@/components/charts/bubble-map";
 import { MetricTrend } from "@/components/charts/metric-trend";
+import { Fill, SplitBar } from "@/components/charts/ops-charts";
 import { Highlights } from "@/components/dashboard/highlights";
 import { StatCard } from "@/components/dashboard/kpi-card";
 import { EmptyState } from "@/components/dashboard/page-header";
@@ -11,13 +13,16 @@ import { Tabs } from "@/components/research/tabs";
 import { AiControls, RemoveButton } from "@/components/research/tracking-controls";
 import { getSession } from "@/lib/analytics/client-context";
 import {
-  AI_EVERY_DAYS, brandStats, ENGINES, enginesFrom, loadAi, promptEstimate, suggestPrompts, type AiCheck, type EngineKey,
+  AI_EVERY_DAYS, brandKey, brandStats, ENGINE_KEYS, ENGINES, enginesFrom, loadAi, promptEstimate, suggestPrompts, type AiCheck, type EngineKey,
 } from "@/lib/ai/visibility";
+import { LLM_LABEL, LLM_PLATFORMS, type LlmTopic } from "@/lib/ai/llm-mentions";
 import { fmtInt } from "@/lib/analytics/format";
+import { cat } from "@/lib/charts/colors";
 import { shiftDays, todayIn } from "@/lib/analytics/range";
 import { loadRanks } from "@/lib/dataforseo/rank";
 import { loadCache, resolveTarget } from "@/lib/dataforseo/research";
 import type { Highlight } from "@/lib/overview/highlights";
+import { memo } from "@/lib/memo";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { createClient } from "@/lib/supabase/server";
 
@@ -26,21 +31,23 @@ export const maxDuration = 300; // a manual check asks several assistants per qu
 type Row = Record<string, unknown>;
 const pctOf = (n: number, d: number) => (d ? Math.round((n / d) * 100) : null);
 const avg = (l: number[]) => (l.length ? Number((l.reduce((a, b) => a + b, 0) / l.length).toFixed(1)) : null);
+const onSite = (h: string, site: string) => !!h && !!site && (h === site || h.endsWith(`.${site}`));
+const countList = (l: string[], n = 8) => { const m = new Map<string, number>(); for (const x of l) m.set(x, (m.get(x) ?? 0) + 1); return [...m.entries()].sort((a, b) => b[1] - a[1]).slice(0, n).map(([label, count]) => ({ label, count })); };
 
 function Status({ c }: { c: AiCheck | undefined }) {
   if (!c) return <span className="inline-flex items-center gap-1 text-xs text-muted"><CircleDashed className="size-3.5" aria-hidden /> Not checked</span>;
   if (c.mentioned && c.cited) return <span className="inline-flex items-center gap-1 text-xs font-medium text-positive"><CheckCircle2 className="size-3.5" aria-hidden /> Named{c.position ? ` #${c.position}` : ""} + cited</span>;
   if (c.mentioned) return <span className="inline-flex items-center gap-1 text-xs font-medium text-positive"><CheckCircle2 className="size-3.5" aria-hidden /> Named{c.position ? ` #${c.position}` : ""}</span>;
   if (c.cited) return <span className="inline-flex items-center gap-1 text-xs font-medium text-positive"><Link2 className="size-3.5" aria-hidden /> Cited</span>;
-  if (c.seen) return <span className="inline-flex items-center gap-1 text-xs font-medium text-[#D4970A]"><Eye className="size-3.5" aria-hidden /> Seen, not used</span>;
+  if (c.seen) return <span className="inline-flex items-center gap-1 text-xs font-medium text-warn"><Eye className="size-3.5" aria-hidden /> Seen, not used</span>;
   return <span className="inline-flex items-center gap-1 text-xs font-medium text-negative"><CircleDashed className="size-3.5" aria-hidden /> Not visible</span>;
 }
 
 export default async function AiVisibilityPage() {
-  const { client } = await getSession();
+  const { client, user } = await getSession();
   if (!client) return null;
   const canEdit = ["owner", "admin"].includes(client.role);
-  const header = <TabHeader source={null} title="AI Visibility" description="How ChatGPT, Perplexity, Gemini and Claude answer your customers' questions: who they name, in what order, how they describe them, and which sites they cite." guide={[
+  const header = <TabHeader source={null} title="AI Visibility" description="How ChatGPT, Perplexity, Gemini, Google AI Mode and Claude answer your customers' questions: who they name, in what order, how they describe them, and which sites they cite." guide={[
     { term: "Visibility", text: "Share of answers (question × assistant) that name the business." },
     { term: "Position", text: "Order in which the business is named: #1 = first." },
     { term: "Detection rate", text: "Share of questions where at least one assistant names the business." },
@@ -49,14 +56,16 @@ export default async function AiVisibilityPage() {
   if (!process.env.ANTHROPIC_API_KEY) return <>{header}<EmptyState title="AI isn't configured" body="Add ANTHROPIC_API_KEY to the environment (and Vercel), then redeploy." /></>;
 
   const supabase = await createClient();
-  const [ai, target] = await Promise.all([loadAi(supabase, client.id), resolveTarget(createAdminClient(), client.id)]);
+  // every read in one parallel batch
+  const [ai, target, { data: settings }, cache, ranks] = await memo(`ai-vis|${user.id}|${client.id}`, 120_000, () => Promise.all([
+    loadAi(supabase, client.id), resolveTarget(createAdminClient(), client.id),
+    supabase.from("clients").select("settings").eq("id", client.id).maybeSingle(), loadCache(supabase, client.id), loadRanks(supabase, client.id),
+  ]));
   if (!ai.ok) return <>{header}<EmptyState title="AI visibility needs one database update" body="Apply the latest database migrations in the Supabase SQL editor, then reload this page." /></>;
   if (!target) return <>{header}<EmptyState title="No website to check yet" body="Connect Bing, Search Console or Business Profile for this client so the website can be detected." action={{ href: "/integrations", label: "Open Integrations" }} /></>;
 
-  const { data: settings } = await supabase.from("clients").select("settings").eq("id", client.id).maybeSingle();
   const search = (settings?.settings as { ai_search?: boolean } | null)?.ai_search !== false;
   const engines = enginesFrom(settings?.settings);
-  const cache = await loadCache(supabase, client.id);
   const have = new Set(ai.rows.map((r) => r.prompt.toLowerCase()));
   const kws = ((cache.get<Row[]>("ranked_keywords")?.data ?? []) as Row[]).filter((k) => typeof k.keyword === "string").sort((a, b) => Number(b.volume ?? 0) - Number(a.volume ?? 0)).map((k) => k.keyword as string);
   const suggestions = suggestPrompts(kws, [...have]).slice(0, 6);
@@ -121,12 +130,87 @@ export default async function AiVisibilityPage() {
   const topDomains = [...domCount.entries()].sort((a, b) => b[1] - a[1]);
 
   // ---- Google AI Overviews, from the rank-tracking searches (no extra cost)
-  const ranks = await loadRanks(supabase, client.id);
   const aio: Row[] = ranks.ok ? ranks.rows.filter((r) => r.serp).map((r) => ({
     keyword: r.keyword, device: r.device, shown: r.serp!.ai_overview.length ? "Yes" : "No",
     you: r.serp!.ai_overview.some((a) => (a.domain ?? "").replace(/^www\./, "").endsWith(site)) ? "Cited" : r.serp!.ai_overview.length ? "Not cited" : "—",
     sources: r.serp!.ai_overview.map((a) => a.domain).filter(Boolean).join(", "), checked: r.checkedOn,
   })) : [];
+
+  // ---- charts: colours follow the entity (you = slot 1, then competitors by mentions; assistants by their fixed order)
+  const shown = [...(me ? [me] : []), ...rivals].slice(0, 7);
+  const slot = new Map(shown.map((b, i) => [b.own ? "__you__" : brandKey(b), i]));
+  const brandLabel = (b: { name: string; own: boolean }) => (b.own ? `${b.name} (you)` : b.name);
+  const engineColor = (e: EngineKey) => cat(ENGINE_KEYS.indexOf(e));
+  const usedEngines = ENGINE_KEYS.filter((e) => L.some((c) => c.engine === e));
+  const engineKeys = usedEngines.map((e) => ({ key: e, label: ENGINES[e].label, color: engineColor(e) }));
+  const hasBrand = (c: AiCheck, b: { name: string; own: boolean }) => (b.own ? c.mentioned || c.brands.some((x) => x.own) : c.brands.some((x) => !x.own && brandKey(x) === brandKey(b)));
+  const brandIn = (c: AiCheck, b: { name: string; own: boolean }) => c.brands.find((x) => (b.own ? x.own : !x.own && brandKey(x) === brandKey(b)));
+
+  // performance over time, one point per check date
+  const weeks = [...new Set(ai.checks.map((c) => c.checked_on))].sort();
+  const inWeek = new Map(weeks.map((w) => [w, ai.checks.filter((c) => c.checked_on === w)]));
+  const perf = (fn: (list: AiCheck[], b: (typeof shown)[number]) => number | null) =>
+    shown.map((b, i) => ({ key: `b${i}`, label: brandLabel(b), color: cat(i), data: weeks.map((w) => ({ date: w, value: fn(inWeek.get(w) ?? [], b) })) }));
+  const perfMetrics: LineMetric[] = [
+    { key: "vis", label: "Visibility", unit: "%", series: perf((l, b) => pctOf(l.filter((c) => hasBrand(c, b)).length, l.length)) },
+    { key: "top3", label: "Top-3 visibility", unit: "%", series: perf((l, b) => pctOf(l.filter((c) => (brandIn(c, b)?.position ?? 99) <= 3).length, l.length)) },
+    { key: "pos", label: "Average position", reverse: true, series: perf((l, b) => avg(l.map((c) => brandIn(c, b)?.position).filter((p): p is number => p != null))) },
+    { key: "sent", label: "Sentiment", series: perf((l, b) => avg(l.map((c) => brandIn(c, b)?.sentiment).filter((p): p is number => p != null))) },
+    { key: "mentions", label: "Mentions", series: perf((l, b) => l.filter((c) => hasBrand(c, b)).length) },
+    { key: "cites", label: "Citations", series: perf((l, b) => { const d = b.own ? site : b.domain; return d ? l.reduce((a, c) => a + c.sources.filter((x) => onSite(x.domain, d)).length, 0) : null; }) },
+  ];
+
+  // share of voice (mentions) and where you are named
+  const sovTotal = brands.reduce((a, b) => a + b.mentions, 0);
+  const sov = shown.slice(0, 5).map((b) => ({ label: brandLabel(b), value: b.mentions, color: cat(slot.get(b.own ? "__you__" : brandKey(b)) ?? 8) }));
+  const sovRest = sovTotal - sov.reduce((a, x) => a + x.value, 0);
+  if (sovRest > 0) sov.push({ label: "Other brands", value: sovRest, color: "var(--cat-other)" });
+  const posBins = [
+    { label: "#1", value: positions.filter((p) => p === 1).length, highlight: true }, { label: "#2", value: positions.filter((p) => p === 2).length, highlight: true },
+    { label: "#3", value: positions.filter((p) => p === 3).length, highlight: true }, { label: "#4-5", value: positions.filter((p) => p >= 4 && p <= 5).length },
+    { label: "#6-10", value: positions.filter((p) => p >= 6 && p <= 10).length }, { label: "#11+", value: positions.filter((p) => p > 10).length },
+  ];
+  // detection by brand and assistant
+  const heatBrands = [...(me ? [me] : []), ...rivals.slice(0, 9)];
+  const detectCells = heatBrands.map((b) => usedEngines.map((e) => { const l = L.filter((c) => c.engine === e); return l.length ? pctOf(l.filter((c) => hasBrand(c, b)).length, l.length) : null; }));
+  const sentCells = heatBrands.map((b) => usedEngines.map((e) => b.engines[e]?.sentiment ?? null));
+  const sovByEngine = heatBrands.map((b) => ({ label: brandLabel(b), values: Object.fromEntries(usedEngines.map((e) => [e, b.engines[e]?.mentions ?? 0])) }));
+  // your sentiment per assistant
+  const ownSentiment = usedEngines.map((e) => ({ e, v: avg(L.filter((c) => c.engine === e).map((c) => c.sentiment).filter((x): x is number => x != null)), n: L.filter((c) => c.engine === e && c.sentiment != null).length }));
+  // themes and descriptions
+  const ownBrands = L.flatMap((c) => c.brands.filter((b) => b.own).map((b) => ({ ...b, engine: c.engine, prompt: c.prompt_id })));
+  const praised = countList(ownBrands.flatMap((b) => b.praised ?? []));
+  const criticised = countList(ownBrands.flatMap((b) => b.criticised ?? []));
+  const rivalThemes = rivals.slice(0, 8).map((b) => {
+    const hits = L.flatMap((c) => c.brands.filter((x) => !x.own && brandKey(x) === brandKey(b)));
+    return { brand: b.name, praised: countList(hits.flatMap((x) => x.praised ?? []), 3).map((t) => t.label).join(", "), criticised: countList(hits.flatMap((x) => x.criticised ?? []), 3).map((t) => t.label).join(", "), described: hits.find((x) => x.note)?.note ?? "", sentiment: b.avgSentiment };
+  });
+  const descriptions: Row[] = ownBrands.filter((b) => b.note).map((b) => ({ engine: ENGINES[b.engine].label, note: b.note, sentiment: b.sentiment, position: b.position, question: ai.rows.find((r) => r.id === b.prompt)?.prompt ?? "" }));
+  const tonePct = heatBrands.map((b) => {
+    const n = b.positive + b.neutral + b.negative;
+    return { label: brandLabel(b), values: { positive: b.positive, neutral: b.neutral, negative: b.negative }, note: n ? `${Math.round((b.positive / n) * 100)}% positive` : "" };
+  });
+
+  // citations by domain and assistant, and over time
+  const citeByEngine = topDomains.slice(0, 20).map(([d]) => ({ label: d === site ? `${d} (you)` : d, values: Object.fromEntries(usedEngines.map((e) => [e, L.filter((c) => c.engine === e).reduce((a, c) => a + c.sources.filter((x) => x.domain === d).length, 0)])) }));
+  const citeTrend: LineMetric[] = [{ key: "c", label: "Citations", series: topDomains.slice(0, 6).map(([d], i) => ({ key: `d${i}`, label: d, color: cat(i), data: weeks.map((w) => ({ date: w, value: (inWeek.get(w) ?? []).reduce((a, c) => a + c.sources.filter((x) => x.domain === d).length, 0) })) })) }];
+  const domainRows: Row[] = topDomains.map(([d, n]) => {
+    const rows = citeRows.filter((r) => r.domain === d);
+    return { domain: d, citations: n, urls: new Set(rows.map((r) => r.url)).size, engines: [...new Set(rows.map((r) => r.engine as string))].join(", "), questions: new Set(rows.map((r) => r.question)).size, brands: [...new Set(rows.flatMap((r) => String(r.brands).split(", ").filter(Boolean)))].slice(0, 6).join(", "), yours: onSite(d, site) ? "Your site" : "" };
+  });
+
+  // AI market (DataForSEO LLM Mentions), refreshed weekly
+  const marketAll = LLM_PLATFORMS.map((p) => ({ p, d: cache.get<LlmTopic>(`llm_topic_${p}`) })).filter((x) => x.d?.data);
+  const market = marketAll.filter((x) => x.d!.data.mentions > 0);
+  // single platform: what kind of brands it names (categories), else which brands, else each site's share of the citations
+  const one = market.length === 1 ? market[0].d!.data : null;
+  const [mixSrc, marketMixTitle, marketMixSub]: [LlmTopic["domains"], string, string] = !one ? [[], "", ""]
+    : one.categories.length ? [one.categories, "Brand categories AI names", "Mentions by category"]
+    : one.brands.length ? [one.brands, "Brands AI names", "Mentions by brand"]
+    : [one.domains.length ? one.domains : one.sources, "Share of citations", "Each site's share of the cited answers"];
+  const marketMixTotal = mixSrc.reduce((a, g) => a + g.mentions, 0);
+  const marketMix = mixSrc.slice(0, 5).map((g, i) => ({ label: onSite(g.key, site) ? `${g.key} (you)` : g.key, value: g.mentions, color: cat(i) }));
+  if (mixSrc.length > 5) marketMix.push({ label: "Other", value: mixSrc.slice(5).reduce((a, g) => a + g.mentions, 0), color: "var(--cat-other)" });
 
   const picks: Highlight[] = [];
   const vis = pctOf(named.length, L.length);
@@ -144,29 +228,39 @@ export default async function AiVisibilityPage() {
       <p className="mb-5 text-sm"><span className="font-semibold">{site}</span><span className="text-muted"> · {ai.rows.length} questions × {engines.length} assistants{ai.lastChecked ? ` · checked ${ai.lastChecked}` : ""} · refreshes weekly</span></p>
 
       {ai.rows.length === 0 ? <EmptyState title="No questions tracked yet" body="Questions are added automatically in the next daily run, or add your own below." /> : L.length === 0 ? (
-        <p className="rounded-xl border border-dashed border-border p-6 text-sm text-muted">Questions added. They are checked in the next daily run.</p>
+        <p className="rounded-[10px] border border-dashed border-border p-6 text-sm text-muted">Questions added. They are checked in the next daily run.</p>
       ) : (
         <>
-          <section aria-label="AI visibility summary" className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
+          <section aria-label="AI visibility summary" className="grid grid-cols-2 gap-3 lg:grid-cols-4 xl:grid-cols-4">
             <StatCard label="Visibility" value={vis == null ? "—" : `${vis}%`} sub={prevVis != null && prevVis !== vis ? `was ${prevVis}%` : "of answers name you"} tone={vis ? "good" : "bad"} />
             <StatCard label="Top-3 visibility" value={`${pctOf(positions.filter((p) => p <= 3).length, L.length) ?? 0}%`} sub="named in the first three" />
-            <StatCard label="Average position" value={avg(positions) == null ? "—" : `#${avg(positions)!.toFixed(1)}`} sub="when named" />
+            <StatCard label="Average position" value={avg(positions) == null ? "—" : `#${avg(positions)!.toFixed(1)}`} sub={me?.avgPosition != null ? `all checks: #${me.avgPosition}` : "when named"} />
             <StatCard label="Detection rate" value={`${pctOf(detected, checkedQuestions) ?? 0}%`} sub={`${detected} of ${checkedQuestions} questions`} />
             <StatCard label="Sentiment" value={avg(sentiments) == null ? "—" : avg(sentiments)!.toFixed(0)} sub="0-100 · 50 neutral" />
             <StatCard label="Your citations" value={fmtInt(ownCitations)} sub={`of ${fmtInt(citeRows.length)} sources`} />
             <StatCard label="Answers" value={fmtInt(L.length)} sub={`${ai.rows.length} questions × ${engines.length} assistants`} />
             <StatCard label="Brands found" value={fmtInt(brands.length)} sub={rivals[0] ? `most named: ${rivals[0].name}` : undefined} />
           </section>
-          {picks.length > 0 && <div className="mt-6"><Highlights items={picks.slice(0, 3)} /></div>}
+          {picks.length > 0 && <div className="mt-6"><Highlights items={picks.slice(0, 4)} /></div>}
 
           <div className="mt-6">
             <Tabs label="AI visibility views" items={[
               {
                 key: "overview", label: "Overview", content: (
                   <div className="space-y-6">
-                    {visTrend.some((o) => o.data.length >= 2)
-                      ? <MetricTrend title="Visibility over time (share of answers naming each brand, %)" source="AI" options={visTrend.filter((o) => o.data.length)} />
-                      : <p className="rounded-xl border border-dashed border-border p-4 text-sm text-muted">The trend appears after the second weekly check.</p>}
+                    <div className="grid gap-4 lg:grid-cols-3">
+                      <Panel title="Sentiment score" sub="How favourably assistants describe you, 0-100">
+                        <Gauge value={avg(sentiments)} label="All assistants" sub={`${sentiments.length} answer${sentiments.length === 1 ? "" : "s"} naming you`} />
+                        <div className="mt-4 grid grid-cols-2 gap-x-4 gap-y-1.5 border-t border-hairline pt-3 text-[13px]">
+                          {ownSentiment.map((o) => <div key={o.e} className="flex items-center justify-between gap-2"><span className="inline-flex min-w-0 items-center gap-1.5 truncate text-secondary"><span className="size-2 shrink-0 rounded-[2px]" style={{ background: engineColor(o.e) }} />{ENGINES[o.e].label}</span><span className="tabular-nums">{o.v == null ? "—" : Math.round(o.v)}</span></div>)}
+                        </div>
+                      </Panel>
+                      <Fill><Donut title="Share of voice" sub="Share of all brand mentions in the latest answers" items={sov} center={sovTotal && me ? `${Math.round((me.mentions / sovTotal) * 100)}%` : "0%"} centerLabel="you" /></Fill>
+                      <Columns title="Where you are named" sub={`Your position when named · not named in ${L.length - named.length} of ${L.length} answers`} bins={posBins} valueLabel="Answers" />
+                    </div>
+                    <MultiLine title="Performance over time" sub="Each check, you and the most-named competitors" metrics={perfMetrics} initialHidden={shown.slice(5).map((_, i) => `b${i + 5}`)} />
+                    {visTrend.some((o) => o.data.length >= 2) && <MetricTrend title="Visibility over time, one brand at a time (share of answers naming it, %)" source="AI" options={visTrend.filter((o) => o.data.length)} />}
+                    <Heatmap title="Visibility by assistant" sub="Share of each assistant's answers that name the brand, %" rows={heatBrands.map(brandLabel)} cols={usedEngines.map((e) => ENGINES[e].label)} cells={detectCells} max={100} unit="%" />
                     <ResearchTable title="By assistant (latest answers)" rows={byEngine} pageSize={6} columns={[
                       { key: "engine", label: "Assistant" }, { key: "answers", label: "Answers", type: "int" }, { key: "named", label: "Named you", type: "int" },
                       { key: "cited", label: "Cited your site", type: "int" }, { key: "mention_rate", label: "Mention rate %", type: "int" }, { key: "citation_rate", label: "Citation rate %", type: "int" },
@@ -194,7 +288,48 @@ export default async function AiVisibilityPage() {
                         { key: "detection", label: "Detection %", type: "int" }, { key: "top3", label: "Top 3 %", type: "int" }, { key: "mentions", label: "Mentions", type: "int" },
                         { key: "citations", label: "Citations", type: "int", hint: "Links to the brand's website among the cited sources" }, { key: "avgSentiment", label: "Avg sentiment", type: "int" },
                       ]} ranges={[{ key: "detection", label: "Detection %" }, { key: "mentions", label: "Mentions" }]} />
+                    <StackedBars title="Mentions by brand and assistant" sub="Who each assistant recommends" keys={engineKeys} rows={sovByEngine} valueLabel="Mentions" />
                     {ai.topSources.length > 0 && <BarList title="Websites cited instead of you" valueLabel="Answers citing them" items={ai.topSources.map((s) => ({ label: s.domain, value: s.count }))} />}
+                    <section className="space-y-3" aria-label="AI market">
+                      <div>
+                        <h3 className="text-sm font-semibold">AI market for your topics</h3>
+                        <p className="text-xs text-muted">From millions of real US ChatGPT and Google AI Overview answers (DataForSEO LLM Mentions){marketAll[0]?.d ? ` · topic: ${marketAll[0].d.data.topics.join(", ")} · updated ${marketAll[0].d.fetchedAt.slice(0, 10)}` : ""}. Refreshes weekly.</p>
+                      </div>
+                      {market.length === 0 ? <p className="rounded-[10px] border border-dashed border-border p-4 text-sm text-muted">{marketAll.length ? "No AI answers were found for this topic yet. It is checked again next week." : "Appears after the next weekly run (or “Check now” below)."}</p> : (
+                        <>
+                          {market.length === 1 ? (
+                            // one platform: its stats and what it names sit beside the cited-sites list instead of two full-width rows
+                            <div className="grid gap-4 lg:grid-cols-[minmax(0,1fr)_minmax(0,1.6fr)]">
+                              <div className="flex min-w-0 flex-col gap-3">
+                                <div className="grid grid-cols-2 gap-3">
+                                  <StatCard label={`${LLM_LABEL[market[0].p]} answers`} value={fmtInt(market[0].d!.data.mentions)} sub="on these topics" />
+                                  <StatCard label="AI search volume" value={market[0].d!.data.volume == null ? "—" : fmtInt(market[0].d!.data.volume)} sub={market[0].d!.data.domains.some((x) => onSite(x.key, site)) ? "you are cited" : "you are not cited yet"} tone={market[0].d!.data.domains.some((x) => onSite(x.key, site)) ? "good" : undefined} />
+                                </div>
+                                {marketMix.length > 0 && <Fill className="flex-1"><Donut title={marketMixTitle} sub={`${marketMixSub} in ${LLM_LABEL[market[0].p]}`} items={marketMix} center={fmtInt(marketMixTotal)} centerLabel={marketMixTitle === "Share of citations" ? "citations" : "mentions"} /></Fill>}
+                              </div>
+                              <BarList title={`Most-cited sites in ${LLM_LABEL[market[0].p]}`} valueLabel="Answers citing them" items={(market[0].d!.data.domains.length ? market[0].d!.data.domains : market[0].d!.data.sources).slice(0, 10).map((x) => ({ label: onSite(x.key, site) ? `${x.key} (you)` : x.key, value: x.mentions, detail: x.volume == null ? undefined : `${fmtInt(x.volume)} vol` }))} />
+                            </div>
+                          ) : <>
+                          <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
+                            {market.map(({ p, d }) => (
+                              <div key={p} className="contents">
+                                <StatCard label={`${LLM_LABEL[p]} answers`} value={fmtInt(d!.data.mentions)} sub="on these topics" />
+                                <StatCard label={`${LLM_LABEL[p]} AI search volume`} value={d!.data.volume == null ? "—" : fmtInt(d!.data.volume)} sub={d!.data.domains.some((x) => onSite(x.key, site)) ? "you are cited" : "you are not cited yet"} tone={d!.data.domains.some((x) => onSite(x.key, site)) ? "good" : undefined} />
+                              </div>
+                            ))}
+                          </div>
+                          <div className="grid gap-4 lg:grid-cols-2">
+                            {market.map(({ p, d }) => <BarList key={p} title={`Most-cited sites in ${LLM_LABEL[p]}`} valueLabel="Answers citing them" items={(d!.data.domains.length ? d!.data.domains : d!.data.sources).slice(0, 10).map((x) => ({ label: onSite(x.key, site) ? `${x.key} (you)` : x.key, value: x.mentions, detail: x.volume == null ? undefined : `${fmtInt(x.volume)} vol` }))} />)}
+                          </div>
+                          </>}
+                          {marketAll.length > market.length && <p className="text-xs text-muted">No {marketAll.filter((x) => !market.includes(x)).map((x) => LLM_LABEL[x.p]).join(" or ")} answers were found for this topic yet.</p>}
+                          {market.some(({ d }) => d!.data.brands.length) && (
+                            <ResearchTable title="Brands and products AI names on these topics" rows={market.flatMap(({ p, d }) => d!.data.brands.map((b) => ({ brand: b.key, platform: LLM_LABEL[p], mentions: b.mentions, volume: b.volume })))} initialSort={{ key: "mentions", dir: "desc" }} pageSize={10}
+                              columns={[{ key: "brand", label: "Brand or product" }, { key: "platform", label: "Platform", type: "badge" }, { key: "mentions", label: "Answers", type: "int" }, { key: "volume", label: "AI search volume", type: "int" }]} />
+                          )}
+                        </>
+                      )}
+                    </section>
                   </div>
                 ),
               },
@@ -203,10 +338,13 @@ export default async function AiVisibilityPage() {
                   <div className="space-y-6">
                     <dl className="grid grid-cols-2 gap-3 sm:grid-cols-5">
                       {([["Total citations", citeRows.length], ["Unique URLs", new Set(citeRows.map((r) => r.url)).size], ["Unique domains", domCount.size], ["Brands found", brands.length], ["Most appearances", topDomains[0]?.[1] ?? 0]] as const).map(([l, v]) => (
-                        <div key={l} className="rounded-xl border border-border bg-surface p-4"><dt className="text-xs text-muted">{l}</dt><dd className="mt-1 text-2xl font-bold tabular-nums">{fmtInt(v)}</dd></div>
+                        <div key={l} className="rounded-[10px] border border-border bg-surface p-4"><dt className="text-xs text-muted">{l}</dt><dd className="mt-1 text-2xl font-bold tabular-nums">{fmtInt(v)}</dd></div>
                       ))}
                     </dl>
-                    <BarList title="Top cited domains" valueLabel="Citations" items={topDomains.slice(0, 20).map(([label, value]) => ({ label: label === site ? `${label} (you)` : label, value }))} />
+                    <StackedBars title="Top 20 cited domains" sub="Citations in the latest answers, split by assistant" keys={engineKeys} rows={citeByEngine} valueLabel="Citations" />
+                    <MultiLine title="Citations over time by top domain" sub="Each check" metrics={citeTrend} />
+                    <ResearchTable title="Domain overview" rows={domainRows} searchKeys={["domain", "brands"]} facets={[{ key: "yours", label: "Owner" }]} initialSort={{ key: "citations", dir: "desc" }} csvName={`ai-cited-domains-${site}`}
+                      columns={[{ key: "domain", label: "Domain" }, { key: "citations", label: "Citations", type: "int" }, { key: "urls", label: "Unique URLs", type: "int" }, { key: "questions", label: "Questions", type: "int" }, { key: "engines", label: "Assistants" }, { key: "brands", label: "Brands named alongside" }, { key: "yours", label: "", type: "badge" }]} />
                     <ResearchTable title="Cited pages" rows={citeRows} searchKeys={["url", "title", "question", "brands"]} facets={[{ key: "engine", label: "Assistant" }, { key: "yours", label: "Owner" }]} csvName={`ai-citations-${site}`}
                       columns={[{ key: "url", label: "Citation URL", type: "url" }, { key: "question", label: "Question" }, { key: "brands", label: "Brands named" }, { key: "engine", label: "Assistant", type: "badge" }, { key: "yours", label: "", type: "badge" }]} />
                   </div>
@@ -215,10 +353,32 @@ export default async function AiVisibilityPage() {
               {
                 key: "sentiment", label: "Sentiment", content: (
                   <div className="space-y-6">
-                    {sentTrend.some((o) => o.data.length >= 2)
-                      ? <MetricTrend title="Sentiment over time by brand (0-100)" source="AI" options={sentTrend} />
-                      : <p className="rounded-xl border border-dashed border-border p-4 text-sm text-muted">The sentiment trend appears after the second weekly check.</p>}
-                    <ResearchTable title="Sentiment by brand and assistant" csvName={`ai-sentiment-${site}`} searchKeys={["brand"]} facets={[{ key: "engine", label: "Assistant" }]} initialSort={{ key: "mentions", dir: "desc" }}
+                    <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 xl:grid-cols-6">
+                      <div className="col-span-2 rounded-[10px] border border-border bg-surface p-4 sm:col-span-1"><Gauge value={avg(sentiments)} label="You, all assistants" /></div>
+                      {ownSentiment.map((o) => <div key={o.e} className="rounded-[10px] border border-border bg-surface p-4"><Gauge value={o.v} label={ENGINES[o.e].label} empty="Not named" sub={`${o.n} answer${o.n === 1 ? "" : "s"} naming you`} /></div>)}
+                    </div>
+                    <MultiLine title="Sentiment over time by brand" sub="Average per check, 0-100 (50 = neutral)" metrics={[perfMetrics.find((m) => m.key === "sent")!]} initialHidden={shown.slice(5).map((_, i) => `b${i + 5}`)} />
+                    <div className="grid gap-4 xl:grid-cols-2">
+                      <Heatmap title="Sentiment by brand and assistant" sub="Average 0-100 · green above 50, red below" rows={heatBrands.map(brandLabel)} cols={usedEngines.map((e) => ENGINES[e].label)} cells={sentCells} scale="div" />
+                      <div className="flex min-w-0 flex-col gap-4">
+                        <StackedBars title="Positive, neutral and negative mentions" sub="Share of each brand's mentions" percent valueLabel="Positive share" rows={tonePct}
+                          keys={[{ key: "positive", label: "Positive (60+)", color: "var(--positive)" }, { key: "neutral", label: "Neutral (40-59)", color: "var(--cat-other)" }, { key: "negative", label: "Negative (under 40)", color: "var(--negative)" }]} />
+                        <Fill className="flex-1"><SplitBar title="How you are described" sub="Tone of every mention of you, all assistants" empty="Not named in the latest answers."
+                          total={me && me.positive + me.neutral + me.negative ? `${Math.round((me.positive / (me.positive + me.neutral + me.negative)) * 100)}%` : undefined} totalLabel="positive"
+                          segments={[{ label: "Positive", value: me?.positive ?? 0, color: "var(--positive)" }, { label: "Neutral", value: me?.neutral ?? 0, color: "var(--cat-other)" }, { label: "Negative", value: me?.negative ?? 0, color: "var(--negative)" }]} /></Fill>
+                      </div>
+                    </div>
+                    <Themes title="What assistants say about you" sub="Themes in the answers that name you" praised={praised} criticised={criticised} />
+                    {descriptions.length > 0 && (
+                      <ResearchTable title="How each assistant describes you" rows={descriptions} searchKeys={["note", "question"]} facets={[{ key: "engine", label: "Assistant" }]} initialSort={{ key: "sentiment", dir: "desc" }} pageSize={8}
+                        columns={[{ key: "note", label: "Description" }, { key: "engine", label: "Assistant", type: "badge" }, { key: "sentiment", label: "Sentiment", type: "int" }, { key: "position", label: "Position", type: "int" }, { key: "question", label: "Question" }]} />
+                    )}
+                    {rivalThemes.some((r) => r.praised || r.criticised || r.described) && (
+                      <ResearchTable title="What assistants say about competitors" rows={rivalThemes} searchKeys={["brand"]} pageSize={8}
+                        columns={[{ key: "brand", label: "Brand" }, { key: "sentiment", label: "Avg sentiment", type: "int" }, { key: "described", label: "Described as" }, { key: "praised", label: "Praised for" }, { key: "criticised", label: "Criticised for" }]} />
+                    )}
+                    {sentTrend.some((o) => o.data.length >= 2) && <MetricTrend title="Sentiment over time, one brand at a time (0-100)" source="AI" options={sentTrend} />}
+                    <ResearchTable title="Sentiment by brand and assistant (table)" csvName={`ai-sentiment-${site}`} searchKeys={["brand"]} facets={[{ key: "engine", label: "Assistant" }]} initialSort={{ key: "mentions", dir: "desc" }}
                       rows={brands.flatMap((b) => (Object.entries(b.engines) as [EngineKey, { mentions: number; sentiment: number | null }][]).map(([e, v]) => ({
                         brand: b.own ? `${b.name} (you)` : b.name, engine: ENGINES[e].label, sentiment: v.sentiment, mentions: v.mentions,
                         tone: v.sentiment == null ? null : v.sentiment >= 60 ? "positive" : v.sentiment >= 40 ? "neutral" : "negative",
@@ -234,7 +394,7 @@ export default async function AiVisibilityPage() {
                   <ul className="space-y-2">
                     {ai.rows.map((r) => (
                       <li key={r.id}>
-                        <details className="rounded-xl border border-border bg-surface">
+                        <details className="rounded-[10px] border border-border bg-surface">
                           <summary className="flex cursor-pointer flex-wrap items-center justify-between gap-2 px-4 py-2.5 text-sm">
                             <span className="min-w-0 flex-1 font-medium">{r.prompt}</span>
                             <span className="flex flex-wrap gap-3">{engines.map((e) => <span key={e} className="inline-flex items-center gap-1 text-xs"><span className="text-muted">{ENGINES[e].label}:</span><Status c={r.byEngine[e]} /></span>)}</span>
@@ -245,7 +405,7 @@ export default async function AiVisibilityPage() {
                                 <p className="text-xs font-semibold uppercase tracking-wide text-muted">{ENGINES[e].label} · {c.checked_on} · {c.model}</p>
                                 {c.brands.length > 0 && <p className="flex flex-wrap gap-1 text-xs">{c.brands.map((b) => <span key={`${b.position}-${b.name}`} className={`rounded px-1.5 py-0.5 ${b.own ? "bg-accent text-accent-foreground" : "bg-surface-muted"}`}>#{b.position} {b.name}{b.sentiment != null ? ` · ${b.sentiment}` : ""}</span>)}</p>}
                                 <p className="whitespace-pre-line text-muted">{c.answer ?? "No answer text."}</p>
-                                {c.sources.length > 0 && <ul className="space-y-0.5 text-xs">{c.sources.slice(0, 8).map((s) => <li key={s.url} className="break-all"><a href={s.url} target="_blank" rel="noopener noreferrer" className="hover:text-accent hover:underline">{s.title ?? s.domain}</a> <span className="text-muted">· {s.domain}</span></li>)}</ul>}
+                                {c.sources.length > 0 && <ul className="space-y-0.5 text-xs">{c.sources.slice(0, 8).map((s) => <li key={s.url} className="break-all"><a href={s.url} target="_blank" rel="noopener noreferrer" className="hover:text-foreground underline decoration-border-strong underline-offset-2 hover:decoration-foreground">{s.title ?? s.domain}</a> <span className="text-muted">· {s.domain}</span></li>)}</ul>}
                               </div>
                             ))}
                             {canEdit && <div className="flex justify-end"><RemoveButton kind="ai" id={r.id} label={r.prompt} /></div>}
@@ -262,7 +422,7 @@ export default async function AiVisibilityPage() {
       )}
 
       {canEdit && (
-        <details className="mt-8 rounded-xl border border-border bg-surface p-4" open={ai.rows.length === 0}>
+        <details className="mt-8 rounded-[10px] border border-border bg-surface p-4" open={ai.rows.length === 0}>
           <summary className="cursor-pointer text-sm font-medium">Manage questions and assistants</summary>
           <div className="mt-3"><AiControls canEdit={canEdit} count={ai.rows.length} due={due} search={search} suggestions={suggestions} estimate={est} engines={engines} /></div>
         </details>

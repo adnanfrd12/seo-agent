@@ -105,7 +105,7 @@ export function LbmBulkSetup() {
         <label className="flex items-center gap-1.5"><input type="checkbox" className="accent-[var(--accent)]" checked={onlyEnabled} onChange={(e) => setOnlyEnabled(e.target.checked)} /> Only locations enabled in LBM</label>
         {bingAvailable && <label className="flex items-center gap-1.5"><input type="checkbox" className="accent-[var(--accent)]" checked={withBing} onChange={(e) => setWithBing(e.target.checked)} /> Connect matching Bing sites</label>}
         <label className="flex items-center gap-1.5"><input type="checkbox" className="accent-[var(--accent)]" checked={copyTeam} onChange={(e) => setCopyTeam(e.target.checked)} /> Give this client&apos;s team the same access</label>
-        <span className="flex gap-2 text-xs"><button className="text-accent hover:underline" onClick={() => toggleAll(true)}>Select shown</button><button className="text-accent hover:underline" onClick={() => toggleAll(false)}>Clear shown</button></span>
+        <span className="flex gap-2 text-xs"><button className="text-foreground underline decoration-border-strong underline-offset-2 hover:decoration-foreground" onClick={() => toggleAll(true)}>Select shown</button><button className="text-foreground underline decoration-border-strong underline-offset-2 hover:decoration-foreground" onClick={() => toggleAll(false)}>Clear shown</button></span>
       </div>
       <div className="max-h-[28rem] overflow-auto rounded-md border border-border">
         <table className="w-full min-w-[44rem] text-sm">

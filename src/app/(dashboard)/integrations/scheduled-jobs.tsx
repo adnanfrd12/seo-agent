@@ -24,13 +24,13 @@ export async function ScheduledJobs() {
   ]);
   const backlog = queued.count ?? 0;
   return (
-    <section className="mt-4 rounded-xl border border-border bg-surface p-5" aria-labelledby="jobs-title">
+    <section className="mt-4 rounded-[10px] border border-border bg-surface p-5" aria-labelledby="jobs-title">
       <div className="flex flex-wrap items-start justify-between gap-3">
         <div>
           <h2 id="jobs-title" className="text-base font-semibold">Automatic updates</h2>
           <p className="text-sm text-muted">Everything below runs on its own every day (times in your browser&apos;s locale, from UTC schedules). Nobody has to press a button for the dashboards to stay current.</p>
         </div>
-        <span className={backlog > 0 ? "text-sm text-[#B7791F]" : "text-sm font-medium text-positive"}>{backlog > 0 ? `${backlog} sync jobs queued` : "Queue empty"}</span>
+        <span className={backlog > 0 ? "text-sm text-warn" : "text-sm font-medium text-positive"}>{backlog > 0 ? `${backlog} sync jobs queued` : "Queue empty"}</span>
       </div>
       <ul className="mt-4 divide-y divide-border">
         {(Object.keys(SCHEDULE) as (keyof typeof SCHEDULE)[]).map((job) => {

@@ -36,9 +36,9 @@ export function CompareTrend({ snapshots }: { snapshots: SnapshotPoint[] }) {
   }, [snapshots, metric]);
 
   return (
-    <figure className="rounded-xl border border-border bg-surface p-4" aria-labelledby={`${id}-t`}>
+    <figure className="rounded-[10px] border border-border bg-surface p-4" aria-labelledby={`${id}-t`}>
       <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
-        <figcaption id={`${id}-t`} className="text-sm font-semibold">Visibility over time <span className="ml-1 rounded bg-accent-soft px-1.5 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-accent">estimate</span></figcaption>
+        <figcaption id={`${id}-t`} className="text-sm font-semibold">Visibility over time <span className="ml-1 rounded bg-surface-muted px-1.5 py-0.5 text-[10px] font-medium uppercase tracking-wide text-secondary">estimate</span></figcaption>
         <div role="tablist" aria-label="Visibility metric" className="inline-flex rounded-lg border border-border p-0.5">
           {METRICS.map((m) => (
             <button key={m.key} role="tab" aria-selected={m.key === metric} onClick={() => setMetric(m.key)}

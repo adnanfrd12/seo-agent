@@ -1,13 +1,14 @@
-import { revalidatePath } from "next/cache";
+import { revalidatePath } from "@/lib/revalidate";
 import { Suspense } from "react";
 import { after } from "next/server";
 import { RangeMemory } from "@/components/layout/range-memory";
 import { touchClient } from "@/lib/activity";
+import { memo } from "@/lib/memo";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { getSession } from "@/lib/analytics/client-context";
 import { createClient } from "@/lib/supabase/server";
 import { AppShell } from "@/components/layout/app-shell";
-import { HeaderContent } from "@/components/layout/header-content";
+import { HeaderContent, SidebarClient } from "@/components/layout/header-content";
 
 async function createFirstClient(formData: FormData) {
   "use server";
@@ -24,7 +25,7 @@ export default async function DashboardLayout({ children }: { children: React.Re
   if (!client) {
     return (
       <main className="flex min-h-screen items-center justify-center p-4">
-        <form action={createFirstClient} className="w-full max-w-sm space-y-4 rounded-xl border border-border bg-surface p-6">
+        <form action={createFirstClient} className="w-full max-w-sm space-y-4 rounded-[10px] border border-border bg-surface p-6">
           <h1 className="text-xl font-semibold">Create your client</h1>
           <p className="text-sm text-muted">Name the client whose analytics you will track.</p>
           <input
@@ -43,18 +44,20 @@ export default async function DashboardLayout({ children }: { children: React.Re
   after(() => touchClient(createAdminClient(), client.id));
 
   const supabase = await createClient();
-  const { data: lastSync } = await supabase
+  // read on every page view; the time only moves when a sync finishes, so it is reused for a minute
+  const lastSync = await memo(`last-sync|${user.id}|${client.id}`, 60_000, async () => (await supabase
     .from("integration_connections")
     .select("last_synced_at")
     .eq("client_id", client.id)
     .not("last_synced_at", "is", null)
     .order("last_synced_at", { ascending: false })
     .limit(1)
-    .maybeSingle();
+    .maybeSingle()).data);
 
   return (
     <AppShell
-      header={<HeaderContent client={client} clients={clients} user={user} lastSyncedAt={lastSync?.last_synced_at ?? null} />}
+      sidebarTop={<SidebarClient client={client} clients={clients} lastSyncedAt={lastSync?.last_synced_at ?? null} />}
+      header={<HeaderContent client={client} user={user} lastSyncedAt={lastSync?.last_synced_at ?? null} />}
     >
       <Suspense fallback={null}><RangeMemory /></Suspense>
       {children}

@@ -1,5 +1,8 @@
 import { GenerateButton, TaskStatusSelect } from "@/components/ai/ai-controls";
 import { AutoAnalysis } from "@/components/ai/auto-analysis";
+import { StackedBars } from "@/components/charts/ai-charts";
+import { BarList } from "@/components/charts/bar-list";
+import { Fill, SplitBar } from "@/components/charts/ops-charts";
 import { TabHeader } from "@/components/dashboard/tab-header";
 import { Highlights } from "@/components/dashboard/highlights";
 import { pickHighlights } from "@/lib/overview/highlights";
@@ -19,6 +22,11 @@ type Task = {
   success_metric: string; status: string; completed_at: string | null;
 };
 const WEEKS = ["Critical fixes & quick wins", "Keyword & content optimisation", "User experience & conversion", "Measurement, validation & next steps"];
+const STATUS_KEYS = [
+  { key: "completed", label: "Completed", color: "var(--positive)" }, { key: "in_progress", label: "In progress", color: "color-mix(in oklab, var(--positive) 45%, var(--surface))" },
+  { key: "planned", label: "Planned", color: "var(--cat-other)" }, { key: "skipped", label: "Skipped", color: "var(--border-strong)" },
+];
+const EFFORTS = ["small", "medium", "large"];
 
 export default async function StrategyPage({ searchParams }: { searchParams: Promise<SearchParams> }) {
   const { client } = await getSession();
@@ -43,6 +51,9 @@ export default async function StrategyPage({ searchParams }: { searchParams: Pro
   const configured = Boolean(process.env.ANTHROPIC_API_KEY);
   const autoStart = configured && canEdit && !error && !plan && !running;
   const done = all.filter((t) => t.status === "completed").length;
+  const cats = new Map<string, number>();
+  for (const t of all) cats.set(t.category, (cats.get(t.category) ?? 0) + 1);
+  const byCategory = [...cats.entries()].sort((a, b) => b[1] - a[1]).map(([c, n]) => ({ label: c.replace(/_/g, " ").replace(/^./, (x) => x.toUpperCase()).replace(/seo\b/i, "SEO"), value: n }));
 
   const focusWeek = [1, 2, 3, 4].find((w) => all.some((t) => t.week === w && !["completed", "skipped"].includes(t.status)));
   const openInFocus = focusWeek ? all.filter((t) => t.week === focusWeek && !["completed", "skipped"].includes(t.status)) : [];
@@ -57,6 +68,7 @@ export default async function StrategyPage({ searchParams }: { searchParams: Pro
   { term: "Weekly plan", text: "Week 1 fixes and quick wins, week 2 keyword and content work, week 3 user experience and conversion, week 4 measurement and next steps." },
   { term: "Evidence", text: "Each task cites the data behind it. Tasks without evidence are setup or measurement steps." },
   { term: "Success metric", text: "What to check later to know whether the task worked. Results are compared before and after, without claiming cause and effect." },
+  { term: "Task status", text: "Planned, in progress, completed or skipped. Set it on each task; the progress charts and the next plan use it." },
 ]} />
       <RangeSelector path="/strategy" sp={sp} range={range} showCompare={false} />
       {plan && <Highlights items={hl} />}
@@ -76,23 +88,37 @@ export default async function StrategyPage({ searchParams }: { searchParams: Pro
 
       {plan && (
         <>
-          <div className="mb-6 rounded-xl border border-border bg-surface p-5">
+          <div className="mb-6 rounded-[10px] border border-border bg-surface p-5">
             <p className="text-xs font-semibold uppercase tracking-wider text-accent">Plan based on {plan.period_start} → {plan.period_end}</p>
             <p className="mt-2 leading-relaxed">{plan.summary}</p>
             {sources.length > 0 && <p className="mt-2 text-xs text-muted">Data sources in this plan: {sources.join(" · ")}</p>}
             <p className="mt-3 text-sm text-muted">{done} of {all.length} tasks completed</p>
             <div className="mt-1 h-2 overflow-hidden rounded-full bg-surface-muted"><div className="h-full rounded-full bg-positive" style={{ width: `${all.length ? (done / all.length) * 100 : 0}%` }} /></div>
           </div>
+          <section aria-label="Plan charts" className="mb-8 grid gap-4 lg:grid-cols-[minmax(0,1.6fr)_minmax(0,1fr)]">
+            <div className="flex min-w-0 flex-col gap-4">
+              <StackedBars title="Progress by week" sub="Tasks per week, by status" valueLabel="Tasks" keys={STATUS_KEYS}
+                rows={[1, 2, 3, 4].map((w) => ({ label: `W${w} · ${WEEKS[w - 1]}`, values: Object.fromEntries(STATUS_KEYS.map((k) => [k.key, all.filter((t) => t.week === w && t.status === k.key).length])) }))} />
+              <Fill className="flex-1"><SplitBar title="By priority" sub="Expected importance of each task" segments={[
+                { label: "High", value: all.filter((t) => t.priority === "high").length, color: "var(--negative)" }, { label: "Medium", value: all.filter((t) => t.priority === "medium").length, color: "var(--warn)" },
+                { label: "Low", value: all.filter((t) => t.priority === "low").length, color: "var(--cat-other)" },
+              ]} /></Fill>
+            </div>
+            <div className="flex min-w-0 flex-col gap-4">
+              <SplitBar title="By effort" sub="Estimated work per task" segments={EFFORTS.map((e, i) => ({ label: e[0].toUpperCase() + e.slice(1), value: all.filter((t) => t.estimated_effort === e).length, color: `color-mix(in oklab, var(--series) ${[100, 55, 22][i]}%, var(--surface))` }))} />
+              <Fill className="flex-1"><BarList title="By category" valueLabel="Tasks" items={byCategory} /></Fill>
+            </div>
+          </section>
           <div className="space-y-8">
             {[1, 2, 3, 4].map((w) => (
               <section key={w} aria-labelledby={`week-${w}`}>
                 <h2 id={`week-${w}`} className="mb-3 flex items-baseline gap-3">
-                  <span className="text-3xl font-extrabold text-accent">W{w}</span>
+                  <span className="text-2xl font-semibold tabular-nums text-foreground">W{w}</span>
                   <span className="text-lg font-semibold">{WEEKS[w - 1]}</span>
                 </h2>
                 <div className="space-y-3">
                   {all.filter((t) => t.week === w).map((t) => (
-                    <article key={t.id} className={cn("rounded-xl border border-border bg-surface p-5", t.status === "skipped" && "opacity-60", t.status === "completed" && "border-positive/40")}>
+                    <article key={t.id} className={cn("rounded-[10px] border border-border bg-surface p-5 [overflow-wrap:anywhere]", t.status === "skipped" && "opacity-60", t.status === "completed" && "border-positive/40")}>
                       <div className="flex flex-wrap items-start justify-between gap-3">
                         <div className="min-w-0">
                           <p className="text-[11px] font-semibold uppercase tracking-wide text-muted">

@@ -1,15 +1,17 @@
+import { memo } from "@/lib/memo";
 import Link from "next/link";
-import { Printer } from "lucide-react";
+import { ArrowRight } from "lucide-react";
+import { CompareBars, ShareDonut } from "@/components/charts/analytics-charts";
+import { MetricTrend } from "@/components/charts/metric-trend";
 import { FilterSelect } from "@/components/dashboard/filter-select";
-import { RangeSelector } from "@/components/dashboard/range-selector";
 import { AlertsPanel } from "@/components/overview/alerts-panel";
 import { Onboarding } from "@/components/overview/onboarding";
 import { ChangesPanel, CompetitorSnapshot, HealthPanel, Hero, KpiBand, NextActions, TopAndOpportunities, type NextAction } from "@/components/overview/command-center";
-import { ReportBody } from "@/components/report/report-body";
-import { PdfDownloadButton } from "@/components/report/pdf-download";
+import { ExportMenu } from "@/components/report/export-menu";
 import { getSession } from "@/lib/analytics/client-context";
 import { resolveRange } from "@/lib/analytics/range";
 import { resourceOptions, resourceScope } from "@/lib/analytics/resource-scope";
+import { dailySeries } from "@/lib/analytics/trend";
 import { first, type SearchParams } from "@/lib/analytics/url";
 import { loadAlerts } from "@/lib/alerts";
 import { loadCompetitors } from "@/lib/dataforseo/competitors";
@@ -38,8 +40,10 @@ function buildNextActions(d: ReportData, comp: Awaited<ReturnType<typeof loadCom
   return out.slice(0, 5);
 }
 
+const fmtDay = (iso: string) => new Date(`${iso}T00:00:00Z`).toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric", timeZone: "UTC" });
+
 export default async function OverviewPage({ searchParams }: { searchParams: Promise<SearchParams> }) {
-  const { client } = await getSession();
+  const { client, user } = await getSession();
   if (!client) return null;
   const sp = await searchParams;
   // the executive report defaults to the last complete calendar month
@@ -52,18 +56,22 @@ export default async function OverviewPage({ searchParams }: { searchParams: Pro
   const propertyOptions = resourceOptions(scope.ga4, "All properties (combined)");
   const siteOptions = resourceOptions(scope.gsc, "All sites (combined)");
 
+  // all reads in parallel; the stored data only changes when a sync or a check runs, so a repeat
+  // view within three minutes reuses it (the key holds the user, client, period and picked property/site)
+  const key = `overview|${user.id}|${client.id}|${range.start}|${range.end}|${compare}|${scope.ga4Pick?.id ?? ""}|${scope.gscPick?.id ?? ""}`;
   let data: ReportData;
+  let comp: Awaited<ReturnType<typeof loadCompetitors>> | null, alerts: Awaited<ReturnType<typeof loadAlerts>>, status: Awaited<ReturnType<typeof loadDataStatus>>;
   try {
-    data = await loadReportData(scope.supabase, client.id, range, compare);
+    [data, comp, alerts, status] = await memo(key, 180_000, () => Promise.all([
+      loadReportData(scope.supabase, client.id, range, compare),
+      // a missing table (migration not applied) just hides that panel
+      loadCompetitors(scope.supabase, client.id).catch(() => null),
+      loadAlerts(scope.supabase, client.id).catch(() => []),
+      loadDataStatus(scope.supabase, client.id).catch(() => []),
+    ]));
   } catch {
-    return <p role="alert" className="rounded-lg bg-accent-soft p-3 text-sm text-negative">Could not load the overview. Please try again.</p>;
+    return <p role="alert" className="rounded-lg bg-negative-soft p-3 text-sm text-negative">Could not load the overview. Please try again.</p>;
   }
-  // everything below reads stored data only; a missing table (migration not applied) just hides that panel
-  const [comp, alerts, status] = await Promise.all([
-    loadCompetitors(scope.supabase, client.id).catch(() => null),
-    loadAlerts(scope.supabase, client.id).catch(() => []),
-    loadDataStatus(scope.supabase, client.id).catch(() => []),
-  ]);
   const growth = computeGrowth(data);
   const health = computeHealth(data, { staleSources: status.filter((s) => s.health === "stale" || s.health === "error").map((s) => s.label) });
   const nextActions = buildNextActions(data, comp);
@@ -77,57 +85,64 @@ export default async function OverviewPage({ searchParams }: { searchParams: Pro
   // server-rendered PDF file (falls back to the print view if Chromium isn't available)
   const pdfHref = (type: "full" | "executive") => `/api/report/pdf?${qs.toString()}&type=${type}`;
   const fileBase = `${client.name.replace(/[^w-]+/g, "-").slice(0, 40) || "report"}-${range.start}_${range.end}`;
-  const basisLabel = range.preset === "month" ? "vs the previous month" : "vs the previous period of equal length";
+  // the on-screen full report keeps the same period, properties and comparison
+  const onScreen = new URLSearchParams(qs);
+  if (compare) onScreen.set("compare", "1");
+
+  const trend = [
+    ...(data.connected.ga4 ? [
+      { key: "sessions", label: "Sessions", data: dailySeries(data.ga4Trend, "sessions", range) },
+      { key: "users", label: "Users", data: dailySeries(data.ga4Trend, "users", range) },
+    ] : []),
+    ...(data.connected.gsc ? [
+      { key: "clicks", label: "Search clicks", data: dailySeries(data.gscTrend, "clicks", range) },
+      { key: "impressions", label: "Impressions", data: dailySeries(data.gscTrend, "impressions", range) },
+    ] : []),
+  ];
 
   return (
-    <div className="mx-auto max-w-6xl">
-      <div className="mb-6 flex flex-wrap items-end justify-between gap-4">
-        <div>
-          <p className="text-xs font-semibold uppercase tracking-[0.18em] text-accent">Overview</p>
-          <h1 className="mt-1 text-2xl font-bold tracking-tight sm:text-3xl">{client.name}</h1>
-          <p className="mt-1 text-sm text-muted">{range.start} → {range.end} · every figure compares with the previous period and, where history exists, month and year ago</p>
-        </div>
-        <div className="flex flex-wrap gap-2">
-          <PdfDownloadButton primary href={pdfHref("full")} printHref={reportHref("full", true)}
-            label="Download full report PDF" filename={`${fileBase}-full-report.pdf`} />
-          <PdfDownloadButton href={pdfHref("executive")} printHref={reportHref("executive", true)}
-            label="Executive summary PDF" filename={`${fileBase}-executive-summary.pdf`} />
-          <Link href={reportHref("full", true)} target="_blank"
-            className="inline-flex items-center gap-1.5 rounded-lg border border-border bg-surface px-3.5 py-2 text-sm font-medium hover:bg-surface-muted">
-            <Printer className="size-4" aria-hidden /> Print report
-          </Link>
-        </div>
-      </div>
+    <div className="space-y-6">
+      <Hero clientName={client.name} rangeLabel={`${fmtDay(range.start)} – ${fmtDay(range.end)}`} growth={growth} status={status} comp={comp} unseenAlerts={alerts.filter((a) => !a.seen_at).length}
+        actions={<ExportMenu fullPdf={pdfHref("full")} execPdf={pdfHref("executive")} fullPrint={reportHref("full", true)} execPrint={reportHref("executive", true)} reportPage={`/overview/report?${onScreen.toString()}`} fileBase={fileBase} />} />
 
-      <RangeSelector path={PATH} sp={sp} range={range} />
       {(propertyOptions || siteOptions) && (
-        <div className="mb-5 flex flex-wrap items-end gap-3">
+        <div className="flex flex-wrap items-end gap-3">
           {propertyOptions && <FilterSelect label="GA4 property" name="property" value={scope.ga4Pick?.id ?? ""} path={PATH} sp={sp} options={propertyOptions} />}
           {siteOptions && <FilterSelect label="Search Console site" name="site" value={scope.gscPick?.id ?? ""} path={PATH} sp={sp} options={siteOptions} />}
         </div>
       )}
-      <div className="space-y-6">
-        <Hero clientName={client.name} rangeLabel={`${range.start} → ${range.end}`} growth={growth} status={status} comp={comp} unseenAlerts={alerts.filter((a) => !a.seen_at).length} />
-        <Onboarding status={status} />
-        <KpiBand d={data} />
-        <div className="grid gap-6 lg:grid-cols-5">
-          <div className="lg:col-span-3"><ChangesPanel d={data} /></div>
-          <div className="lg:col-span-2"><NextActions items={nextActions} /></div>
+      <Onboarding status={status} />
+      <KpiBand d={data} />
+      {trend.length > 0 && <MetricTrend title="Traffic and search" source={compare ? "vs previous period" : undefined} options={trend} />}
+      {/* the action list is the taller column: the channel chart under "What changed" grows to its height */}
+      <div className="grid gap-6 lg:grid-cols-5">
+        <div className="flex min-w-0 flex-col gap-6 lg:col-span-3">
+          <ChangesPanel d={data} />
+          {data.channels.length > 0 && (
+            <CompareBars fill title="Sessions by channel" sub="Top four GA4 channels · this period against the previous one" valueLabel="Sessions"
+              rows={data.channels.slice(0, 4).map((c) => ({ label: c.channel, current: Number(c.sessions), previous: c.prevSessions == null ? null : Number(c.prevSessions) }))} />
+          )}
         </div>
-        <div className="grid gap-6 lg:grid-cols-3">
+        <div className="lg:col-span-2"><NextActions items={nextActions} /></div>
+      </div>
+      <div className="grid gap-6 lg:grid-cols-3">
+        <div className="flex min-w-0 flex-col gap-6">
           <CompetitorSnapshot comp={comp} />
-          <HealthPanel checks={health} />
-          <div id="alerts"><AlertsPanel alerts={alerts} /></div>
+          {data.devices.length > 0 && <ShareDonut title="Sessions by device" sub="Google Analytics 4 · this period" centerLabel="sessions" items={data.devices.map((x) => ({ label: x.value, value: Number(x.sessions) }))} />}
         </div>
-        <TopAndOpportunities d={data} />
+        <HealthPanel checks={health} />
+        <div id="alerts" className="scroll-mt-6"><AlertsPanel alerts={alerts} /></div>
       </div>
+      <TopAndOpportunities d={data} />
 
-      <div className="mt-12 border-t border-border pt-8">
-        <p className="text-xs font-semibold uppercase tracking-[0.18em] text-accent">Detailed report</p>
-        <h2 className="mt-1 text-xl font-bold tracking-tight">Every metric, chapter by chapter</h2>
-        <p className="mb-6 mt-1 text-sm text-muted">The same content that goes into the PDF report.</p>
-        <ReportBody d={data} opts={{ variant: "dashboard", basisLabel }} />
-      </div>
+      <Link href={`/overview/report?${onScreen.toString()}`}
+        className="group flex items-center justify-between gap-4 rounded-[10px] border border-border bg-surface px-4 py-4 transition-colors hover:border-border-strong sm:px-5">
+        <span>
+          <span className="block text-[15px] font-semibold">Full report</span>
+          <span className="mt-0.5 block text-[13px] text-secondary">Every metric, chapter by chapter: the same content as the PDF.</span>
+        </span>
+        <ArrowRight className="size-4 shrink-0 text-faint transition-colors group-hover:text-foreground" aria-hidden />
+      </Link>
     </div>
   );
 }

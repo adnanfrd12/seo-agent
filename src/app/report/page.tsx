@@ -61,7 +61,7 @@ export default async function ReportPage({ searchParams }: { searchParams: Promi
 
         {/* contents */}
         <section className="report-page-break pt-2">
-          <h2 className="text-2xl font-bold tracking-tight">Contents</h2>
+          <h2 className="text-xl font-semibold tracking-[-0.015em]">Contents</h2>
           <ol className="mt-6 divide-y divide-border border-y border-border">
             {toc.map((t, i) => (
               <li key={t} className="flex items-baseline gap-4 py-3">

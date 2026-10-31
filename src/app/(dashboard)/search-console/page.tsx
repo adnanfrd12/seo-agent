@@ -1,4 +1,6 @@
 import { ArrowDown, ArrowUp, Info } from "lucide-react";
+import { Columns } from "@/components/charts/ai-charts";
+import { PositionScatter, ShareDonut } from "@/components/charts/analytics-charts";
 import { MetricTrend } from "@/components/charts/metric-trend";
 import { FilterSelect } from "@/components/dashboard/filter-select";
 import { KpiCard } from "@/components/dashboard/kpi-card";
@@ -37,13 +39,16 @@ const oneOf = <T extends string>(v: string | undefined, allowed: readonly T[], f
   allowed.includes(v as T) ? (v as T) : fallback;
 const cap = (s: string) => s.charAt(0).toUpperCase() + s.slice(1);
 
-/** Positive = moved up the results page (e.g. from 8.0 to 5.0 is +3.0), which is good. */
+/**
+ * Positive = moved up the results page (e.g. from 8.0 to 5.0 is +3.0), which is good. `relative` keeps the
+ * sr-only label inside the table's scroller (otherwise it widens the whole page on phones).
+ */
 function PositionChange({ value }: { value: number | null }) {
   if (value === null || Math.abs(value) < 0.05) return <span className="text-muted">—</span>;
   const up = value > 0;
   const Icon = up ? ArrowUp : ArrowDown;
   return (
-    <span className={`inline-flex items-center justify-end gap-0.5 font-medium ${up ? "text-positive" : "text-negative"}`}
+    <span className={`relative inline-flex items-center justify-end gap-0.5 font-medium ${up ? "text-positive" : "text-negative"}`}
       title={up ? "Moved up in search results" : "Moved down in search results"}>
       <Icon className="size-3" aria-hidden />
       {Math.abs(value).toFixed(1)}
@@ -67,7 +72,7 @@ function PageLink({ url }: { url: string }) {
     // not a URL; show as text
   }
   return safe ? (
-    <a href={url} target="_blank" rel="noopener noreferrer" title={url} className="break-all hover:text-accent hover:underline">
+    <a href={url} target="_blank" rel="noopener noreferrer" title={url} className="break-all hover:text-foreground underline decoration-border-strong underline-offset-2 hover:decoration-foreground">
       {label}
     </a>
   ) : (
@@ -232,6 +237,15 @@ export default async function SearchConsolePage({ searchParams }: { searchParams
   type Bd = { value: string; clicks: number; impressions: number; ctr: number | null; position: number | null };
   const bd = bdRes.error ? null : (bdRes.data as { devices: Bd[]; countries: Bd[]; new_queries: { query: string; clicks: number; impressions: number; position: number | null }[]; recent_start: string });
   const bdRows = (list: Bd[]) => list.map((x) => ({ value: x.value.length <= 3 ? x.value.toUpperCase() : cap(x.value.toLowerCase()), clicks: Number(x.clicks), impressions: Number(x.impressions), ctr: x.ctr == null ? null : Number((Number(x.ctr) * 100).toFixed(2)), position: x.position == null ? null : Number(Number(x.position).toFixed(1)) }));
+  // average clicks per weekday over the period (Search Console dates)
+  const wd = Array.from({ length: 7 }, () => ({ sum: 0, days: 0 }));
+  for (const p of t.current) {
+    const w = wd[(new Date(`${p.date}T00:00:00Z`).getUTCDay() + 6) % 7];
+    w.sum += toNum(p.clicks) ?? 0;
+    w.days += 1;
+  }
+  const wdAvg = wd.map((w) => (w.days ? Math.round((w.sum / w.days) * 10) / 10 : 0));
+  const weekdays = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"].map((label, i) => ({ label, value: wdAvg[i], highlight: wdAvg[i] > 0 && wdAvg[i] === Math.max(...wdAvg) }));
   const bdCols = (label: string) => [
     { key: "value", label }, { key: "clicks", label: "Clicks", type: "int" as const }, { key: "impressions", label: "Impressions", type: "int" as const },
     { key: "ctr", label: "CTR %", type: "dec" as const }, { key: "position", label: "Avg position", type: "dec" as const },
@@ -245,7 +259,7 @@ export default async function SearchConsolePage({ searchParams }: { searchParams
 
       <Highlights items={hl} />
 
-      <section aria-label="Key metrics" className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
+      <section aria-label="Key metrics" className="grid grid-cols-2 gap-3 lg:grid-cols-4 xl:grid-cols-4">
         {kpis.map((m) => (
           <KpiCard
             key={m.k} label={m.label} hint={m.hint} source="GSC" format={m.format} higherIsBetter={m.higher}
@@ -267,10 +281,25 @@ export default async function SearchConsolePage({ searchParams }: { searchParams
 
       {brand && <div className="mt-6"><BrandSplit data={brand} terms={brandTerms} canEdit={["owner", "admin"].includes(client.role)} /></div>}
 
+      <div className={`mt-6 grid grid-cols-1 gap-4 lg:grid-cols-2 xl:[&>*:first-child]:col-span-2 ${bd ? "lg:[&>*:last-child:nth-child(odd)]:col-span-2 xl:grid-cols-4 xl:[&>*:last-child:nth-child(odd)]:col-span-1" : "xl:grid-cols-3"}`}>
+        <PositionScatter title="Click-through vs position" sub="Keywords in the table below (follows its sort and page): high on the left is healthy, low on the left needs a better title"
+          points={kw.rows.filter((x) => toNum(x.position) != null && Number(x.impressions) > 0).map((x) => ({ label: x.query, position: toNum(x.position)!, ctr: toNum(x.ctr) ?? 0, impressions: Number(x.impressions), clicks: Number(x.clicks) }))} />
+        <Columns title="Clicks by day of week" sub="Average per day in this period; busiest day highlighted" valueLabel="Avg clicks" bins={weekdays} />
+        {bd && (
+            <Columns title="Where new queries rank" sub={`Queries first seen since ${bd.recent_start}, by average position`} valueLabel="Queries"
+              bins={[["1–3", 0, 3.5], ["4–10", 3.5, 10.5], ["11–20", 10.5, 20.5], ["21–50", 20.5, 50.5], ["51+", 50.5, Infinity]].map(([label, lo, hi]) => ({
+                label: String(label), value: bd.new_queries.filter((q) => q.position != null && Number(q.position) >= Number(lo) && Number(q.position) < Number(hi)).length, highlight: lo === 3.5 || lo === 0,
+              }))} />
+        )}
+      </div>
+
       {bd && (
         <div className="mt-6 space-y-6">
-          <div className="grid gap-4 lg:grid-cols-2">
-            <ResearchTable title="By device · web search" rows={bdRows(bd.devices)} columns={bdCols("Device")} initialSort={{ key: "clicks", dir: "desc" }} pageSize={5} empty="No device data in this period." />
+          <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
+            <div className="grid min-w-0 content-start gap-4">
+              <ResearchTable title="By device · web search" rows={bdRows(bd.devices)} columns={bdCols("Device")} initialSort={{ key: "clicks", dir: "desc" }} pageSize={5} empty="No device data in this period." />
+              <ShareDonut title="Clicks by device" sub="Web search" centerLabel="clicks" items={bd.devices.map((x) => ({ label: cap(x.value.toLowerCase()), value: Number(x.clicks) }))} />
+            </div>
             <ResearchTable title="By country · web search" rows={bdRows(bd.countries)} columns={bdCols("Country")} initialSort={{ key: "clicks", dir: "desc" }} pageSize={8} csvName={`gsc-countries-${range.start}-${range.end}`} empty="No country data in this period." />
           </div>
           <ResearchTable title={`New search queries since ${bd.recent_start}`} rows={bd.new_queries.map((x) => ({ ...x, clicks: Number(x.clicks), impressions: Number(x.impressions), position: x.position == null ? null : Number(Number(x.position).toFixed(1)) }))}

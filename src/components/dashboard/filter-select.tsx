@@ -23,7 +23,7 @@ export function FilterSelect({
   const router = useRouter();
   const [pending, startTransition] = useTransition();
   return (
-    <label className="text-xs text-muted">
+    <label className="text-xs font-medium text-muted">
       <span className="flex items-center gap-1">
         {label}
         {pending && <Loader2 className="size-3 animate-spin" aria-label="Updating" />}
@@ -38,7 +38,7 @@ export function FilterSelect({
           });
           startTransition(() => router.push(href, { scroll: false }));
         }}
-        className="mt-0.5 block min-w-36 rounded-lg border border-border bg-surface px-2 py-1.5 text-sm text-foreground outline-none focus-visible:ring-2 focus-visible:ring-accent"
+        className="mt-1 block h-8 min-w-36 rounded-md border border-border-strong bg-surface px-2 text-[13px] text-foreground outline-none hover:bg-surface-sunken focus-visible:ring-2 focus-visible:ring-accent"
       >
         {options.map((o) => (
           <option key={o.value} value={o.value}>{o.label}</option>

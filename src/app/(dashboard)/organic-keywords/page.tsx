@@ -1,4 +1,6 @@
+import { Donut } from "@/components/charts/ai-charts";
 import { BarList } from "@/components/charts/bar-list";
+import { FillColumns, GainLoss, Scatter } from "@/components/charts/research-charts";
 import { MetricTrend } from "@/components/charts/metric-trend";
 import { KpiCard } from "@/components/dashboard/kpi-card";
 import { EmptyState } from "@/components/dashboard/page-header";
@@ -9,6 +11,7 @@ import { ResearchTable } from "@/components/research/research-table";
 import { fmtInt } from "@/lib/analytics/format";
 import { shiftDays, todayIn } from "@/lib/analytics/range";
 import { marketLabel } from "@/lib/dataforseo/locations";
+import { cat } from "@/lib/charts/colors";
 import { estimate, TIER1, TIER2 } from "@/lib/dataforseo/research";
 import { researchPage } from "@/lib/dataforseo/view";
 
@@ -19,6 +22,12 @@ const BUCKET_LABEL: Record<string, string> = {
   pos_1: "Position 1", pos_2_3: "Positions 2–3", pos_4_10: "Positions 4–10", pos_11_20: "Positions 11–20", pos_21_30: "Positions 21–30", pos_31_40: "Positions 31–40",
   pos_41_50: "Positions 41–50", pos_51_60: "Positions 51–60", pos_61_70: "Positions 61–70", pos_71_80: "Positions 71–80", pos_81_90: "Positions 81–90", pos_91_100: "Positions 91–100",
 };
+const BUCKET_SHORT: Record<string, string> = {
+  pos_1: "1", pos_2_3: "2–3", pos_4_10: "4–10", pos_11_20: "11–20", pos_21_30: "21–30", pos_31_40: "31–40",
+  pos_41_50: "41–50", pos_51_60: "51–60", pos_61_70: "61–70", pos_71_80: "71–80", pos_81_90: "81–90", pos_91_100: "91–100",
+};
+// fixed slot per intent so the colours never shift between clients or refreshes
+const INTENTS = ["informational", "navigational", "commercial", "transactional"];
 const usd0 = (n: number | null | undefined) => (n == null ? "—" : `$${Math.round(n).toLocaleString("en-US")}`);
 
 export default async function OrganicKeywordsPage() {
@@ -72,12 +81,23 @@ export default async function OrganicKeywordsPage() {
     pages.set(r.url, p);
   }
   const quickWins = rows.filter((r) => Number(r.position) >= 4 && Number(r.position) <= 20 && Number(r.volume) >= 100).length;
+  const intentItems = [...intent].sort((a, b) => b[1] - a[1]).map(([label, value]) => {
+    const slot = INTENTS.indexOf(label);
+    return { label: `${label[0].toUpperCase()}${label.slice(1)} · ${fmtInt(value)}`, value, color: slot >= 0 ? cat(slot) : "var(--cat-other)" };
+  });
+  const pagePath = (u: string) => { try { const x = new URL(u); return x.pathname === "/" ? x.host : x.pathname; } catch { return u; } };
+  const topPages = [...pages.values()].sort((a, b) => b.traffic - a.traffic).slice(0, 8)
+    .map((p) => ({ label: pagePath(p.url), value: Math.round(p.traffic), detail: `${p.keywords} kw` }));
+  const dots = rows.filter((r) => Number(r.position) > 0 && Number(r.volume) > 0).map((r) => {
+    const pos = Number(r.position), vol = Number(r.volume);
+    return { label: String(r.keyword), x: pos, y: vol, highlight: pos >= 4 && pos <= 20 && vol >= 100, detail: r.difficulty != null ? `difficulty ${r.difficulty}` : undefined };
+  });
   const trendPts = (key: string) => snaps.filter((s) => s[key] != null).map((s) => ({ date: String(s.snapshot_date), value: Number(s[key]) }));
 
   return (
     <>
       {header}{chrome}
-      <section aria-label="Organic summary" className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
+      <section aria-label="Organic summary" className="grid grid-cols-2 gap-3 lg:grid-cols-4 xl:grid-cols-4">
         <KpiCard label="Ranking keywords" source="DFS" format={fmtInt} value={o.keywords} previous={prev ? Number(prev.organic_keywords) : null} hint="Keywords where the site ranks in Google's top 100." />
         <KpiCard label="Est. monthly organic traffic" source="DFS" format={fmtInt} value={Math.round(o.traffic)} previous={prev ? Math.round(Number(prev.organic_traffic)) : null} hint="Estimated visits per month from these rankings, based on search volume and position. An estimate, not measured traffic." />
         <KpiCard label="Top-10 keywords" source="DFS" format={fmtInt} value={top10} previous={null} />
@@ -90,20 +110,29 @@ export default async function OrganicKeywordsPage() {
       <div className="mt-3">{controls}</div>
 
       <div className="mt-6 grid gap-4 lg:grid-cols-3">
-        <section className="rounded-xl border border-border bg-surface p-4" aria-label="Movement">
-          <h2 className="mb-3 text-sm font-semibold">Movement since the last update</h2>
+        <section className="flex flex-col gap-4 rounded-[10px] border border-border bg-surface p-4" aria-label="Movement">
+          <h2 className="text-sm font-semibold">Movement since the last update</h2>
           <dl className="grid grid-cols-2 gap-3 text-center">
             {[["New", o.new, "text-positive"], ["Improved", o.up, "text-positive"], ["Declined", o.down, "text-negative"], ["Lost", o.lost, "text-negative"]].map(([l, v, c]) => (
-              <div key={String(l)} className="rounded-lg bg-surface-muted p-3"><dt className="text-[11px] font-semibold uppercase text-muted">{l}</dt><dd className={`mt-1 text-2xl font-bold tabular-nums ${c}`}>{fmtInt(Number(v))}</dd></div>
+              <div key={String(l)} className="rounded-lg bg-surface-muted p-3"><dt className="text-xs font-medium text-muted">{l}</dt><dd className={`mt-1 text-[26px] font-semibold tabular-nums tracking-[-0.02em] ${c}`}>{fmtInt(Number(v))}</dd></div>
             ))}
           </dl>
+          <div className="mt-auto"><GainLoss gain={o.new + o.up} loss={o.down + o.lost} gainLabel="New + improved" lossLabel="Declined + lost" /></div>
         </section>
-        <BarList title="Rankings by position" valueLabel="Keywords" items={o.buckets.map((b) => ({ label: BUCKET_LABEL[b.name] ?? b.name, value: b.count }))} />
-        <BarList title="Search intent of ranking keywords" valueLabel="Keywords" items={[...intent].sort((a, b) => b[1] - a[1]).map(([label, value]) => ({ label: label[0].toUpperCase() + label.slice(1), value, detail: `${((value / rows.length) * 100).toFixed(0)}%` }))} />
+        <FillColumns title="Rankings by position" sub="Keywords per Google position band, 1 to 100" valueLabel="Keywords"
+          bins={o.buckets.map((b) => ({ label: BUCKET_SHORT[b.name] ?? b.name, value: b.count, detail: BUCKET_LABEL[b.name], color: ["pos_1", "pos_2_3", "pos_4_10"].includes(b.name) ? "var(--series)" : "color-mix(in oklab, var(--series) 45%, var(--surface))" }))} />
+        <Donut title="Search intent of ranking keywords" sub={`${fmtInt(rows.length)} keywords by what the searcher wants`} items={intentItems}
+          center={intentItems[0] ? `${Math.round((intentItems[0].value / Math.max(1, rows.length)) * 100)}%` : "—"} centerLabel={intentItems[0]?.label.split(" · ")[0] ?? ""} />
+      </div>
+
+      <div className="mt-6 grid gap-4 lg:grid-cols-2">
+        <Scatter title="Where the opportunities are" sub="Each dot is a ranking keyword; highlighted dots are quick wins (positions 4–20, 100+ searches)" dots={dots}
+          xLabel="Position" yLabel="Searches / mo" xMax={100} band={{ from: 4, to: 20, label: "Quick-win zone" }} legend={["Quick win", "Other keyword"]} />
+        <BarList title="Pages with the most estimated traffic" valueLabel="Est. visits / mo" items={topPages} emptyText="No ranking pages yet." />
       </div>
 
       {snaps.length >= 2 && (
-        <div className="mt-6 grid gap-4 lg:grid-cols-2">
+        <div className="mt-6">
           <MetricTrend title="Organic footprint over time" source="DFS" options={[
             { key: "kw", label: "Ranking keywords", data: trendPts("organic_keywords") },
             { key: "tr", label: "Est. traffic", data: trendPts("organic_traffic") },
@@ -152,7 +181,7 @@ export default async function OrganicKeywordsPage() {
               { key: "keywords", label: "Their keywords", type: "int" }, { key: "traffic", label: "Their est. traffic", type: "int" },
             ]} note="Sites that rank for the same keywords. Add the relevant ones as competitors in the settings above to run link gap analysis." />
         ) : (
-          <div className="rounded-xl border border-dashed border-border p-5 text-sm text-muted">Organic competitors are part of the deep dive. Run it from the buttons above (about 25 cents, stored for 14 days).</div>
+          <div className="rounded-[10px] border border-dashed border-border p-5 text-sm text-muted">Organic competitors are part of the deep dive. Run it from the buttons above (about 25 cents, stored for 14 days).</div>
         )}
       </div>
     </>

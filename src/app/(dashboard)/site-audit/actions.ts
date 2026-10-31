@@ -1,6 +1,6 @@
 "use server";
 
-import { revalidatePath } from "next/cache";
+import { revalidatePath } from "@/lib/revalidate";
 import { getSession } from "@/lib/analytics/client-context";
 import { auditEstimate, pollAudit, startAudit, type AuditState } from "@/lib/dataforseo/audit";
 import { BudgetError } from "@/lib/dataforseo/budget";

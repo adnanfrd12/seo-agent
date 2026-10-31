@@ -11,7 +11,9 @@ import { Tabs } from "@/components/research/tabs";
 import { fmtInt } from "@/lib/analytics/format";
 import { shiftDays, todayIn } from "@/lib/analytics/range";
 import { loadCompetitors } from "@/lib/dataforseo/competitors";
+import { Donut, StackedBars } from "@/components/charts/ai-charts";
 import { BarList } from "@/components/charts/bar-list";
+import { cat } from "@/lib/charts/colors";
 import { brandStats, ENGINES, loadAi, type EngineKey } from "@/lib/ai/visibility";
 import { loadLocal, reviewStats } from "@/lib/dataforseo/local";
 import { loadRanks } from "@/lib/dataforseo/rank";
@@ -46,6 +48,7 @@ export default async function CompetitorsPage() {
     { term: "Keyword gap", text: "Keywords a competitor ranks top-20 for that you don't rank for at all: content you could create." },
     { term: "Head to head", text: "Keywords you both rank for, with both positions. Where they outrank you is the fastest place to gain." },
     { term: "Relative change", text: "Each site's ranking keywords indexed to the first snapshot (100), so a small site and a big brand can be compared by direction." },
+    { term: "Traffic share", text: "Each site's estimated traffic as a share of the total across you and your tracked competitors: a simple share-of-voice yardstick." },
   ]} />;
   if (!configured) {
     return <>{header}<EmptyState title="DataForSEO isn't configured" body="Add DATAFORSEO_LOGIN and DATAFORSEO_PASSWORD to the environment, then redeploy." action={{ href: "/integrations", label: "Open Integrations" }} /></>;
@@ -133,11 +136,16 @@ export default async function CompetitorsPage() {
     ...(selfLinks ? [{ site: `${self} (you)`, rank: selfLinks.rank, backlinks: selfLinks.backlinks, referring_domains: selfLinks.referring_domains, spam: selfLinks.spam_score }] : []),
     ...comp.links.filter((l) => tracked.has(l.competitor)).map((l) => ({ site: l.competitor, rank: l.data.rank, backlinks: l.data.backlinks, referring_domains: l.data.referring_domains, spam: l.data.spam_score })),
   ];
-  const packCount = new Map<string, number>(), adCount = new Map<string, number>();
+  const packCount = new Map<string, number>(), adCount = new Map<string, number>(), citeCount = new Map<string, number>();
   for (const r of ranks.ok ? ranks.rows : []) {
     for (const p of r.serp?.local_pack ?? []) { const k = p.own ? `${p.title ?? self} (you)` : p.title ?? p.domain ?? "?"; packCount.set(k, (packCount.get(k) ?? 0) + 1); }
     for (const a of r.serp?.ads ?? []) adCount.set(a, (adCount.get(a) ?? 0) + 1);
+    for (const c of new Set((r.serp?.ai_overview ?? []).map((a) => bare(a.domain)).filter(Boolean))) { const k = c === self ? `${c} (you)` : c; citeCount.set(k, (citeCount.get(k) ?? 0) + 1); }
   }
+  const packList = [...packCount.entries()].sort((a, b) => b[1] - a[1]).slice(0, 10).map(([label, value]) => ({ label, value }));
+  const adList = [...adCount.entries()].sort((a, b) => b[1] - a[1]).slice(0, 10).map(([label, value]) => ({ label, value }));
+  // the right-hand column stacks ads and AI Overview citations; size the second list so both columns end level
+  const citeList = [...citeCount.entries()].sort((a, b) => b[1] - a[1]).slice(0, Math.max(3, packList.length - adList.length - 2)).map(([label, value]) => ({ label, value }));
   const aiBrands = ai.ok ? brandStats(ai, self).slice(0, 10) : [];
   const usedEngines = [...new Set(ai.latest.map((c) => c.engine))] as EngineKey[];
   const aiRows: Row[] = aiBrands.map((b) => ({
@@ -149,6 +157,38 @@ export default async function CompetitorsPage() {
     ...local.rivals.filter((r) => r.profile).map((r) => ({ business: r.profile!.title, rating: r.profile!.rating, reviews: r.profile!.votes, reply: r.reviews ? reviewStats(r.reviews.items).replyRate : null, last90: r.reviews ? reviewStats(r.reviews.items).last90 : null })),
   ].map((r) => ({ ...r, reply: r.reply == null ? null : Math.round(Number(r.reply) * 100) }));
   const beatenBy = mergedShared.filter((r) => Number(r.delta) <= -1).length;
+
+  /* ---------------------------------------------------------------- charts from the rows above */
+  // identity slots follow the summary order (you first), so a site keeps its colour across charts
+  const slot = new Map(summary.map((s, i) => [s.domain, i]));
+  const label = (s: { domain: string; you: boolean }) => (s.you ? `${s.domain} (you)` : s.domain);
+  const byTraffic = [...summary].filter((s) => (s.traffic ?? 0) > 0).sort((a, b) => (b.traffic ?? 0) - (a.traffic ?? 0));
+  const trafficTotal = byTraffic.reduce((a, s) => a + (s.traffic ?? 0), 0);
+  const shareItems = [
+    ...byTraffic.slice(0, 5).map((s) => ({ label: label(s), value: s.traffic ?? 0, color: cat(slot.get(s.domain) ?? 8) })),
+    ...(byTraffic.length > 5 ? [{ label: "Other", value: byTraffic.slice(5).reduce((a, s) => a + (s.traffic ?? 0), 0), color: "var(--cat-other)" }] : []),
+  ];
+  const myShare = me?.traffic && trafficTotal ? Math.round((me.traffic / trafficTotal) * 100) : null;
+  const footprint = summary.filter((s) => s.keywords != null).map((s) => ({
+    label: label(s), values: { top10: s.top10 ?? 0, rest: Math.max(0, (s.keywords ?? 0) - (s.top10 ?? 0)) },
+  }));
+  const h2hRows = sharedBy.map((g) => {
+    const rows = withDelta(g);
+    return { label: g.competitor, values: { ahead: rows.filter((r) => Number(r.delta) >= 1).length, tied: rows.filter((r) => r.delta === 0).length, behind: rows.filter((r) => Number(r.delta) <= -1).length } };
+  }).filter((r) => r.values.ahead + r.values.tied + r.values.behind > 0);
+  const gapIntent = new Map<string, number>();
+  for (const r of mergedGaps) { const k = String(r.intent ?? "unknown"); gapIntent.set(k, (gapIntent.get(k) ?? 0) + 1); }
+  const INTENTS = ["informational", "navigational", "commercial", "transactional"];
+  const gapIntentItems = [...gapIntent].sort((a, b) => b[1] - a[1]).map(([k, v]) => {
+    const i = INTENTS.indexOf(k);
+    return { label: `${k[0].toUpperCase()}${k.slice(1)} · ${fmtInt(v)}`, value: v, color: i >= 0 ? cat(i) : "var(--cat-other)" };
+  });
+  const charts2 = [
+    h2hRows.length > 0 && <StackedBars key="h2h" title="Head to head on shared keywords" sub="Keywords you both rank for, by who ranks higher" valueLabel="Keywords"
+      keys={[{ key: "ahead", label: "You rank higher", color: "var(--positive)" }, { key: "tied", label: "Same position", color: "var(--series-prev)" }, { key: "behind", label: "They rank higher", color: "var(--negative)" }]} rows={h2hRows} />,
+    gapIntentItems.length > 0 && <Donut key="intent" title="What the keyword gaps are for" sub={`${fmtInt(mergedGaps.length)} gap keywords by search intent`} items={gapIntentItems}
+      center={`${Math.round((gapIntentItems[0].value / Math.max(1, mergedGaps.length)) * 100)}%`} centerLabel={gapIntentItems[0].label.split(" · ")[0]} />,
+  ].filter(Boolean);
 
   return (
     <>
@@ -162,7 +202,7 @@ export default async function CompetitorsPage() {
         <SpendLine budget={budget} />
       </div>
 
-      <section aria-label="Headline comparison" className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
+      <section aria-label="Headline comparison" className="grid grid-cols-2 gap-3 lg:grid-cols-4 xl:grid-cols-4">
         <KpiCard label="Your ranking keywords" source="DFS" format={fmtInt} value={me?.keywords ?? null} previous={me && me.change !== null && me.keywords !== null ? me.keywords - me.change : null} hint="Keywords you rank for in Google's top 100; change is since the first stored snapshot." />
         <KpiCard label="Your est. traffic / month" source="DFS" format={fmtInt} value={me?.traffic ?? null} previous={null} hint="Modelled from search volume and position." />
         <KpiCard label="Competitors tracked" source="DFS" format={fmtInt} value={rivals.length} previous={null} />
@@ -170,21 +210,21 @@ export default async function CompetitorsPage() {
       </section>
 
       {(comp.threats.length > 0 || beatenBy > 0 || winnable > 0) && (
-        <section aria-label="What stands out" className="mt-6 grid gap-3 md:grid-cols-2 xl:grid-cols-3">
+        <section aria-label="What stands out" className="mt-6 flex flex-wrap gap-3 [&>*]:min-w-[16rem] [&>*]:flex-1">
           {comp.threats.map((t) => (
-            <div key={t.domain} className="rounded-xl border border-negative/40 bg-negative/5 p-4 text-sm">
+            <div key={t.domain} className="rounded-[10px] border border-negative/40 bg-negative/5 p-4 text-sm">
               <p className="flex items-center gap-2 font-semibold text-negative"><AlertTriangle className="size-4" aria-hidden /> {t.kind === "overtaking" ? `${t.domain} overtook you` : `${t.domain} is rising`}</p>
               <p className="mt-1 text-muted">Ranking keywords {fmtInt(t.keywordsFrom)} → {fmtInt(t.keywordsTo)} in {Math.round(t.days)} days (estimate).</p>
             </div>
           ))}
           {winnable > 0 && (
-            <div className="rounded-xl border border-positive/40 bg-positive/5 p-4 text-sm">
+            <div className="rounded-[10px] border border-positive/40 bg-positive/5 p-4 text-sm">
               <p className="flex items-center gap-2 font-semibold text-positive"><TrendingUp className="size-4" aria-hidden /> {fmtInt(winnable)} easier opportunities</p>
               <p className="mt-1 text-muted">Keywords with 100+ monthly searches and difficulty ≤ 35 where a competitor ranks and you don&apos;t. See the keyword gap tab.</p>
             </div>
           )}
           {beatenBy > 0 && (
-            <div className="rounded-xl border border-border bg-surface p-4 text-sm">
+            <div className="rounded-[10px] border border-border bg-surface p-4 text-sm">
               <p className="font-semibold">{fmtInt(beatenBy)} shared keywords where a competitor outranks you</p>
               <p className="mt-1 text-muted">Same searches, better position for them: improving those pages is usually the fastest gain.</p>
             </div>
@@ -194,8 +234,16 @@ export default async function CompetitorsPage() {
 
       <div className="mt-6"><CompareTrend snapshots={comp.snapshots} /></div>
 
-      <div className="mt-6 overflow-x-auto rounded-xl border border-border bg-surface" role="region" aria-label="Visibility comparison">
-        <h2 className="px-4 pt-4 text-sm font-semibold">Side by side <span className="ml-1 rounded bg-accent-soft px-1.5 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-accent">estimate</span></h2>
+      <div className="mt-6 grid gap-4 lg:grid-cols-2">
+        <Donut title="Estimated traffic share" sub="Your share of the estimated organic traffic across the tracked sites" items={shareItems}
+          center={myShare == null ? "—" : `${myShare}%`} centerLabel="your share" />
+        <StackedBars title="Keyword footprint" sub="Ranking keywords per site, split into top 10 and positions 11–100" valueLabel="Keywords"
+          keys={[{ key: "top10", label: "Top 10", color: "var(--series)" }, { key: "rest", label: "Positions 11–100", color: "color-mix(in oklab, var(--series) 35%, var(--surface))" }]} rows={footprint} />
+      </div>
+      {charts2.length > 0 && <div className={`mt-4 grid gap-4 ${charts2.length > 1 ? "lg:grid-cols-2" : ""}`}>{charts2}</div>}
+
+      <div className="mt-6 overflow-x-auto rounded-[10px] border border-border bg-surface" role="region" aria-label="Visibility comparison">
+        <h2 className="px-4 pt-4 text-sm font-semibold">Side by side <span className="ml-1 rounded bg-surface-muted px-1.5 py-0.5 text-[10px] font-medium uppercase tracking-wide text-secondary">estimate</span></h2>
         <table className="mt-2 w-full min-w-[44rem] text-sm">
           <thead><tr className="text-left text-xs text-muted">
             {["Site", "Ranking keywords", "Top-10", "Est. traffic / mo", "Shared with you", "Change", "Updated"].map((h, i) => <th key={h} className={`px-4 py-2 font-medium ${i && i < 6 ? "text-right" : ""}`}>{h}</th>)}
@@ -225,7 +273,7 @@ export default async function CompetitorsPage() {
             <p className="text-xs text-muted">Content gap against any site you type: keywords it ranks top-20 for that you don&apos;t rank for. About 3 cents, stored for 7 days, counted in the daily spend limit. Results appear as their own tab below.</p>
           </div>
           {gapsBy.length === 0 && sharedBy.length === 0 && onDemand.length === 0 ? (
-            <div className="rounded-xl border border-dashed border-border p-6 text-sm text-muted">Keyword gaps and head-to-head rankings are refreshed weekly. They appear after the next analysis completes.</div>
+            <div className="rounded-[10px] border border-dashed border-border p-6 text-sm text-muted">Keyword gaps and head-to-head rankings are refreshed weekly. They appear after the next analysis completes.</div>
           ) : (
             <Tabs label="Keyword analysis" items={[
               { key: "gap", label: "Keyword gaps", badge: fmtInt(mergedGaps.length), content: (
@@ -257,43 +305,46 @@ export default async function CompetitorsPage() {
                   { key: "keyword", label: "Keyword" }, { key: "device", label: "Device", type: "badge" }, { key: "volume", label: "Volume", type: "int" }, { key: "you", label: "You", type: "int" },
                   ...rivalsList.map((d, i) => ({ key: `c${i}`, label: d, type: "int" as const })), { key: "leader", label: "Ranks #1" },
                 ]} note="Empty = not in the top 10 (you: top 30)." />
-            ) : <p className="rounded-xl border border-dashed border-border p-4 text-sm text-muted">Track keywords on the Rank Tracking tab to compare positions here.</p> },
+            ) : <p className="rounded-[10px] border border-dashed border-border p-4 text-sm text-muted">Track keywords on the Rank Tracking tab to compare positions here.</p> },
             { key: "pages", label: "Their top pages", badge: compPages.length, content: compPages.length ? (
               <ResearchTable title="The pages competitors win with" rows={compPages} searchKeys={["page", "competitor"]} facets={[{ key: "competitor", label: "Competitor" }]} initialSort={{ key: "traffic", dir: "desc" }} csvName={`competitor-pages-${target.domain}`}
                 columns={[{ key: "competitor", label: "Competitor" }, { key: "page", label: "Page", type: "url" }, { key: "traffic", label: "Est. traffic", type: "dec" }, { key: "keywords", label: "Keywords", type: "int" }, { key: "top3", label: "In top 3", type: "int" }, { key: "value", label: "Traffic value", type: "usd" }]}
  />
-            ) : <p className="rounded-xl border border-dashed border-border p-4 text-sm text-muted">Collected with the next weekly competitor analysis.</p> },
+            ) : <p className="rounded-[10px] border border-dashed border-border p-4 text-sm text-muted">Collected with the next weekly competitor analysis.</p> },
             { key: "links", label: "Link authority", badge: authority.length, content: authority.length > 1 ? (
               <div className="space-y-4">
                 <ResearchTable title="Backlink profiles" rows={authority} initialSort={{ key: "referring_domains", dir: "desc" }}
                   columns={[{ key: "site", label: "Site" }, { key: "rank", label: "Domain rank", type: "int" }, { key: "referring_domains", label: "Referring domains", type: "int" }, { key: "backlinks", label: "Backlinks", type: "int" }, { key: "spam", label: "Spam", type: "spam" }]} />
                 <BarList title="Referring domains" valueLabel="Domains" items={authority.map((a) => ({ label: String(a.site), value: Number(a.referring_domains ?? 0) }))} />
               </div>
-            ) : <p className="rounded-xl border border-dashed border-border p-4 text-sm text-muted">Collected with the next weekly competitor analysis.</p> },
+            ) : <p className="rounded-[10px] border border-dashed border-border p-4 text-sm text-muted">Collected with the next weekly competitor analysis.</p> },
             { key: "serp", label: "Map pack & ads", content: packCount.size || adCount.size ? (
               <div className="grid gap-4 md:grid-cols-2">
-                <BarList title="Who appears in the Google map pack" valueLabel="Keywords" items={[...packCount.entries()].sort((a, b) => b[1] - a[1]).slice(0, 10).map(([label, value]) => ({ label, value }))} emptyText="No map pack on your tracked keywords." />
-                <BarList title="Who buys Google ads on your keywords" valueLabel="Keywords" items={[...adCount.entries()].sort((a, b) => b[1] - a[1]).slice(0, 10).map(([label, value]) => ({ label, value }))} emptyText="No ads seen on your tracked keywords." />
+                <BarList title="Who appears in the Google map pack" valueLabel="Keywords" items={packList} emptyText="No map pack on your tracked keywords." />
+                <div className="grid content-start gap-4">
+                  <BarList title="Who buys Google ads on your keywords" valueLabel="Keywords" items={adList} emptyText="No ads seen on your tracked keywords." />
+                  {citeList.length > 0 && <BarList title="Who Google's AI Overview cites" valueLabel="Keywords" items={citeList} />}
+                </div>
               </div>
-            ) : <p className="rounded-xl border border-dashed border-border p-4 text-sm text-muted">Appears after the next Rank Tracking check.</p> },
+            ) : <p className="rounded-[10px] border border-dashed border-border p-4 text-sm text-muted">Appears after the next Rank Tracking check.</p> },
             { key: "ai", label: "AI answers", badge: aiRows.length, content: aiRows.length ? (
               <ResearchTable title="Who the AI assistants name" rows={aiRows} initialSort={{ key: "mentions", dir: "desc" }} csvName={`ai-share-of-voice-${target.domain}`}
                 columns={[{ key: "brand", label: "Brand" }, ...usedEngines.map((e) => ({ key: e, label: ENGINES[e].label, type: "int" as const })), { key: "mentions", label: "Mentions", type: "int" }, { key: "detection", label: "Share of answers %", type: "int" }, { key: "position", label: "Avg position", type: "dec" }, { key: "sentiment", label: "Sentiment", type: "int" }, { key: "citations", label: "Citations", type: "int" }]}
  />
-            ) : <p className="rounded-xl border border-dashed border-border p-4 text-sm text-muted">Add questions on the AI Visibility tab to see who the assistants recommend.</p> },
+            ) : <p className="rounded-[10px] border border-dashed border-border p-4 text-sm text-muted">Add questions on the AI Visibility tab to see who the assistants recommend.</p> },
             { key: "gbp", label: "Google profiles", badge: gbpRows.length, content: gbpRows.length > 1 ? (
               <ResearchTable title="Business Profile comparison" rows={gbpRows} initialSort={{ key: "reviews", dir: "desc" }}
                 columns={[{ key: "business", label: "Business" }, { key: "rating", label: "Rating", type: "dec" }, { key: "reviews", label: "Reviews", type: "int" }, { key: "last90", label: "Reviews · 90 days", type: "int" }, { key: "reply", label: "Reply rate %", type: "int" }]}
  />
-            ) : <p className="rounded-xl border border-dashed border-border p-4 text-sm text-muted">Compare nearby businesses on the <Link href="/local-seo" className="text-accent hover:underline">Local SEO &amp; Reviews</Link> tab.</p> },
+            ) : <p className="rounded-[10px] border border-dashed border-border p-4 text-sm text-muted">Compare nearby businesses on the <Link href="/local-seo" className="text-foreground underline decoration-border-strong underline-offset-2 hover:decoration-foreground">Local SEO &amp; Reviews</Link> tab.</p> },
           ]} />
         </section>
 
-        <section className="rounded-xl border border-border bg-surface p-4" aria-label="AI competitor recommendations">
-          <h2 className="mb-1 text-sm font-semibold">AI recommendations from this data <span className="ml-1 rounded bg-accent-soft px-1.5 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-accent">ai interpretation</span></h2>
+        <section className="rounded-[10px] border border-border bg-surface p-4" aria-label="AI competitor recommendations">
+          <h2 className="mb-1 text-sm font-semibold">AI recommendations from this data <span className="ml-1 rounded bg-surface-muted px-1.5 py-0.5 text-[10px] font-medium uppercase tracking-wide text-secondary">ai interpretation</span></h2>
           <p className="mb-3 text-xs text-muted">Written by AI from the competitor data above. They are hypotheses to test, never guaranteed outcomes.</p>
           {(aiRecs ?? []).length === 0 ? (
-            <p className="text-sm text-muted">No competitor-specific recommendations yet. They are added to the next AI analysis, which refreshes weekly for active clients once new data is available. <Link href="/insights" className="text-accent hover:underline">Open AI Insights</Link></p>
+            <p className="text-sm text-muted">No competitor-specific recommendations yet. They are added to the next AI analysis, which refreshes weekly for active clients once new data is available. <Link href="/insights" className="text-foreground underline decoration-border-strong underline-offset-2 hover:decoration-foreground">Open AI Insights</Link></p>
           ) : (
             <ul className="space-y-3">
               {(aiRecs ?? []).map((r) => (
@@ -309,7 +360,7 @@ export default async function CompetitorsPage() {
         </section>
 
         {comp.auto && (
-          <section className="rounded-xl border border-border bg-surface p-4" aria-label="Discovered competitors">
+          <section className="rounded-[10px] border border-border bg-surface p-4" aria-label="Discovered competitors">
             <h2 className="mb-1 text-sm font-semibold">Who competes with you in search</h2>
             <p className="mb-3 text-xs text-muted">Sites that rank for the most of the same keywords as you (discovered weekly, popular generic sites removed). Track the ones that are real rivals and hide the rest.</p>
             <div className="overflow-x-auto">
@@ -331,7 +382,7 @@ export default async function CompetitorsPage() {
           </section>
         )}
 
-        <details className="rounded-xl border border-border bg-surface p-4">
+        <details className="rounded-[10px] border border-border bg-surface p-4">
           <summary className="cursor-pointer text-sm font-medium">Manage competitors <span className="ml-2 text-accent">{canEdit ? "Edit" : "View"}</span></summary>
           <div className="mt-3">
             <CompetitorManager canEdit={canEdit} mode={target.competitor_mode} manual={target.competitors} excluded={target.competitors_excluded}
@@ -341,7 +392,7 @@ export default async function CompetitorsPage() {
 
         <div className="flex flex-wrap items-center gap-4 text-xs text-muted">
           {reanalyze}
-          <p>Google Maps competitors, reviews and map rankings are on the <Link href="/local-seo" className="text-accent hover:underline">Local SEO &amp; Reviews</Link> tab.</p>
+          <p>Google Maps competitors, reviews and map rankings are on the <Link href="/local-seo" className="text-foreground underline decoration-border-strong underline-offset-2 hover:decoration-foreground">Local SEO &amp; Reviews</Link> tab.</p>
         </div>
       </div>
     </>

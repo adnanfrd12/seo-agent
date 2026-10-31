@@ -1,7 +1,11 @@
 import { CheckCircle2, CircleDot, XCircle } from "lucide-react";
 import { GenerateButton, InsightActions } from "@/components/ai/ai-controls";
 import { AutoAnalysis } from "@/components/ai/auto-analysis";
+import { Donut, Heatmap } from "@/components/charts/ai-charts";
+import { BarList } from "@/components/charts/bar-list";
+import { Fill, SplitBar, StackedColumns } from "@/components/charts/ops-charts";
 import { TabHeader } from "@/components/dashboard/tab-header";
+import { cat } from "@/lib/charts/colors";
 import { Highlights } from "@/components/dashboard/highlights";
 import { pickHighlights } from "@/lib/overview/highlights";
 import { RangeSelector } from "@/components/dashboard/range-selector";
@@ -58,6 +62,20 @@ export default async function InsightsPage({ searchParams }: { searchParams: Pro
   const open = current.filter((i) => !["implemented", "dismissed"].includes(i.implementation_status));
   const done = current.filter((i) => i.implementation_status === "implemented").length;
   const highOpen = open.filter((i) => i.priority === "high");
+  const count = (f: (i: Insight) => boolean) => current.filter(f).length;
+  const cats = new Map<string, number>();
+  for (const i of current) cats.set(i.category, (cats.get(i.category) ?? 0) + 1);
+  const byCategory = [...cats.entries()].sort((a, b) => b[1] - a[1]).map(([c, n]) => ({ label: c.replace(/_/g, " ").replace(/^./, (x) => x.toUpperCase()).replace(/seo\b/i, "SEO"), value: n }));
+  // AI spend per day and analysis type, over the runs listed in the history table
+  const kinds = [...new Set(((runs ?? []) as Run[]).map((r) => r.kind))];
+  const spendDays = new Map<string, Record<string, number>>();
+  for (const r of [...((runs ?? []) as Run[])].reverse()) {
+    if (r.cost_usd == null) continue;
+    const d = new Date(r.created_at).toLocaleDateString("en-US", { month: "short", day: "numeric" });
+    const v = spendDays.get(d) ?? {};
+    v[r.kind] = (v[r.kind] ?? 0) + Number(r.cost_usd);
+    spendDays.set(d, v);
+  }
   const hl = pickHighlights([
     current.length > 0 && { tone: (done > 0 ? "good" : "info") as "good" | "info", title: `${done} of ${current.length} recommendations completed`, detail: `${open.length} still open.`, action: open.length ? "Work through the high-priority ones first, then mark each Done so progress is tracked." : "Generate a fresh analysis to find the next opportunities." },
     highOpen.length > 0 && { tone: "bad" as const, title: `${highOpen.length} high-priority recommendation${highOpen.length > 1 ? "s" : ""} open`, detail: highOpen[0].title, action: "Start here: strongest evidence and impact." },
@@ -91,18 +109,19 @@ export default async function InsightsPage({ searchParams }: { searchParams: Pro
 
       {latest && (
         <section className="mb-8 space-y-4">
-          <div className="rounded-xl border border-border bg-surface p-5">
+          <div className="rounded-[10px] border border-border bg-surface p-5">
             <p className="text-xs font-semibold uppercase tracking-wider text-accent">Executive summary · {latest.range_start} → {latest.range_end}</p>
             <p className="mt-2 leading-relaxed">{latest.output?.executive_summary}</p>
             {sources.length > 0 && <p className="mt-3 text-xs text-muted">Data sources in this analysis: {sources.join(" · ")}</p>}
           </div>
-          <div className="grid gap-4 md:grid-cols-2">
+          {/* one card, two columns: the lists rarely match in length, so a shorter one never leaves a half-empty card */}
+          <div className="grid items-start gap-x-2 rounded-[10px] border border-border bg-surface md:grid-cols-2 max-md:divide-y max-md:divide-hairline">
             {[
               { t: "Significant improvements", items: latest.output?.significant_improvements ?? [], tone: "text-positive" },
               { t: "Significant declines", items: latest.output?.significant_declines ?? [], tone: "text-negative" },
             ].map((b) => (
-              <div key={b.t} className="rounded-xl border border-border bg-surface p-5">
-                <p className={cn("text-sm font-semibold", b.tone)}>{b.t}</p>
+              <div key={b.t} className="p-5">
+                <p className={cn("text-sm font-semibold", b.tone)}>{b.t} <span className="font-normal text-muted">{b.items.length}</span></p>
                 <ul className="mt-2 list-disc space-y-1 pl-5 text-sm">
                   {b.items.length ? b.items.map((x, i) => <li key={i}>{x.statement}</li>) : <li className="text-muted">None with enough evidence.</li>}
                 </ul>
@@ -110,7 +129,7 @@ export default async function InsightsPage({ searchParams }: { searchParams: Pro
             ))}
           </div>
           {(latest.output?.insufficient_evidence?.length ?? 0) > 0 && (
-            <div className="rounded-xl border border-dashed border-border bg-surface p-5 text-sm">
+            <div className="rounded-[10px] border border-dashed border-border bg-surface p-5 text-sm">
               <p className="font-semibold">What the data can&apos;t answer yet</p>
               <ul className="mt-2 list-disc space-y-1 pl-5 text-muted">{latest.output!.insufficient_evidence!.map((x, i) => <li key={i}>{x}</li>)}</ul>
             </div>
@@ -118,11 +137,34 @@ export default async function InsightsPage({ searchParams }: { searchParams: Pro
         </section>
       )}
 
+      {current.length > 0 && (
+        <section aria-label="Recommendation charts" className="mb-8 space-y-4">
+          <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
+            <Fill><SplitBar title="Progress" sub="Status of this analysis' recommendations" total={`${done} of ${current.length}`} totalLabel="done" segments={[
+              { label: "Done", value: done, color: "var(--positive)" }, { label: "Approved", value: count((i) => i.implementation_status === "approved"), color: "color-mix(in oklab, var(--positive) 45%, var(--surface))" },
+              { label: "Open", value: count((i) => !["approved", "implemented", "dismissed"].includes(i.implementation_status)), color: "var(--cat-other)" }, { label: "Dismissed", value: count((i) => i.implementation_status === "dismissed"), color: "var(--border-strong)" },
+            ]} /></Fill>
+            <Fill><Donut title="By priority" sub="Expected importance" center={String(highOpen.length)} centerLabel="high, open" items={[
+              { label: "High", value: count((i) => i.priority === "high"), color: "var(--negative)" }, { label: "Medium", value: count((i) => i.priority === "medium"), color: "var(--warn)" }, { label: "Low", value: count((i) => i.priority === "low"), color: "var(--cat-other)" },
+            ]} /></Fill>
+            <Fill className="md:col-span-2 lg:col-span-1"><BarList title="By category" valueLabel="Recommendations" items={byCategory} /></Fill>
+          </div>
+          <div className="grid gap-4 md:grid-cols-2">
+            <Fill><Heatmap title="Priority and effort" sub="Recommendations in each cell · start top left (high priority, small effort)" rows={["High", "Medium", "Low"]} cols={["Small", "Medium", "Large"]}
+              cells={["high", "medium", "low"].map((p) => ["small", "medium", "large"].map((e) => count((i) => i.priority === p && i.estimated_effort === e)))} /></Fill>
+            <Fill><SplitBar title="Confidence" sub="How strong the evidence behind each recommendation is" segments={[
+              { label: "High", value: count((i) => i.confidence === "high"), color: "var(--series)" }, { label: "Medium", value: count((i) => i.confidence === "medium"), color: "color-mix(in oklab, var(--series) 55%, var(--surface))" },
+              { label: "Low", value: count((i) => i.confidence === "low"), color: "color-mix(in oklab, var(--series) 22%, var(--surface))" },
+            ]} /></Fill>
+          </div>
+        </section>
+      )}
+
       <section className="space-y-4" aria-label="Recommendations">
         {current.map((r) => {
           const Icon = STATUS_ICON[r.implementation_status as keyof typeof STATUS_ICON];
           return (
-            <article key={r.id} className={cn("rounded-xl border border-border bg-surface p-5", r.implementation_status === "dismissed" && "opacity-60")}>
+            <article key={r.id} className={cn("rounded-[10px] border border-border bg-surface p-5 [overflow-wrap:anywhere]", r.implementation_status === "dismissed" && "opacity-60")}>
               <div className="flex flex-wrap items-start justify-between gap-3">
                 <div className="min-w-0">
                   <div className="flex flex-wrap items-center gap-2 text-[11px] font-semibold uppercase tracking-wide">
@@ -137,7 +179,7 @@ export default async function InsightsPage({ searchParams }: { searchParams: Pro
                 <InsightActions id={r.id} status={r.implementation_status} canEdit={canEdit} />
               </div>
               <p className="mt-2 text-sm">{r.summary}</p>
-              <dl className="mt-3 grid gap-2 text-sm sm:grid-cols-2">
+              <dl className="mt-3 grid items-start gap-x-4 gap-y-2 text-sm md:grid-cols-3">
                 <div><dt className="text-xs font-semibold text-muted">Recommended change</dt><dd>{r.recommended_action}</dd></div>
                 <div><dt className="text-xs font-semibold text-muted">Hypothesis (not a guarantee)</dt><dd>{r.expected_impact_hypothesis}</dd></div>
                 <div><dt className="text-xs font-semibold text-muted">Success metric</dt><dd>{r.success_metric}</dd></div>
@@ -160,7 +202,14 @@ export default async function InsightsPage({ searchParams }: { searchParams: Pro
       {(runs ?? []).length > 0 && (
         <section className="mt-10">
           <h2 className="mb-2 text-sm font-semibold">Analysis history</h2>
-          <div className="overflow-x-auto rounded-xl border border-border bg-surface">
+          {spendDays.size > 0 && (
+            <div className="mb-4">
+              <StackedColumns title="AI spend per day" sub="Estimated cost of the analyses below, by type" format="usd" valueLabel="USD"
+                keys={kinds.map((k, i) => ({ key: k, label: k.replace(/_/g, " ").replace(/^./, (x) => x.toUpperCase()), color: cat(i) }))}
+                columns={[...spendDays.entries()].map(([label, values]) => ({ label, values }))} />
+            </div>
+          )}
+          <div className="overflow-x-auto rounded-[10px] border border-border bg-surface">
             <table className="w-full min-w-[40rem] text-sm">
               <thead><tr className="text-left text-xs text-muted">{["When", "Type", "Period", "Status", "Model", "Tokens in/out", "Est. cost"].map((h) => <th key={h} className="px-3 py-2 font-medium">{h}</th>)}</tr></thead>
               <tbody>

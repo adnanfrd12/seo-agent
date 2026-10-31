@@ -1,5 +1,7 @@
 import Link from "next/link";
 import { Info } from "lucide-react";
+import { Columns } from "@/components/charts/ai-charts";
+import { ShareDonut } from "@/components/charts/analytics-charts";
 import { BarList } from "@/components/charts/bar-list";
 import { MetricTrend } from "@/components/charts/metric-trend";
 import { KpiCard } from "@/components/dashboard/kpi-card";
@@ -209,6 +211,15 @@ export default async function Ga4Page({ searchParams }: { searchParams: Promise<
   const pg = pages.data as Table<PageRow>;
   const exportBase = `/api/export/ga4?start=${range.start}&end=${range.end}${scope.ga4Pick ? `&property=${scope.ga4Pick.id}` : ""}`;
   const r = range;
+  // average sessions per weekday over the days stored in the period (UTC calendar dates)
+  const wd = Array.from({ length: 7 }, () => ({ sum: 0, days: 0 }));
+  for (const p of t?.current ?? []) {
+    const w = wd[(new Date(`${p.date}T00:00:00Z`).getUTCDay() + 6) % 7];
+    w.sum += toNum(p.sessions) ?? 0;
+    w.days += 1;
+  }
+  const wdAvg = wd.map((w) => (w.days ? Math.round(w.sum / w.days) : 0));
+  const weekdays = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"].map((label, i) => ({ label, value: wdAvg[i], highlight: wdAvg[i] > 0 && wdAvg[i] === Math.max(...wdAvg) }));
 
   return (
     <>
@@ -227,7 +238,7 @@ export default async function Ga4Page({ searchParams }: { searchParams: Promise<
 
       <Highlights items={hl} />
 
-      <section aria-label="Key metrics" className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
+      <section aria-label="Key metrics" className="grid grid-cols-2 gap-3 lg:grid-cols-4 xl:grid-cols-4">
         {kpis.map((m) => (
           <KpiCard
             key={m.k} label={m.label} hint={m.hint} source="GA4" format={m.format}
@@ -247,24 +258,32 @@ export default async function Ga4Page({ searchParams }: { searchParams: Promise<
         ]} />
       </div>
 
-      <div className="mt-6 grid gap-4 md:grid-cols-2 xl:grid-cols-4">
+      {/* panels are paired by length (donuts with a column chart, lists with lists of the same rows) so no card stretches */}
+      <div className={`mt-6 grid grid-cols-1 gap-4 md:grid-cols-2 ${userTypes.length > 0 ? "xl:grid-cols-3" : ""} md:[&>*:last-child:nth-child(odd)]:col-span-2 xl:[&>*:last-child:nth-child(odd)]:col-span-1`}>
+        <ShareDonut title="Device categories" sub={device ? `${device} selected` : "Share of sessions"} centerLabel="sessions"
+          items={b.devices.map((d) => ({ label: d.value, value: Number(d.sessions) }))} />
+        {userTypes.length > 0 && (
+          <ShareDonut title="New vs returning visitors" sub="Share of sessions · all traffic" centerLabel="sessions"
+            items={userTypes.map((c) => ({ label: c.value === "new" ? "New visitors" : c.value === "returning" ? "Returning visitors" : c.value, value: Number(c.sessions) }))} />
+        )}
+        <Columns title="Sessions by day of week" sub="Average per day in this period; busiest day highlighted" valueLabel="Avg sessions" bins={weekdays} />
+      </div>
+
+      <div className="mt-4 grid grid-cols-1 gap-4 md:grid-cols-2 md:[&>*:last-child:nth-child(odd)]:col-span-2">
         <BarList title="Traffic by channel" valueLabel="Sessions"
           items={b.channels.map((c) => ({ label: c.value === channel ? `${c.value} (selected)` : c.value, value: Number(c.sessions) }))} />
-        <BarList title="Device categories" valueLabel="Sessions"
-          items={b.devices.map((d) => ({ label: d.value === device ? `${d.value} (selected)` : d.value, value: Number(d.sessions) }))} />
+        <BarList title="Key events by channel" valueLabel="Key events"
+          items={b.channels.map((c) => ({ label: c.value === channel ? `${c.value} (selected)` : c.value, value: Number(c.key_events), detail: Number(c.sessions) > 0 ? fmtPercent(Number(c.key_events) / Number(c.sessions), 1) : undefined }))} />
         <BarList title="Top countries" valueLabel="Sessions"
           items={b.countries.slice(0, 15).map((d) => ({ label: d.value === country ? `${d.value} (selected)` : d.value, value: Number(d.sessions) }))} />
+        {cities.length > 0 && <BarList title="Top cities" valueLabel="Sessions · all traffic" items={cities.map((c) => ({ label: c.value, value: Number(c.sessions) }))} />}
+      </div>
+
+      <div className="mt-4">
         <BarList title="Key event performance" valueLabel="Key events · all traffic"
           emptyText="No key events recorded. Mark events as key events in GA4 to see them here."
           items={s.key_events.map((e) => ({ label: e.value, value: Number(e.key_events) }))} />
       </div>
-
-      {(cities.length > 0 || userTypes.length > 0) && (
-        <div className="mt-4 grid gap-4 md:grid-cols-2">
-          {cities.length > 0 && <BarList title="Top cities" valueLabel="Sessions" items={cities.map((c) => ({ label: c.value, value: Number(c.sessions) }))} />}
-          {userTypes.length > 0 && <BarList title="New vs returning visitors" valueLabel="Sessions" items={userTypes.map((c) => ({ label: c.value === "new" ? "New visitors" : c.value === "returning" ? "Returning visitors" : c.value, value: Number(c.sessions) }))} />}
-        </div>
-      )}
 
       <section aria-label="Events" className="mt-6">
         {events.length > 0 ? (
@@ -277,7 +296,7 @@ export default async function Ga4Page({ searchParams }: { searchParams: Promise<
             presets={[{ label: "Key events only", where: [{ key: "key_events", op: "gte", value: 1 }] }]}
             initialSort={{ key: "count", dir: "desc" }} csvName={`ga4-events-${range.start}-${range.end}`} />
         ) : (
-          <p className="rounded-xl border border-dashed border-border p-4 text-sm text-muted">Events appear after the next GA4 sync.</p>
+          <p className="rounded-[10px] border border-dashed border-border p-4 text-sm text-muted">Events appear after the next GA4 sync.</p>
         )}
       </section>
 

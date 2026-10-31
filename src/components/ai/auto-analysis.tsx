@@ -42,7 +42,7 @@ export function AutoAnalysis({ kind, start, end, autoStart, running }: {
 
   if (state === "idle") return null;
   return (
-    <div role="status" className="mb-6 flex items-start gap-3 rounded-xl border border-accent/30 bg-accent-soft p-4 text-sm">
+    <div role="status" className="mb-6 flex items-start gap-3 rounded-[10px] border border-accent/30 bg-accent-soft p-4 text-sm">
       {state === "working" ? <Loader2 className="mt-0.5 size-4 shrink-0 animate-spin text-accent" /> : <Sparkles className="mt-0.5 size-4 shrink-0 text-accent" />}
       <div>
         {state === "working" ? (

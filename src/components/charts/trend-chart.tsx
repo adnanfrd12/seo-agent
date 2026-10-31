@@ -31,7 +31,7 @@ const shortDate = (iso: string) =>
  */
 export function TrendChart({
   title, data, format = "int", seriesLabel, previousLabel = "Previous period", reverseY = false, toolbar, source,
-  variant, color = "var(--accent)", compact = false,
+  variant, color = "var(--series)", compact = false,
 }: {
   title: string;
   data: TrendPoint[];
@@ -57,20 +57,18 @@ export function TrendChart({
   const gradient = `${id.replace(/[^a-zA-Z0-9]/g, "")}-fill`;
 
   return (
-    <figure className="report-avoid-break flex min-w-0 flex-col rounded-xl border border-border bg-surface p-4" aria-labelledby={`${id}-t`}>
+    <figure className="report-avoid-break flex min-w-0 flex-col rounded-[10px] border border-border bg-surface px-4 pb-3 pt-3.5 sm:px-5" aria-labelledby={`${id}-t`}>
       <div className="mb-3 flex flex-wrap items-center justify-between gap-x-3 gap-y-2">
-        <div className="flex min-w-0 items-center gap-2">
-          <figcaption id={`${id}-t`} className="truncate text-sm font-semibold">{title}</figcaption>
-          {source && (
-            <span className="rounded bg-accent-soft px-1.5 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-accent">{source}</span>
-          )}
+        <div className="flex min-w-0 items-baseline gap-2">
+          <figcaption id={`${id}-t`} className="truncate text-[15px] font-semibold">{title}</figcaption>
+          {source && <span className="shrink-0 text-xs text-muted">{source}</span>}
         </div>
         <div className="flex flex-wrap items-center gap-2 text-xs text-muted">
           {toolbar}
           {!compact && <button
             onClick={() => setTable((v) => !v)}
             aria-pressed={table}
-            className="rounded-md border border-border px-2 py-1 outline-none hover:bg-surface-muted focus-visible:ring-2 focus-visible:ring-accent"
+            className="h-7 rounded-md border border-border-strong px-2.5 font-medium text-secondary outline-none hover:bg-surface-muted hover:text-foreground focus-visible:ring-2 focus-visible:ring-accent"
           >
             {table ? "Chart" : "Table"}
           </button>}
@@ -84,7 +82,7 @@ export function TrendChart({
             {seriesLabel}
           </li>
           <li className="flex items-center gap-1.5">
-            <span className="inline-block w-4 border-t-2 border-dashed border-muted" aria-hidden /> {previousLabel}
+            <span className="inline-block w-4 border-t-2 border-dashed border-series-prev" aria-hidden /> {previousLabel}
           </li>
         </ul>
       )}
@@ -103,7 +101,7 @@ export function TrendChart({
             </thead>
             <tbody>
               {data.map((d) => (
-                <tr key={d.date} className="border-t border-border">
+                <tr key={d.date} className="border-t border-hairline">
                   <td className="py-1">{d.date}</td>
                   <td className="py-1 text-right tabular-nums">{fmtTrend(d.value, format)}</td>
                   {hasPrev && <td className="py-1 text-right tabular-nums">{fmtTrend(d.previous, format)}</td>}
@@ -118,40 +116,42 @@ export function TrendChart({
             <ComposedChart data={data} margin={{ top: 4, right: 8, bottom: 0, left: 0 }} barCategoryGap="20%">
               <defs>
                 <linearGradient id={gradient} x1="0" y1="0" x2="0" y2="1">
-                  <stop offset="0%" stopColor={color} stopOpacity={0.35} />
-                  <stop offset="100%" stopColor={color} stopOpacity={0.03} />
+                  <stop offset="0%" stopColor={color} stopOpacity={0.16} />
+                  <stop offset="100%" stopColor={color} stopOpacity={0} />
                 </linearGradient>
               </defs>
-              <CartesianGrid stroke="var(--border)" strokeDasharray="3 3" vertical={false} />
+              <CartesianGrid stroke="var(--hairline)" vertical={false} />
               <XAxis
-                dataKey="date" tickFormatter={shortDate} tick={{ fill: "var(--muted)", fontSize: 12 }}
-                tickLine={false} axisLine={{ stroke: "var(--border)" }} minTickGap={32}
+                dataKey="date" tickFormatter={shortDate} tick={{ fill: "var(--faint)", fontSize: 11 }}
+                tickLine={false} axisLine={false} minTickGap={40} tickMargin={8}
               />
               <YAxis
-                width={48} tick={{ fill: "var(--muted)", fontSize: 12 }} tickLine={false} axisLine={false}
+                width={44} tick={{ fill: "var(--faint)", fontSize: 11 }} tickLine={false} axisLine={false}
                 tickFormatter={(v: number) => fmtTrend(v, format)} reversed={reverseY}
                 domain={reverseY ? ["auto", "auto"] : [0, "auto"]} allowDecimals={format !== "int"}
               />
               <Tooltip
-                cursor={kind === "bar" ? { fill: "var(--surface-muted)" } : { stroke: "var(--muted)", strokeDasharray: "3 3" }}
+                cursor={kind === "bar" ? { fill: "var(--surface-muted)" } : { stroke: "var(--border-strong)" }}
                 contentStyle={{
                   background: "var(--surface)", border: "1px solid var(--border)", borderRadius: 8, fontSize: 12, color: "var(--foreground)",
+                  boxShadow: "0 12px 32px -12px rgb(0 0 0 / 0.25)", padding: "8px 10px",
                 }}
+                labelStyle={{ color: "var(--muted)", marginBottom: 4 }}
                 labelFormatter={(l) => shortDate(String(l))}
                 formatter={(v, name) => [fmtTrend(typeof v === "number" ? v : null, format), name === "previous" ? previousLabel : seriesLabel]}
               />
               {hasPrev && (
                 <Line
-                  type="linear" dataKey="previous" stroke="var(--muted)" strokeWidth={2} strokeDasharray="5 4"
+                  type="linear" dataKey="previous" stroke="var(--series-prev)" strokeWidth={1.75} strokeDasharray="5 4"
                   dot={false} activeDot={{ r: 4 }} isAnimationActive={false}
                 />
               )}
               {kind === "bar" && (
-                <Bar dataKey="value" fill={color} radius={[3, 3, 0, 0]} maxBarSize={22} isAnimationActive={false} />
+                <Bar dataKey="value" fill={color} radius={[2, 2, 0, 0]} maxBarSize={18} isAnimationActive={false} />
               )}
               {kind === "area" && (
                 <Area
-                  type="monotone" dataKey="value" stroke={color} strokeWidth={2.5} fill={`url(#${gradient})`}
+                  type="monotone" dataKey="value" stroke={color} strokeWidth={2} fill={`url(#${gradient})`}
                   dot={false} activeDot={{ r: 4.5, stroke: "var(--surface)", strokeWidth: 2, fill: color }} isAnimationActive={false}
                 />
               )}

@@ -1,9 +1,11 @@
 "use server";
 
-import { revalidatePath } from "next/cache";
+import { revalidatePath } from "@/lib/revalidate";
 import { getSession } from "@/lib/analytics/client-context";
+import { llmTopics, refreshLlmMentions } from "@/lib/ai/llm-mentions";
 import { ENGINE_KEYS, ENGINES, enginesFrom, MAX_PROMPTS, promptEstimate, runAiChecks, type EngineKey } from "@/lib/ai/visibility";
-import { resolveTarget } from "@/lib/dataforseo/research";
+import { localIdentity } from "@/lib/dataforseo/local";
+import { resolveTarget, type Row } from "@/lib/dataforseo/research";
 import { createAdminClient } from "@/lib/supabase/admin";
 
 type Result = { ok: true; message: string } | { ok: false; error: string };
@@ -74,7 +76,19 @@ export async function runAiVisibilityNow(force: boolean): Promise<Result> {
   if (!target) return { ok: false, error: "Set the client's website first (connect Search Console, Bing or Business Profile)." };
   const { data } = await g.db.from("clients").select("settings").eq("id", g.client.id).maybeSingle();
   const search = (data?.settings as { ai_search?: boolean } | null)?.ai_search !== false;
+  const started = Date.now();
   const r = await runAiChecks(g.db, g.client.id, target.domain, { force, search, deadline: Date.now() + 200_000, source: "manual" });
+  // the AI market view for the client's topics (weekly; skipped while fresh)
+  if (Date.now() < started + 230_000) {
+    const [{ data: kw }, { data: prof }, me, { data: qs }] = await Promise.all([
+      g.db.from("dfs_cache").select("data").eq("client_id", g.client.id).eq("endpoint", "ranked_keywords").order("fetched_at", { ascending: false }).limit(1).maybeSingle(),
+      g.db.from("dfs_cache").select("data").eq("client_id", g.client.id).eq("endpoint", "gbp_profile").eq("params_hash", "self").limit(1).maybeSingle(),
+      localIdentity(g.db, g.client.id),
+      g.db.from("ai_prompts").select("prompt").eq("client_id", g.client.id),
+    ]);
+    const ranked = ((kw?.data ?? []) as Row[]).filter((k) => typeof k.keyword === "string").map((k) => ({ keyword: k.keyword as string, volume: Number(k.volume ?? 0) }));
+    await refreshLlmMentions({ admin: g.db, clientId: g.client.id, source: "manual" }, target, llmTopics((qs ?? []).map((q) => String(q.prompt)), ranked, me?.city ?? null, (prof?.data as { category?: string } | null)?.category ?? null), force);
+  }
   revalidatePath("/ai-visibility");
   if (r.checked === 0 && r.errors.length) return { ok: false, error: r.errors[0] };
   const warn = r.errors.length ? ` Some answers failed: ${[...new Set(r.errors)].slice(0, 2).join("; ")}.` : "";

@@ -170,17 +170,28 @@ export interface RankRow {
 
 /** Everything the page and alerts read. `change` > 0 means the keyword moved up (a lower position number). */
 export async function loadRanks(supabase: SupabaseClient, clientId: string): Promise<{ ok: boolean; rows: RankRow[]; lastChecked: string | null }> {
+  // the history is read without the large result lists; those are read only for each keyword's newest check
   const [kw, ch] = await Promise.all([
     supabase.from("rank_keywords").select("*").eq("client_id", clientId).order("created_at"),
-    supabase.from("rank_checks").select("*").eq("client_id", clientId).order("checked_on", { ascending: false }).limit(5000),
+    supabase.from("rank_checks").select("keyword_id, checked_on, position, url").eq("client_id", clientId).order("checked_on", { ascending: false }).limit(5000),
   ]);
   if (kw.error || ch.error) return { ok: false, rows: [], lastChecked: null };
   const by = new Map<string, { checked_on: string; position: number | null; url: string | null; top: RankTop[]; serp: RankSerp | null }[]>();
   for (const c of ch.data ?? []) {
     const l = by.get(c.keyword_id as string) ?? [];
-    const serp = c.serp && Array.isArray((c.serp as RankSerp).features) ? (c.serp as RankSerp) : null;
-    l.push({ checked_on: c.checked_on as string, position: c.position as number | null, url: c.url as string | null, top: (c.top as RankTop[]) ?? [], serp });
+    l.push({ checked_on: c.checked_on as string, position: c.position as number | null, url: c.url as string | null, top: [], serp: null });
     by.set(c.keyword_id as string, l);
+  }
+  const newest = [...by.values()].map((l) => l[0].checked_on);
+  if (newest.length) {
+    const since = newest.reduce((a, b) => (a < b ? a : b));
+    const { data: full } = await supabase.from("rank_checks").select("keyword_id, checked_on, top, serp").eq("client_id", clientId).gte("checked_on", since);
+    for (const c of full ?? []) {
+      const cur = by.get(c.keyword_id as string)?.[0];
+      if (!cur || cur.checked_on !== c.checked_on) continue;
+      cur.top = (c.top as RankTop[]) ?? [];
+      cur.serp = c.serp && Array.isArray((c.serp as RankSerp).features) ? (c.serp as RankSerp) : null;
+    }
   }
   let lastChecked: string | null = null;
   const rows = (kw.data ?? []).map((k): RankRow => {

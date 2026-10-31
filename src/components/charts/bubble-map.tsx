@@ -16,7 +16,7 @@ export function BubbleMap({ title, items, xLabel, yLabel }: { title: string; ite
   const ticksX = [0, 0.25, 0.5, 0.75, 1].map((t) => Math.round((t * maxX) / 1.08));
   const ticksY = [...new Set([1, Math.ceil((maxY - 0.4) / 2), Math.floor(maxY)])];
   return (
-    <figure className="rounded-xl border border-border bg-surface p-4">
+    <figure className="rounded-[10px] border border-border bg-surface p-4">
       <figcaption className="mb-2 text-sm font-semibold">{title}</figcaption>
       {items.length === 0 ? <p className="py-8 text-center text-sm text-muted">No brands named yet.</p> : (
         <svg viewBox={`0 0 ${w} ${h}`} className="h-auto w-full" role="img" aria-label={`${title}: ${items.map((i) => `${i.label} ${i.x}% at position ${i.y}`).join("; ")}`}>

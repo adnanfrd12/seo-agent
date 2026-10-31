@@ -54,7 +54,7 @@ export function GridForm({ canEdit, suggestions }: { canEdit: boolean; suggestio
   if (!canEdit) return null;
   const est = ((size * size) * 0.0025).toFixed(3);
   return (
-    <div className="space-y-2 rounded-xl border border-border bg-surface p-4">
+    <div className="space-y-2 rounded-[10px] border border-border bg-surface p-4">
       <div className="flex flex-wrap items-end gap-2">
         <label className="text-sm">Keyword
           <input className={`${field} mt-1 block w-64`} value={kw} onChange={(e) => setKw(e.target.value)} placeholder="led signs near me" list="grid-kw" />
@@ -81,7 +81,7 @@ export function RivalForm({ canEdit, suggestions }: { canEdit: boolean; suggesti
   const [text, setText] = useState(suggestions.slice(0, 3).join("\n"));
   if (!canEdit) return null;
   return (
-    <div className="space-y-2 rounded-xl border border-border bg-surface p-4">
+    <div className="space-y-2 rounded-[10px] border border-border bg-surface p-4">
       <label className="block text-sm">Competing businesses <span className="text-muted">(one per line, up to 3; pre-filled with the businesses that beat you on the map)</span>
         <textarea className={`${field} mt-1 block min-h-20 w-full`} value={text} onChange={(e) => setText(e.target.value)} placeholder={"Competitor sign shop\nAnother sign company"} />
       </label>

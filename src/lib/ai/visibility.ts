@@ -14,8 +14,10 @@ import { aiErrorMessage, anthropic } from "./claude";
  *   - Claude (your own Anthropic key, Sonnet 5.5, live web search)
  *   - ChatGPT, Perplexity and Gemini (their real models with web search, through DataForSEO's
  *     AI Optimization API, billed to DataForSEO and kept inside the daily DataForSEO budget)
+ *   - Google AI Mode (the real Google answer, through DataForSEO's SERP API, about $0.004)
  * Claude Sonnet then reads every answer and lists the businesses named, in order, with a 0-100 sentiment
- * for each. Results are stored per question, engine and day; nothing runs when a page is opened.
+ * for each, plus a short description and what is praised or criticised. Results are stored per question,
+ * engine and day; nothing runs when a page is opened.
  */
 export const VIS_MODEL = "claude-sonnet-5-5";
 // $ per million tokens for claude-sonnet-5-5, and $ per web search (Anthropic first-party pricing)
@@ -25,13 +27,14 @@ export const AI_EVERY_DAYS = 7;
 const RUN_COST_LIMIT = 1.5; // a single run never spends more than this per client (both providers together)
 const SYSTEM = "You are a helpful assistant answering a consumer's question. Answer the way you normally would: if the question is about finding or choosing a business or service, recommend specific, real businesses and say why. Keep the answer under 250 words.";
 
-export type EngineKey = "claude" | "chatgpt" | "perplexity" | "gemini";
-/** Measured per-answer costs (October 2026): ChatGPT $0.030, Perplexity $0.006, Gemini $0.033, Claude ~$0.05 incl. search. */
+export type EngineKey = "claude" | "chatgpt" | "perplexity" | "gemini" | "ai_mode";
+/** Measured per-answer costs (October 2026): ChatGPT $0.030, Perplexity $0.006, Gemini $0.033, AI Mode $0.004, Claude ~$0.05 incl. search. */
 export const ENGINES: Record<EngineKey, { label: string; model: string; est: number; via: "anthropic" | "dataforseo"; path?: string }> = {
   claude: { label: "Claude", model: VIS_MODEL, est: 0.05, via: "anthropic" },
   chatgpt: { label: "ChatGPT", model: "gpt-5.4-mini", est: 0.035, via: "dataforseo", path: "chat_gpt" },
   perplexity: { label: "Perplexity", model: "sonar", est: 0.008, via: "dataforseo", path: "perplexity" },
   gemini: { label: "Gemini", model: "gemini-3.5-flash", est: 0.04, via: "dataforseo", path: "gemini" },
+  ai_mode: { label: "Google AI Mode", model: "google-ai-mode", est: 0.006, via: "dataforseo" },
 };
 export const ENGINE_KEYS = Object.keys(ENGINES) as EngineKey[];
 const EXTRACT_EST = 0.02;
@@ -41,7 +44,11 @@ export const PROMPT_EST = promptEstimate(ENGINE_KEYS);
 
 export interface AiPrompt { id: string; prompt: string; created_at: string }
 export interface AiSource { domain: string; url: string; title: string | null }
-export interface AiBrand { name: string; domain: string | null; position: number; sentiment: number | null; own: boolean; cited: boolean }
+export interface AiBrand {
+  name: string; domain: string | null; position: number; sentiment: number | null; own: boolean; cited: boolean;
+  /** how the answer describes the brand, a few words (answers read before November 2026 have none) */
+  note?: string | null; praised?: string[]; criticised?: string[];
+}
 export interface AiCheck {
   prompt_id: string; checked_on: string; model: string; used_search: boolean; mentioned: boolean; cited: boolean; seen: boolean;
   sources: AiSource[]; competitors: string[]; answer: string | null; cost: number;
@@ -106,7 +113,7 @@ type J = Record<string, unknown>;
 const arr = (v: unknown): J[] => (Array.isArray(v) ? (v as J[]) : []);
 
 /** ChatGPT, Perplexity or Gemini through DataForSEO LLM Responses (live, with web search). */
-async function askDfs(engine: Exclude<EngineKey, "claude">, prompt: string, city: string | null): Promise<Answer> {
+async function askDfs(engine: Exclude<EngineKey, "claude" | "ai_mode">, prompt: string, city: string | null): Promise<Answer> {
   const e = ENGINES[engine];
   const body: J = { user_prompt: prompt.slice(0, 500), model_name: e.model, system_message: SYSTEM.slice(0, 500), max_output_tokens: 2048 };
   if (engine === "chatgpt") Object.assign(body, { web_search: true, web_search_country_iso_code: "US", ...(city ? { web_search_city: city } : {}) });
@@ -129,12 +136,30 @@ async function askDfs(engine: Exclude<EngineKey, "claude">, prompt: string, city
   return { engine, text, sources: [...sources.values()].slice(0, 12), seenHosts: [], model: String(result?.model_name ?? e.model), usedSearch: result?.web_search !== false, cost, provider: "dataforseo" };
 }
 
+/** Google's own pages, image hosts and DataForSEO's image CDN: links in an AI Mode answer that are not sources */
+const isGoogle = (h: string) => /(^|\.)google\.[a-z.]+$|(^|\.)(gstatic|googleusercontent|ggpht|dataforseo)\.com$/.test(h);
+
+/** Google AI Mode through DataForSEO's SERP API: the answer text, and the websites it links to. */
+async function askAiMode(prompt: string): Promise<Answer> {
+  const { result, cost } = await dfsPost("/serp/google/ai_mode/live/advanced", { keyword: prompt.slice(0, 700), location_code: 2840, language_code: "en" }, { timeoutMs: 120_000, attempts: 1 });
+  const ov = arr(result?.items).find((i) => i.type === "ai_overview");
+  const parts = arr(ov?.items);
+  const text = (parts.length ? parts.map((e) => [e.title, e.text].filter((x) => typeof x === "string").join("\n")).join("\n\n") : String(ov?.markdown ?? ""))
+    .replace(/!\[[^\]]*\]\([^)]*\)/g, "").trim();
+  const sources = new Map<string, AiSource>();
+  const add = (url: string, title: string | null) => { const h = host(url); if (h && !isGoogle(h) && !sources.has(url)) sources.set(url, { domain: h, url, title }); };
+  for (const m of String(ov?.markdown ?? "").matchAll(/(?<!!)\[([^\]]*)\]\((https?:\/\/[^)\s]+)\)/g)) add(m[2], m[1] && m[1] !== "Website" ? m[1].slice(0, 160) : null);
+  for (const r of [...arr(ov?.references), ...parts.flatMap((e) => arr(e.references))]) add(String(r.url ?? ""), typeof r.title === "string" ? r.title.slice(0, 160) : null);
+  return { engine: "ai_mode", text, sources: [...sources.values()].slice(0, 12), seenHosts: [], model: ENGINES.ai_mode.model, usedSearch: true, cost, provider: "dataforseo" };
+}
+
 /* ------------------------------------------------------------------ reading the answers (Claude Sonnet) */
 const brandSchema = z.object({
   answers: z.array(z.object({
     engine: z.string(),
     brands: z.array(z.object({
       name: z.string(), domain: z.string().nullable(), position: z.number().int(), sentiment: z.number().int(), is_client: z.boolean(),
+      note: z.string(), praised: z.array(z.string()), criticised: z.array(z.string()),
     })),
   })),
 });
@@ -151,7 +176,7 @@ async function extractBrands(answers: Answer[], client: { name: string; site: st
   const res = await anthropic().beta.messages.parse({
     model: VIS_MODEL, max_tokens: 4000, betas: ["server-side-fallback-2026-07-01"], fallbacks: "default",
     output_config: { effort: "low", format: betaZodOutputFormat(brandSchema) },
-    system: "You analyse AI assistant answers for brand visibility. For each answer, list every business, brand or company the answer names or recommends (not directories or websites used only as sources, unless the answer recommends them as a business), in order of first appearance (position 1 = named first). Give each a sentiment from 0 to 100 for how favourably the answer describes it (50 = neutral mention, 75+ = recommended/praised, below 40 = criticised or warned against), its website domain if the answer states or links it (else null), and is_client = true only if it is the client business.",
+    system: "You analyse AI assistant answers for brand visibility. For each answer, list every business, brand or company the answer names or recommends (not directories or websites used only as sources, unless the answer recommends them as a business), in order of first appearance (position 1 = named first). Give each a sentiment from 0 to 100 for how favourably the answer describes it (50 = neutral mention, 75+ = recommended/praised, below 40 = criticised or warned against), its website domain if the answer states or links it (else null), is_client = true only if it is the client business, note = how the answer describes it in at most 12 words, and praised / criticised = up to 3 short themes each (2-3 words, lower case, e.g. 'fast turnaround', 'high prices'; empty when none).",
     messages: [{ role: "user", content: `Client business: ${client.name}\nClient website: ${client.site}\nClient brand words: ${client.terms.join(", ") || "-"}\n\n${doc}\n\nReturn one entry per answer, using the engine names given.` }],
   });
   const u = res.usage;
@@ -165,6 +190,7 @@ async function extractBrands(answers: Answer[], client: { name: string; site: st
       return {
         name: b.name.slice(0, 100), domain: d, position: b.position > 0 ? b.position : i + 1, sentiment: Math.max(0, Math.min(100, b.sentiment)),
         own: b.is_client || (!!d && sameSite(d, client.site)), cited: !!d && [...citedHosts].some((h) => sameSite(h, d)),
+        note: b.note.slice(0, 140) || null, praised: b.praised.slice(0, 3).map((x) => x.slice(0, 40)), criticised: b.criticised.slice(0, 3).map((x) => x.slice(0, 40)),
       };
     }));
   }
@@ -186,7 +212,7 @@ export async function checkPrompt(admin: SupabaseClient, clientId: string, p: Ai
   }
   const jobs: Promise<Answer>[] = [
     ...(o.engines.includes("claude") && process.env.ANTHROPIC_API_KEY ? [askClaude(p.prompt, o.search)] : []),
-    ...dfsEngines.map((e) => askDfs(e, p.prompt, o.city)),
+    ...dfsEngines.map((e) => (e === "ai_mode" ? askAiMode(p.prompt) : askDfs(e, p.prompt, o.city))),
   ];
   const settled = await Promise.allSettled(jobs);
   const answers: Answer[] = [];
@@ -296,6 +322,8 @@ export interface AiSummary {
 
 const normalise = (x: Record<string, unknown>): AiCheck => ({
   ...(x as unknown as AiCheck), engine: ((x.engine as EngineKey) ?? "claude"), brands: (x.brands as AiBrand[]) ?? [],
+  // image links stored by the first Google AI Mode checks are not sources
+  sources: ((x.sources as AiSource[]) ?? []).filter((s) => !isGoogle(s.domain)), competitors: ((x.competitors as string[]) ?? []).filter((d) => !isGoogle(d)),
   position: (x.position as number | null) ?? null, sentiment: x.sentiment == null ? null : Number(x.sentiment), cost: Number(x.cost ?? 0),
 });
 
@@ -340,7 +368,7 @@ export interface BrandStat {
   positive: number; neutral: number; negative: number; engines: Partial<Record<EngineKey, { mentions: number; sentiment: number | null }>>;
 }
 
-const brandKey = (b: AiBrand) => normalizeTerm(b.name).replace(/(inc|llc|co|company|corp)$/, "") || b.name.toLowerCase();
+export const brandKey = (b: Pick<AiBrand, "name">) => normalizeTerm(b.name).replace(/(inc|llc|co|company|corp)$/, "") || b.name.toLowerCase();
 
 /** Per-brand share of voice, position, citations and sentiment across the latest answers (history for averages). */
 export function brandStats(s: AiSummary, site: string): BrandStat[] {

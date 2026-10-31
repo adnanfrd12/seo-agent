@@ -19,7 +19,7 @@ export default async function ReportsPage() {
   return (
     <div className="mx-auto max-w-4xl">
       <TabHeader source={null} eyebrow="Reporting" title="Monthly Reports" description="Full monthly reports and executive summaries, rendered from stored data without the dashboard sidebar. Months with no connected data show unavailable sections, never zeros." />
-      <ul className="divide-y divide-border rounded-xl border border-border bg-surface">
+      <ul className="divide-y divide-border rounded-[10px] border border-border bg-surface">
         {months(client.timezone).map((m) => (
           <li key={m} className="flex flex-wrap items-center gap-3 px-4 py-3">
             <span className="min-w-40 font-medium">{monthLabel(m)}</span>

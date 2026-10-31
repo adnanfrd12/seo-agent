@@ -1,3 +1,4 @@
+import { Freshness, type FreshRow } from "@/components/charts/ops-charts";
 import { PageHeader } from "@/components/dashboard/page-header";
 import { IntegrationCard, type ProviderStatus } from "@/components/integrations/integration-card";
 import { getSession } from "@/lib/analytics/client-context";
@@ -16,6 +17,7 @@ export const maxDuration = 300;
 
 const ORDER: ProviderId[] = ["ga4", "gsc", "gbp"];
 const EMPTY: ProviderStatus = { connection: null, resources: [], last_job: null, syncing: false };
+const hoursSince = (iso: string | null | undefined) => (iso ? Math.max(0, (Date.now() - new Date(iso).getTime()) / 3_600_000) : null);
 
 export default async function IntegrationsPage({
   searchParams,
@@ -55,6 +57,17 @@ export default async function IntegrationsPage({
   const lbmIds = new Set((lbmResources ?? []).map((r) => r.id));
   if (status.gbp) status.gbp = { ...status.gbp, resources: status.gbp.resources.filter((r) => !lbmIds.has(r.id)) };
 
+  // how fresh each connected source is (connected or failing; never-connected sources are left out)
+  const fresh: FreshRow[] = [
+    ...ORDER.filter((p) => status[p]?.connection && status[p]!.connection!.status !== "disconnected").map((p) => {
+      const c = status[p]!.connection!;
+      return { label: PROVIDER_META[p].label, hours: hoursSince(c.last_synced_at), failed: c.status === "error" || status[p]!.last_job?.status === "failed", detail: c.last_error ?? undefined };
+    }),
+    ...([["Bing Webmaster Tools", bing], ["Local Brand Manager", lbm], ["Microsoft Clarity", clarity]] as const)
+      .filter(([, c]) => c && c.status !== "disconnected")
+      .map(([label, c]) => ({ label, hours: hoursSince(c!.last_synced_at), failed: c!.status === "error", detail: c!.last_error ?? undefined })),
+  ];
+
   return (
     <>
       <PageHeader title="Integrations" description="Connect Google accounts once; data then syncs automatically." />
@@ -81,9 +94,10 @@ export default async function IntegrationsPage({
           <IntegrationCard key={p} provider={p} status={status[p] ?? EMPTY} canEdit={canEdit} available={p !== "gbp" || gbpConfigured()} />
         ))}
       </div>
+      {fresh.length > 0 && <div className="mt-4"><Freshness title="Data freshness" sub="Time since each connected source last synced · Search Console and Business Profile data itself lags a few days" rows={fresh} /></div>}
       {canEdit && <ScheduledJobs />}
       <DataForSeoCard canEdit={canEdit} clientId={client.id} />
-      <section className="mt-4 rounded-xl border border-border bg-surface p-5" aria-labelledby="bing-title">
+      <section className="mt-4 rounded-[10px] border border-border bg-surface p-5" aria-labelledby="bing-title">
         <div className="flex flex-wrap items-start justify-between gap-3">
           <div>
             <h2 id="bing-title" className="text-base font-semibold">Bing Webmaster Tools</h2>
@@ -101,10 +115,10 @@ export default async function IntegrationsPage({
         </div>
         <p className="mt-3 text-xs text-muted">
           Bing serves about 16 months of daily clicks and impressions and weekly query and page statistics; each daily sync refreshes all of it.
-          Data appears on the <a href="/bing" className="text-accent hover:underline">Bing Webmaster</a> page, the Overview and the PDF report.
+          Data appears on the <a href="/bing" className="text-foreground underline decoration-border-strong underline-offset-2 hover:decoration-foreground">Bing Webmaster</a> page, the Overview and the PDF report.
         </p>
       </section>
-      <section className="mt-4 rounded-xl border border-border bg-surface p-5" aria-labelledby="lbm-title">
+      <section className="mt-4 rounded-[10px] border border-border bg-surface p-5" aria-labelledby="lbm-title">
         <div className="flex flex-wrap items-start justify-between gap-3">
           <div>
             <h2 id="lbm-title" className="text-base font-semibold">Local Brand Manager</h2>
@@ -125,10 +139,10 @@ export default async function IntegrationsPage({
         )}
         <p className="mt-3 text-xs text-muted">
           Local Brand Manager serves the most recent ~25 days of daily metrics and the latest months of keywords, so history builds up with each daily sync.
-          Data appears on the <a href="/business-profile" className="text-accent hover:underline">Google Business Profile</a> page, the Overview and the PDF report.
+          Data appears on the <a href="/business-profile" className="text-foreground underline decoration-border-strong underline-offset-2 hover:decoration-foreground">Google Business Profile</a> page, the Overview and the PDF report.
         </p>
       </section>
-      <section className="mt-4 rounded-xl border border-border bg-surface p-5" aria-labelledby="clarity-title">
+      <section className="mt-4 rounded-[10px] border border-border bg-surface p-5" aria-labelledby="clarity-title">
         <div className="flex flex-wrap items-start justify-between gap-3">
           <h2 id="clarity-title" className="text-base font-semibold">Microsoft Clarity</h2>
           <span className={clarityConnected ? "text-sm font-medium text-positive" : "text-sm text-muted"}>{clarityConnected ? "Connected" : "Not connected"}</span>
@@ -139,10 +153,10 @@ export default async function IntegrationsPage({
         <p className="mt-3 text-xs text-muted">
           Clarity&apos;s official Data Export API returns only the last 1–3 days (10 requests per project per day), so the dashboard stores one day per
           daily sync and builds history over time. There is no official API for session recordings, so recording insights come from the reviewer
-          observations below. Data is shown on the <a href="/clarity" className="text-accent hover:underline">Microsoft Clarity</a> page.
+          observations below. Data is shown on the <a href="/clarity" className="text-foreground underline decoration-border-strong underline-offset-2 hover:decoration-foreground">Microsoft Clarity</a> page.
         </p>
       </section>
-      <section className="mt-4 rounded-xl border border-border bg-surface p-5">
+      <section className="mt-4 rounded-[10px] border border-border bg-surface p-5">
         <h2 className="text-base font-semibold">Clarity recording reviews</h2>
         <p className="mt-1 text-sm text-muted">
           Watch recordings in Clarity (filter by rage or dead clicks), then log what you saw. The AI analysis uses these as human observations;

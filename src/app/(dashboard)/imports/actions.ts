@@ -1,7 +1,7 @@
 "use server";
 
 import { randomUUID } from "node:crypto";
-import { revalidatePath } from "next/cache";
+import { revalidatePath } from "@/lib/revalidate";
 import { z } from "zod";
 import { aiErrorMessage } from "@/lib/ai/claude";
 import { extractReport } from "@/lib/ai/extract-report";

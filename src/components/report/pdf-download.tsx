@@ -9,8 +9,8 @@ import { cn } from "@/lib/utils";
  * message with a one-click print fallback instead of being saved as a stray .json file.
  */
 export function PdfDownloadButton({
-  href, printHref, label, primary = false, filename,
-}: { href: string; printHref: string; label: string; primary?: boolean; filename: string }) {
+  href, printHref, label, primary = false, filename, menu = false,
+}: { href: string; printHref: string; label: string; primary?: boolean; filename: string; menu?: boolean }) {
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -41,16 +41,17 @@ export function PdfDownloadButton({
 
   return (
     <span className="relative inline-flex flex-col">
-      <button onClick={download} disabled={busy} aria-busy={busy}
-        className={cn("inline-flex items-center gap-1.5 rounded-lg px-3.5 py-2 text-sm font-medium disabled:opacity-70",
-          primary ? "bg-accent text-accent-foreground hover:opacity-90" : "border border-border bg-surface hover:bg-surface-muted")}>
-        {busy ? <Loader2 className="size-4 animate-spin" /> : <FileText className="size-4" aria-hidden />}
+      <button onClick={download} disabled={busy} aria-busy={busy} role={menu ? "menuitem" : undefined}
+        className={cn("inline-flex items-center gap-2 font-medium disabled:opacity-70",
+          menu ? "w-full rounded-md px-2.5 py-1.5 text-left text-[13px] font-normal hover:bg-surface-muted"
+            : primary ? "h-9 rounded-md bg-accent px-3.5 text-sm text-accent-foreground hover:opacity-90" : "h-9 rounded-md border border-border-strong bg-surface px-3.5 text-sm hover:bg-surface-muted")}>
+        {busy ? <Loader2 className="size-4 animate-spin" /> : <FileText className={cn("size-4", menu && "text-muted")} aria-hidden />}
         {busy ? "Generating PDF…" : label}
       </button>
       {error && (
-        <span role="alert" className="absolute right-0 top-full z-20 mt-2 w-72 rounded-lg border border-border bg-surface p-3 text-left text-xs shadow-lg">
+        <span role="alert" className={cn("z-20 w-72 rounded-lg border border-border bg-surface p-3 text-left text-xs shadow-lg", menu ? "mt-1" : "absolute right-0 top-full mt-2")}>
           <span className="block text-negative">{error}</span>
-          <a href={printHref} target="_blank" rel="noopener" className="mt-2 inline-flex items-center gap-1 font-medium text-accent hover:underline">
+          <a href={printHref} target="_blank" rel="noopener" className="mt-2 inline-flex items-center gap-1 font-medium text-foreground underline underline-offset-2">
             <Printer className="size-3.5" aria-hidden /> Open print view and choose “Save as PDF”
           </a>
           <button onClick={() => setError(null)} className="ml-3 text-muted hover:text-foreground">Dismiss</button>

@@ -13,12 +13,12 @@ export function Tabs({ items, label, onChange }: {
   if (!cur) return null;
   return (
     <div>
-      <div role="tablist" aria-label={label} className="mb-3 inline-flex max-w-full flex-wrap rounded-lg border border-border p-0.5">
+      <div role="tablist" aria-label={label} className="mb-4 inline-flex max-w-full flex-wrap gap-0.5 rounded-lg bg-surface-muted p-[3px]">
         {items.map((i) => (
           <button key={i.key} id={`${id}-${i.key}`} role="tab" aria-selected={i.key === cur.key} aria-controls={`${id}-panel`} onClick={() => { setActive(i.key); onChange?.(i.key); }}
-            className={cn("rounded-md px-3 py-1 text-xs font-medium outline-none transition-colors focus-visible:ring-2 focus-visible:ring-accent",
-              i.key === cur.key ? "bg-accent text-accent-foreground shadow-sm" : "text-foreground/80 hover:bg-surface-muted")}>
-            {i.label}{i.badge != null && <span className="ml-1.5 opacity-70">{i.badge}</span>}
+            className={cn("h-7 rounded-md px-3 text-[13px] outline-none transition-colors focus-visible:ring-2 focus-visible:ring-accent",
+              i.key === cur.key ? "bg-surface font-medium text-foreground shadow-[0_1px_2px_rgb(0_0_0/0.08)]" : "text-secondary hover:text-foreground")}>
+            {i.label}{i.badge != null && <span className="ml-1.5 tabular-nums text-muted">{i.badge}</span>}
           </button>
         ))}
       </div>

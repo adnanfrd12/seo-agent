@@ -1,3 +1,6 @@
+import { Columns } from "@/components/charts/ai-charts";
+import { BarList } from "@/components/charts/bar-list";
+import { DivergingBars, Fill } from "@/components/charts/ops-charts";
 import { TabHeader } from "@/components/dashboard/tab-header";
 import { Highlights } from "@/components/dashboard/highlights";
 import { pickHighlights } from "@/lib/overview/highlights";
@@ -32,11 +35,16 @@ export default async function OpportunitiesPage({ searchParams }: { searchParams
   });
   const o = data as Opportunities | null;
   const topWin = o?.quick_wins[0];
+  // positions gained (+) or lost (-), the biggest movers of both lists
+  const delta = (x: Row) => { const p = n(x.previous_position), c = n(x.current_position); return p == null || c == null ? null : Number((p - c).toFixed(1)); };
+  const moves = o ? [...o.declining_keywords, ...o.improving_keywords].map((x) => ({ label: s(x.query), value: delta(x), detail: `${fmtDecimal(n(x.previous_position))} → ${fmtDecimal(n(x.current_position))}` }))
+    .filter((x, i, l) => x.value != null && l.findIndex((y) => y.label === x.label) === i).sort((a, b) => Math.abs(b.value!) - Math.abs(a.value!)).slice(0, 8).sort((a, b) => b.value! - a.value!) : [];
   const hl = o ? pickHighlights([
     o.quick_wins.length > 0 && { tone: "good" as const, title: `${o.quick_wins.length} quick wins found`, detail: topWin ? `Biggest: “${String(topWin.query)}” (position ${String(topWin.position)}, ${String(topWin.impressions)} impressions).` : undefined, action: "Improve the title, description and on-page content for the top ones." },
     o.declining_keywords.length > 0 && { tone: "bad" as const, title: `${o.declining_keywords.length} keywords are losing positions`, action: "Check whether the ranking pages changed or a competitor overtook them." },
     o.decaying_pages.length > 0 && { tone: "bad" as const, title: `${o.decaying_pages.length} pages are losing clicks`, action: "Refresh outdated content and recheck internal links to these pages." },
     o.improving_keywords.length > 0 && { tone: "good" as const, title: `${o.improving_keywords.length} keywords are moving up`, action: "Support them with internal links and fresh content." },
+    o.cannibalization.length > 0 && { tone: "info" as const, title: `${o.cannibalization.length} searches split across several of your pages`, action: "Review the intent of the competing pages before consolidating any of them." },
   ]) : [];
 
   return (
@@ -61,6 +69,21 @@ export default async function OpportunitiesPage({ searchParams }: { searchParams
         <Unavailable title="Opportunity analysis isn't available yet" body="Apply migration 20261021000010 in Supabase, then run a Search Console sync so query × page data is imported." />
       ) : (
         <>
+          <section aria-label="Opportunity charts" className="space-y-4">
+            <Columns title="Opportunities found" sub={`${range.start} → ${range.end} vs the period before, above the thresholds`} valueLabel="Count" bins={[
+              { label: "Quick wins", value: o.quick_wins.length, highlight: true }, { label: "Moving up", value: o.improving_keywords.length }, { label: "Losing positions", value: o.declining_keywords.length },
+              { label: "Decaying pages", value: o.decaying_pages.length }, { label: "New queries", value: o.new_queries.length }, { label: "Cannibalized", value: o.cannibalization.length },
+            ]} />
+            <div className="grid gap-4 lg:grid-cols-2">
+              <Fill><BarList title="Quick-win potential" valueLabel="Score · position" emptyText="No quick wins above the thresholds."
+                items={o.quick_wins.slice(0, 8).map((x) => ({ label: s(x.query), value: Number((n(x.score) ?? 0).toFixed(1)), detail: `#${fmtDecimal(n(x.position))}` }))} /></Fill>
+              <Fill><DivergingBars title="Position changes" sub="Positions gained (right) or lost (left) vs the previous period" format="dec" valueLabel="Positions" rows={moves} empty="No keyword moved beyond the threshold." /></Fill>
+            </div>
+            {o.decaying_pages.length > 0 && (
+              <DivergingBars title="Clicks lost by decaying page" sub="Change in clicks vs the previous period" format="pct" valueLabel="Click change"
+                rows={o.decaying_pages.slice(0, 8).map((x) => ({ label: url(x.page), value: n(x.clicks_change_pct), detail: `${fmtInt(n(x.previous_clicks))} → ${fmtInt(n(x.current_clicks))} clicks` }))} />
+            )}
+          </section>
           <ReportTable<Row> title="Quick wins: visible but under-clicked" source="GSC" empty="No queries in positions 4–20 with enough impressions."
             rows={o.quick_wins} columns={[
               { label: "Query", render: (x) => s(x.query) },
@@ -71,7 +94,7 @@ export default async function OpportunitiesPage({ searchParams }: { searchParams
               { label: "Position", align: "right", render: (x) => fmtDecimal(n(x.position)) },
               { label: "Score", align: "right", render: (x) => fmtDecimal(n(x.score)) },
             ]} />
-          <div className="grid gap-6 lg:grid-cols-2">
+          <div className="grid items-start gap-6 lg:grid-cols-2 [&>*]:min-w-0">
             <ReportTable<Row> title="Keywords losing positions" source="GSC" empty="None above the thresholds." rows={o.declining_keywords} columns={[
               { label: "Keyword", render: (x) => s(x.query) },
               { label: "Page", render: (x) => <span className="break-all text-xs">{x.page ? url(x.page) : "—"}</span> },

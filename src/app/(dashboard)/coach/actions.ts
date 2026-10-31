@@ -1,6 +1,6 @@
 "use server";
 
-import { revalidatePath } from "next/cache";
+import { revalidatePath } from "@/lib/revalidate";
 import { getSession } from "@/lib/analytics/client-context";
 import { COACH_COOLDOWN_HOURS, COACH_MODES, generateCoach, type CoachMode } from "@/lib/ai/coach";
 import { createAdminClient } from "@/lib/supabase/admin";

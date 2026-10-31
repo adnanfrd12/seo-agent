@@ -117,9 +117,9 @@ export function IntegrationCard({
     picked.size !== selected.length || selected.some((r) => !picked.has(r.id));
 
   return (
-    <section className="flex flex-col gap-4 rounded-xl border border-border bg-surface p-5 shadow-sm" aria-labelledby={`${provider}-title`}>
+    <section className="flex min-w-0 flex-col gap-4 rounded-[10px] border border-border bg-surface p-5" aria-labelledby={`${provider}-title`}>
       <div className="flex items-start justify-between gap-3">
-        <h2 id={`${provider}-title`} className="text-base font-semibold">{meta.label}</h2>
+        <h2 id={`${provider}-title`} className="text-[15px] font-semibold">{meta.label}</h2>
         <span className={cn("inline-flex items-center gap-1 text-sm font-medium", badge.cls)}>
           <Badge className={cn("size-4", state === "pending" && "animate-spin")} aria-hidden /> {badge.text}
         </span>
@@ -135,7 +135,7 @@ export function IntegrationCard({
         </div>
       ) : (
         <>
-          <dl className="grid grid-cols-[auto_1fr] gap-x-4 gap-y-1 text-sm">
+          <dl className="grid grid-cols-[auto_minmax(0,1fr)] gap-x-4 gap-y-1 text-sm">
             <dt className="text-muted">Account</dt>
             <dd className="truncate">{conn?.account_email ?? (state === "connected" ? "Connected (email not provided)" : "—")}</dd>
             <dt className="text-muted">Tracking</dt>
@@ -150,13 +150,13 @@ export function IntegrationCard({
           </dl>
 
           {(conn?.last_error || (status.last_job?.status === "failed" && status.last_job.error)) && state !== "disconnected" && (
-            <p role="alert" className="rounded-lg bg-accent-soft p-2 text-sm text-negative">
+            <p role="alert" className="break-words rounded-md bg-negative-soft p-2.5 text-[13px] text-negative">
               {conn?.last_error ?? status.last_job?.error}
             </p>
           )}
 
           {state === "connected" && (
-            <fieldset className="space-y-1.5" disabled={!canEdit}>
+            <fieldset className="min-w-0 space-y-1.5" disabled={!canEdit}>
               <legend className="mb-1 text-sm font-medium">
                 Choose {meta.resourceNoun}s to track
               </legend>
@@ -166,7 +166,7 @@ export function IntegrationCard({
                 <ul className="max-h-48 space-y-1 overflow-y-auto">
                   {status.resources.map((r) => (
                     <li key={r.id}>
-                      <label className="flex cursor-pointer items-center gap-2 rounded-md px-2 py-1 text-sm hover:bg-surface-muted">
+                      <label className="flex min-w-0 cursor-pointer items-center gap-2 rounded-md px-2 py-1 text-sm hover:bg-surface-muted">
                         <input
                           type="checkbox"
                           className="size-4 accent-[var(--accent)]"

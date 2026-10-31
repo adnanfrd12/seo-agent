@@ -1,6 +1,7 @@
 import { timingSafeEqual } from "node:crypto";
 import { NextResponse, type NextRequest } from "next/server";
 import { activeClientIds } from "@/lib/activity";
+import { LLM_EST, llmTopics, refreshLlmMentions } from "@/lib/ai/llm-mentions";
 import { runAiChecks, suggestPrompts } from "@/lib/ai/visibility";
 import { AUTO_SHARE, BudgetError, getSettings, spend } from "@/lib/dataforseo/budget";
 import { dfsConfigured } from "@/lib/dataforseo/client";
@@ -29,7 +30,8 @@ const SEED_KEYWORDS = 10, SEED_PROMPTS = 5, MAX_GRID_KEYWORDS = 3;
  * ACTIVE clients (opened in the last 14 days), inside the automatic share of the daily DataForSEO budget:
  *   0. starter setup (once per client): tracked keywords are topped up to 10 (desktop and mobile) and
  *      AI questions to 5, from the keywords the site already ranks for; removing one later is respected
- *   1. AI visibility (ChatGPT, Perplexity, Gemini via DataForSEO; Claude via the Anthropic key), weekly
+ *   1. AI visibility (ChatGPT, Perplexity, Gemini, Google AI Mode via DataForSEO; Claude via the Anthropic key), weekly,
+ *      and the AI market view for the client's topics (DataForSEO LLM Mentions, ChatGPT and Google), weekly
  *   2. Google Maps rank grids for the keywords scanned before (or the business category), weekly
  *   3. Lighthouse on the home page and the top page, mobile and desktop, weekly
  *   4. Business Profiles and reviews of the competitors compared before (or "people also search"), weekly
@@ -117,6 +119,23 @@ async function handle(request: NextRequest) {
 
       if (!settings) { out.skipped = "DataForSEO not configured"; return out; }
       if (!settings.autoRefresh) { out.skipped = "Automatic refresh is turned off on the Integrations page"; return out; }
+
+      // 1b. AI market data (LLM Mentions) for the client's topics
+      let llm = 0;
+      for (const id of active) {
+        if (Date.now() > deadline - 150_000) break;
+        const target = await resolveTarget(admin, id);
+        if (!target || !(await room(2 * LLM_EST))) continue;
+        const me = await localIdentity(admin, id);
+        const prof = ((await latest(id, "gbp_profile")).find((r) => r.params_hash === "self")?.data ?? null) as Profile | null;
+        const ranked = ((await latest(id, "ranked_keywords"))[0]?.data ?? []) as Row[];
+        const { data: qs } = await admin.from("ai_prompts").select("prompt").eq("client_id", id);
+        const topics = llmTopics((qs ?? []).map((q) => String(q.prompt)), ranked.filter((k) => typeof k.keyword === "string").map((k) => ({ keyword: k.keyword as string, volume: Number(k.volume ?? 0) })), me?.city ?? null, prof?.category ?? null);
+        const r = await refreshLlmMentions({ admin, clientId: id, source: "auto" }, target, topics);
+        llm += r.fetched;
+        if (r.error) break;
+      }
+      out.aiMarket = { fetched: llm };
 
       // 2. map rank grids
       let grids = 0;

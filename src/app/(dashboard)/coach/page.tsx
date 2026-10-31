@@ -1,4 +1,7 @@
+import { Donut } from "@/components/charts/ai-charts";
+import { Fill, SplitBar } from "@/components/charts/ops-charts";
 import { EmptyState } from "@/components/dashboard/page-header";
+import { cat } from "@/lib/charts/colors";
 import { TabHeader } from "@/components/dashboard/tab-header";
 import { CoachRun } from "@/components/research/coach-run";
 import { Tabs } from "@/components/research/tabs";
@@ -8,7 +11,7 @@ import { createClient } from "@/lib/supabase/server";
 
 const Refs = ({ ids }: { ids: string[] }) => (ids.length ? <p className="text-[11px] text-muted">Based on: {ids.join(", ")}</p> : null);
 const Steps = ({ items }: { items: string[] }) => (items.length ? <ol className="ml-5 list-decimal space-y-0.5 text-sm">{items.map((s, i) => <li key={i}>{s}</li>)}</ol> : null);
-const Card = ({ children }: { children: React.ReactNode }) => <div className="space-y-2 rounded-xl border border-border bg-surface p-4">{children}</div>;
+const Card = ({ children }: { children: React.ReactNode }) => <div className="space-y-2 rounded-[10px] border border-border bg-surface p-4 [overflow-wrap:anywhere]">{children}</div>;
 const Meta = ({ r }: { r: CoachResult }) => <p className="text-xs text-muted">Written {r.generatedAt.slice(0, 10)} by Claude Sonnet 5.5 from {r.evidenceCount} stored data points ({r.period.start} to {r.period.end}). Suggestions are hypotheses to test, not guarantees.</p>;
 
 function CoachView({ r }: { r: CoachResult<"coach"> }) {
@@ -41,9 +44,29 @@ function PrioritiesView({ r }: { r: CoachResult<"priorities"> }) {
 
 function TopicsView({ r }: { r: CoachResult<"topics"> }) {
   const o = r.output as CoachOutput<"topics">;
+  const intents = new Map<string, number>();
+  // the intent is free text ("informational with a commercial lean"): group by the first standard intent it names
+  const KINDS = ["informational", "commercial", "transactional", "navigational", "local"];
+  for (const t of o.topics) {
+    const s = t.search_intent.toLowerCase();
+    const k = KINDS.map((x) => [x, s.indexOf(x)] as const).filter(([, i]) => i >= 0).sort((a, b) => a[1] - b[1])[0]?.[0] ?? "other";
+    intents.set(k, (intents.get(k) ?? 0) + 1);
+  }
+  const intentList = [...intents.entries()].sort((a, b) => b[1] - a[1]);
+  const intentItems = intentList.slice(0, 5).map(([k, v], i) => ({ label: k[0].toUpperCase() + k.slice(1), value: v, color: cat(i) }));
+  if (intentList.length > 5) intentItems.push({ label: "Other", value: intentList.slice(5).reduce((a, x) => a + x[1], 0), color: "var(--cat-other)" });
+  const newPages = o.topics.filter((t) => t.action === "new_page").length;
   return (
     <div className="space-y-4">
       <p className="text-sm">{o.summary}</p>
+      {o.topics.length > 0 && (
+        <div className="grid gap-4 md:grid-cols-2">
+          <Fill><Donut title="Topics by search intent" sub="What the searcher wants from each topic" items={intentItems} center={String(o.topics.length)} centerLabel="topics" /></Fill>
+          <Fill><SplitBar title="New pages or improvements" sub="Whether each topic needs a new page or a better existing one" segments={[
+            { label: "New page", value: newPages, color: "var(--series)" }, { label: "Improve existing page", value: o.topics.length - newPages, color: "color-mix(in oklab, var(--series) 40%, var(--surface))" },
+          ]} /></Fill>
+        </div>
+      )}
       {o.topics.map((t, i) => (
         <Card key={i}><p className="font-semibold">{t.title}</p>
           <p className="flex flex-wrap gap-1.5 text-[11px]"><span className="rounded bg-accent-soft px-1.5 py-0.5">{t.action === "new_page" ? "New page" : "Improve existing page"}</span>{t.target_keyword && <span className="rounded bg-surface-muted px-1.5 py-0.5">Keyword: {t.target_keyword}</span>}<span className="rounded bg-surface-muted px-1.5 py-0.5">Intent: {t.search_intent}</span></p>
@@ -58,7 +81,8 @@ function CompetitorsView({ r }: { r: CoachResult<"competitors"> }) {
   return (
     <div className="space-y-4">
       <p className="text-sm">{o.summary}</p>
-      <div className="grid gap-3 lg:grid-cols-2">{o.competitors.map((c) => (
+      {/* an odd last card takes the full row instead of leaving an empty cell */}
+      <div className="grid gap-3 lg:grid-cols-2 lg:[&>*:last-child:nth-child(odd)]:col-span-2">{o.competitors.map((c) => (
         <Card key={c.domain}><p className="break-all font-semibold">{c.domain}</p>
           <p className="text-sm"><span className="font-medium">Does well: </span>{c.what_they_do_well}</p><p className="text-sm"><span className="font-medium">Beats you on: </span>{c.where_they_beat_you}</p><p className="text-sm"><span className="font-medium text-positive">Where you can win: </span>{c.where_you_can_win}</p><Refs ids={c.evidence_references} /></Card>
       ))}</div>
@@ -99,7 +123,7 @@ export default async function CoachPage() {
           <div className="space-y-4">
             <div><h2 className="text-base font-semibold">{m.title}</h2><p className="text-sm text-muted">{m.blurb}</p></div>
             <CoachRun mode={m.key} canEdit={canEdit} generatedAt={stored[m.key]?.generatedAt ?? null} label={m.label} />
-            {stored[m.key] ? <><Meta r={stored[m.key] as CoachResult} />{view(m.key)}</> : <p className="rounded-xl border border-dashed border-border p-6 text-sm text-muted">Not generated yet.</p>}
+            {stored[m.key] ? <><Meta r={stored[m.key] as CoachResult} />{view(m.key)}</> : <p className="rounded-[10px] border border-dashed border-border p-6 text-sm text-muted">Not generated yet.</p>}
           </div>
         ),
       }))} />

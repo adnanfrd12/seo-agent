@@ -57,7 +57,7 @@ export function AuditProgress({ crawled, max }: { crawled: number; max: number }
   }, [router]);
   const pct = Math.min(100, Math.round((now.crawled / Math.max(now.max, 1)) * 100));
   return (
-    <div role="status" className="rounded-xl border border-border bg-surface p-4">
+    <div role="status" className="rounded-[10px] border border-border bg-surface p-4">
       <p className="flex items-center gap-2 text-sm font-medium"><Loader2 className="size-4 animate-spin" aria-hidden /> Crawling the website… {now.crawled} of up to {now.max} pages</p>
       <div className="mt-2 h-2 overflow-hidden rounded-full bg-surface-muted"><div className="h-full rounded-full bg-accent transition-all" style={{ width: `${pct}%` }} /></div>
       <p className="mt-2 text-xs text-muted">This takes a few minutes and you can leave the page: the results are stored when the crawl finishes.</p>

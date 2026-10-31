@@ -13,15 +13,12 @@ export interface MetricOption {
 }
 
 /**
- * Each tab gets its own chart style and colour, so switching is unmistakable: bars, area, line,
- * stepped line. The colours stay readable in light and dark mode.
+ * One visual language for every trend: the current period in the series colour (an area for counts,
+ * a line for rates and positions), the previous period as a dashed grey line. The selected metric is
+ * named in the segmented switcher and the legend, so switching is clear without a new colour.
  */
-const STYLES: { variant: TrendVariant; color: string }[] = [
-  { variant: "bar", color: "var(--accent)" },
-  { variant: "area", color: "#2563EB" },
-  { variant: "line", color: "#0D9488" },
-  { variant: "step", color: "#7C3AED" },
-];
+const styleFor = (o: { format?: string }): { variant: TrendVariant; color: string } =>
+  ({ variant: !o.format || o.format === "int" ? "area" : "line", color: "var(--series)" });
 
 /**
  * One chart with a segmented metric switcher. Measures with different scales (e.g. clicks and
@@ -37,24 +34,23 @@ export function MetricTrend({ title, source, options, expanded = false }: {
   const index = Math.max(0, options.findIndex((o) => o.key === active));
   const current = options[index];
   if (!current) return null;
-  const style = STYLES[index % STYLES.length];
+  const style = styleFor(current);
 
   if (expanded) {
     return (
       <div className="grid gap-3 sm:grid-cols-2">
-        {options.map((o, i) => (
+        {options.map((o) => (
           <TrendChart key={o.key} title={`${title} · ${o.label}`} source={source} seriesLabel={o.label} data={o.data} format={o.format}
-            reverseY={o.reverseY} variant={STYLES[i % STYLES.length].variant} color={STYLES[i % STYLES.length].color} compact />
+            reverseY={o.reverseY} variant={styleFor(o).variant} color={styleFor(o).color} compact />
         ))}
       </div>
     );
   }
 
   const switcher = (
-    <div role="tablist" aria-label={`${title} metric`} className="inline-flex flex-wrap rounded-lg border border-border p-0.5">
-      {options.map((o, i) => {
+    <div role="tablist" aria-label={`${title} metric`} className="inline-flex flex-wrap gap-0.5 rounded-lg bg-surface-muted p-[3px]">
+      {options.map((o) => {
         const selected = o.key === current.key;
-        const color = STYLES[i % STYLES.length].color;
         return (
           <button
             key={o.key}
@@ -63,12 +59,10 @@ export function MetricTrend({ title, source, options, expanded = false }: {
             aria-selected={selected}
             onClick={() => setActive(o.key)}
             className={cn(
-              "inline-flex items-center gap-1.5 rounded-md px-2.5 py-1 text-xs font-medium outline-none transition-colors focus-visible:ring-2 focus-visible:ring-accent",
-              selected ? "text-white shadow-sm" : "text-foreground/80 hover:bg-surface-muted",
+              "rounded-md px-2.5 py-1 text-xs outline-none transition-colors focus-visible:ring-2 focus-visible:ring-accent",
+              selected ? "bg-surface font-medium text-foreground shadow-[0_1px_2px_rgb(0_0_0/0.08)]" : "text-secondary hover:text-foreground",
             )}
-            style={selected ? { background: color } : undefined}
           >
-            {!selected && <span className="inline-block size-2 rounded-full" style={{ background: color }} aria-hidden />}
             {o.label}
           </button>
         );

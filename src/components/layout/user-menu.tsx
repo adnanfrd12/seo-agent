@@ -34,7 +34,7 @@ export function UserMenu({
       </button>
 
       {open && (
-        <div role="menu" className="absolute right-0 z-40 mt-2 w-64 overflow-hidden rounded-xl border border-border bg-surface shadow-xl">
+        <div role="menu" className="absolute right-0 z-40 mt-2 w-64 overflow-hidden rounded-[10px] border border-border bg-surface shadow-xl">
           <div className="flex items-center gap-3 border-b border-border p-3">
             <Avatar src={avatarUrl} name={name} email={email} size={40} />
             <div className="min-w-0">

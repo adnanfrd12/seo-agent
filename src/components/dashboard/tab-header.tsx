@@ -8,7 +8,7 @@ export type TabSource = "ga4" | "gsc" | "gbp" | "bing" | "clarity" | "dfs" | nul
 const EYEBROW: Record<Exclude<TabSource, null>, string> = {
   ga4: "Google Analytics 4", gsc: "Search Console", gbp: "Google Business Profile", bing: "Bing Webmaster Tools", clarity: "Microsoft Clarity", dfs: "DataForSEO",
 };
-const DOT = { ok: "bg-positive", stale: "bg-[#D4970A]", error: "bg-negative", pending: "bg-muted" } as const;
+const DOT = { ok: "bg-positive", stale: "bg-warn", error: "bg-negative", pending: "bg-muted" } as const;
 
 const ago = (iso: string | null) => {
   if (!iso) return "never";
@@ -39,39 +39,41 @@ export async function TabHeader({ source, eyebrow, title, description, actions, 
       if (client) status = pickStatus(await getDataStatus(client.id), source);
     } catch { /* freshness is a nicety; never break the page for it */ }
   }
+  const src = eyebrow ?? (source ? EYEBROW[source] : null);
   return (
-    <header className="rise mb-6">
-      <div className="flex flex-wrap items-start justify-between gap-4">
-        <div className="min-w-0 border-l-4 border-accent pl-4">
-          {(eyebrow ?? (source ? EYEBROW[source] : null)) && <p className="text-[11px] font-semibold uppercase tracking-[0.16em] text-accent">{eyebrow ?? EYEBROW[source!]}</p>}
-          <h1 className="text-2xl font-bold tracking-tight sm:text-3xl">{title}</h1>
-          {description && <p className="mt-1 max-w-3xl text-sm text-muted">{description}</p>}
+    <header className="mb-6">
+      <div className="flex flex-wrap items-start justify-between gap-x-6 gap-y-3">
+        <div className="min-w-0">
+          <div className="flex flex-wrap items-center gap-x-3 gap-y-1.5">
+            <h1 className="text-2xl font-semibold tracking-[-0.015em]">{title}</h1>
+            {status ? (
+              <span title={[src, status.note, `Next automatic update ${when(status.nextAt)}`].filter(Boolean).join(" · ")}
+                className="inline-flex items-center gap-1.5 rounded-md border border-border bg-surface px-2 py-0.5 text-xs text-secondary">
+                <span className={cn("size-1.5 rounded-full", DOT[status.health])} aria-hidden />
+                {src && <span className="font-medium text-foreground">{src}</span>}
+                <span className={status.health === "error" ? "text-negative" : undefined}>
+                  {status.health === "error" ? "needs attention" : status.health === "pending" ? "waiting for the first sync" : `updated ${ago(status.lastSyncedAt)}`}
+                </span>
+              </span>
+            ) : src ? (
+              <span className="rounded-md border border-border bg-surface px-2 py-0.5 text-xs font-medium text-secondary">{src}</span>
+            ) : null}
+            {status && <span className="text-xs text-muted">Next update {when(status.nextAt)}{status.note ? ` · ${status.note}` : ""}</span>}
+          </div>
+          {description && <p className="mt-1.5 max-w-3xl text-sm leading-relaxed text-secondary">{description}</p>}
+          {status?.error && <Link href="/integrations" className="mt-1.5 inline-block text-xs text-negative underline underline-offset-2">{status.error.slice(0, 120)}</Link>}
         </div>
-        {actions && <div className="flex flex-wrap gap-2">{actions}</div>}
+        {actions && <div className="flex flex-wrap items-center gap-2">{actions}</div>}
       </div>
 
-      {status && (
-        <p className="mt-3 flex flex-wrap items-center gap-x-4 gap-y-1 text-xs text-muted" title={status.note}>
-          <span className="inline-flex items-center gap-1.5">
-            <span className={cn("size-2 rounded-full", DOT[status.health])} aria-hidden />
-            <span className={cn("font-medium", status.health === "error" ? "text-negative" : "text-foreground")}>
-              {status.health === "error" ? "Needs attention" : status.health === "pending" ? "Waiting for the first sync" : `Updated ${ago(status.lastSyncedAt)}`}
-            </span>
-          </span>
-          <span>Next automatic update {when(status.nextAt)}</span>
-          <span>{status.note}</span>
-          {status.error && <Link href="/integrations" className="text-negative underline">{status.error.slice(0, 90)}</Link>}
-        </p>
-      )}
-
       {guide && guide.length > 0 && (
-        <details className="group mt-3 rounded-xl border border-border bg-surface">
-          <summary className="flex cursor-pointer items-center gap-2 px-4 py-2.5 text-sm font-medium text-accent">
-            <BookOpen className="size-4" aria-hidden /> What do these numbers mean?
+        <details className="group mt-3">
+          <summary className="inline-flex cursor-pointer list-none items-center gap-1.5 rounded-md text-[13px] text-muted outline-none hover:text-foreground focus-visible:ring-2 focus-visible:ring-accent [&::-webkit-details-marker]:hidden">
+            <BookOpen className="size-3.5" aria-hidden /> What these numbers mean
           </summary>
-          <dl className="grid gap-x-8 gap-y-3 border-t border-border px-4 py-3 text-sm sm:grid-cols-2">
+          <dl className="mt-2 grid gap-x-8 gap-y-3 rounded-lg border border-border bg-surface p-4 text-[13px] sm:grid-cols-2">
             {guide.map((g) => (
-              <div key={g.term}><dt className="font-semibold">{g.term}</dt><dd className="text-muted">{g.text}</dd></div>
+              <div key={g.term}><dt className="font-medium">{g.term}</dt><dd className="mt-0.5 leading-relaxed text-secondary">{g.text}</dd></div>
             ))}
           </dl>
         </details>

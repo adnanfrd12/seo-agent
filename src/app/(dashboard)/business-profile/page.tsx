@@ -1,3 +1,4 @@
+import { ShareDonut, StackedTimeBars } from "@/components/charts/analytics-charts";
 import { BarList } from "@/components/charts/bar-list";
 import { MetricTrend } from "@/components/charts/metric-trend";
 import { FilterSelect } from "@/components/dashboard/filter-select";
@@ -143,6 +144,9 @@ export default async function BusinessProfilePage({ searchParams }: { searchPara
     { label: "Desktop · Maps", value: toNum(b?.desktop_maps) ?? 0 },
   ].sort((x, y) => y.value - x.value);
   const totalSplit = split.reduce((a, x) => a + x.value, 0);
+  const [web, calls, dirs] = ["website_clicks", "call_clicks", "direction_requests"].map((k) => dailySeries(t, k, range));
+  const actionDays = web.map((p, i) => ({ date: p.date, website_clicks: p.value ?? 0, call_clicks: calls[i]?.value ?? 0, direction_requests: dirs[i]?.value ?? 0 }));
+  const dayCount = actionDays.length;
   const picked = s.locations.find((l) => l.id === scope.gbpPick?.id) ?? (s.locations.length === 1 ? s.locations[0] : null);
 
   return (
@@ -153,7 +157,7 @@ export default async function BusinessProfilePage({ searchParams }: { searchPara
 
       <Highlights items={hl} />
 
-      <section aria-label="Key metrics" className="grid gap-4 sm:grid-cols-2 xl:grid-cols-3">
+      <section aria-label="Key metrics" className="grid grid-cols-2 gap-3 lg:grid-cols-3">
         {[...kpis, ...extras].map((m) => (
           <KpiCard key={m.k} label={m.label} hint={m.hint} source="GBP" format={fmtInt}
             value={pick(cur, m.k)} previous={pick(prev, m.k)} mom={pick(mom, m.k)} yoy={pick(yoy, m.k)} />
@@ -177,10 +181,22 @@ export default async function BusinessProfilePage({ searchParams }: { searchPara
         ]} />
       </div>
 
-      <div className="mt-6 grid gap-4 lg:grid-cols-2">
+      <div className="mt-4">
+        <StackedTimeBars title="Customer actions over time" sub="Website clicks, call button clicks and direction requests from the profile" valueLabel="Actions"
+          bucket={dayCount > 45 ? "week" : "day"} keys={[{ key: "website_clicks", label: "Website" }, { key: "call_clicks", label: "Calls" }, { key: "direction_requests", label: "Directions" }]}
+          data={actionDays} />
+      </div>
+
+      <div className="mt-6 grid grid-cols-1 gap-4 lg:grid-cols-2">
         <BarList title="Where people saw the profile" valueLabel="Views"
           items={split.map((x) => ({ ...x, detail: totalSplit ? fmtPercent(x.value / totalSplit, 1) : undefined }))} />
-        <section className="rounded-xl border border-border bg-surface p-4" aria-label="Search keywords">
+        <ShareDonut title="What people did next" sub="Website, call and direction actions in this period" centerLabel="actions" keepOrder
+          items={[{ label: "Website", value: pick(cur, "website_clicks") ?? 0 }, { label: "Calls", value: pick(cur, "call_clicks") ?? 0 }, { label: "Directions", value: pick(cur, "direction_requests") ?? 0 }]} />
+      </div>
+
+      {/* search terms beside the business card (both short lists); either one alone takes the full width */}
+      <div className="mt-6 grid grid-cols-1 gap-4 lg:grid-cols-2 lg:[&>*:only-child]:col-span-2">
+        <section className="rounded-[10px] border border-border bg-surface p-4" aria-label="Search keywords">
           <div className="mb-3 flex items-baseline justify-between">
             <h2 className="text-sm font-semibold">Searches that showed the profile</h2>
             <span className="text-xs text-muted">Monthly · impressions</span>
@@ -201,10 +217,26 @@ export default async function BusinessProfilePage({ searchParams }: { searchPara
           )}
           <p className="mt-2 text-xs text-muted">Keywords are reported per calendar month; every month overlapping the range is included. Low counts are shown by Google only as a threshold.</p>
         </section>
+        {picked && (
+          <section className="rounded-[10px] border border-border bg-surface p-4 text-sm" aria-label="Business information">
+            <h2 className="mb-2 text-sm font-semibold">Business information</h2>
+            <dl className="grid gap-x-6 gap-y-1 sm:grid-cols-[auto_1fr]">
+              {([
+                ["Name", picked.display_name], ["Category", picked.metadata?.category], ["Address", picked.metadata?.address],
+                ["Phone", picked.metadata?.phone], ["Website", picked.metadata?.website], ["Status", picked.metadata?.open_status],
+              ] as const).filter(([, v]) => v).map(([k, v]) => (
+                <div key={k} className="contents"><dt className="text-muted">{k}</dt><dd className="break-all">{v}</dd></div>
+              ))}
+            </dl>
+            {picked.metadata?.maps_uri?.startsWith("https://") && (
+              <a href={picked.metadata.maps_uri} target="_blank" rel="noopener noreferrer" className="mt-2 inline-block text-foreground underline decoration-border-strong underline-offset-2 hover:decoration-foreground">Open on Google Maps →</a>
+            )}
+          </section>
+        )}
       </div>
 
       {locs.length > 1 && (
-        <section className="mt-6 overflow-x-auto rounded-xl border border-border bg-surface" aria-label="Location comparison">
+        <section className="mt-6 overflow-x-auto rounded-[10px] border border-border bg-surface" aria-label="Location comparison">
           <h2 className="px-4 pt-4 text-sm font-semibold">Location comparison</h2>
           <table className="mt-2 w-full min-w-[40rem] text-sm">
             <thead><tr className="text-left text-xs text-muted">
@@ -229,22 +261,6 @@ export default async function BusinessProfilePage({ searchParams }: { searchPara
         </section>
       )}
 
-      {picked && (
-        <section className="mt-6 rounded-xl border border-border bg-surface p-4 text-sm" aria-label="Business information">
-          <h2 className="mb-2 text-sm font-semibold">Business information</h2>
-          <dl className="grid gap-x-6 gap-y-1 sm:grid-cols-[auto_1fr]">
-            {([
-              ["Name", picked.display_name], ["Category", picked.metadata?.category], ["Address", picked.metadata?.address],
-              ["Phone", picked.metadata?.phone], ["Website", picked.metadata?.website], ["Status", picked.metadata?.open_status],
-            ] as const).filter(([, v]) => v).map(([k, v]) => (
-              <div key={k} className="contents"><dt className="text-muted">{k}</dt><dd className="break-all">{v}</dd></div>
-            ))}
-          </dl>
-          {picked.metadata?.maps_uri?.startsWith("https://") && (
-            <a href={picked.metadata.maps_uri} target="_blank" rel="noopener noreferrer" className="mt-2 inline-block text-accent hover:underline">Open on Google Maps →</a>
-          )}
-        </section>
-      )}
       {more}
     </>
   );

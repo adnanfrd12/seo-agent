@@ -1,7 +1,7 @@
 "use server";
 
 import { after } from "next/server";
-import { revalidatePath } from "next/cache";
+import { revalidatePath } from "@/lib/revalidate";
 import { z } from "zod";
 import { clarityInsights, ClarityError } from "@/lib/clarity/api";
 import { encryptSecret } from "@/lib/crypto";

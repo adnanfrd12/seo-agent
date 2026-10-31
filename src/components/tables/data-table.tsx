@@ -38,13 +38,13 @@ export function DataTable<T>({
   const to = Math.min(total, page * pageSize);
 
   return (
-    <section className="rounded-xl border border-border bg-surface" aria-label={title}>
-      <div className="flex items-center justify-between gap-2 border-b border-border px-4 py-3">
-        <h2 className="text-sm font-semibold">{title}</h2>
+    <section className="overflow-hidden rounded-[10px] border border-border bg-surface" aria-label={title}>
+      <div className="flex items-center justify-between gap-2 border-b border-hairline px-4 py-3 sm:px-5">
+        <h2 className="text-[15px] font-semibold">{title} <span className="ml-1 text-[13px] font-normal tabular-nums text-muted">{total.toLocaleString("en-US")}</span></h2>
         {csvHref && total > 0 && (
           <a
             href={csvHref}
-            className="inline-flex items-center gap-1.5 rounded-md border border-border px-2.5 py-1 text-xs font-medium hover:bg-surface-muted"
+            className="inline-flex h-8 items-center gap-1.5 rounded-md border border-border-strong px-2.5 text-[13px] font-medium text-secondary hover:bg-surface-muted hover:text-foreground"
           >
             <Download className="size-3.5" aria-hidden /> CSV
           </a>
@@ -54,9 +54,9 @@ export function DataTable<T>({
         <p className="px-4 py-10 text-center text-sm text-muted">{emptyText}</p>
       ) : (
         <div className="overflow-x-auto">
-          <table className="w-full min-w-[32rem] text-sm">
-            <thead>
-              <tr className="text-left text-xs text-muted">
+          <table className="w-full min-w-[32rem] text-[13px]">
+            <thead className="bg-surface-sunken">
+              <tr className="border-b border-hairline text-left text-xs text-muted">
                 {columns.map((c) => {
                   const active = c.sort === sort;
                   const nextDir = active && dir === "desc" ? "asc" : "desc";
@@ -65,7 +65,7 @@ export function DataTable<T>({
                       key={c.key}
                       scope="col"
                       aria-sort={active ? (dir === "asc" ? "ascending" : "descending") : undefined}
-                      className={cn("px-4 py-2 font-medium", c.align === "right" && "text-right")}
+                      className={cn("whitespace-nowrap px-3 py-2 font-medium first:pl-4 last:pr-4 sm:first:pl-5 sm:last:pr-5", c.align === "right" && "text-right")}
                     >
                       {c.sort ? (
                         <Link
@@ -85,9 +85,9 @@ export function DataTable<T>({
             </thead>
             <tbody>
               {rows.map((r, i) => (
-                <tr key={i} className="border-t border-border hover:bg-surface-muted/60">
+                <tr key={i} className="border-t border-hairline first:border-t-0 hover:bg-surface-sunken">
                   {columns.map((c) => (
-                    <td key={c.key} className={cn("px-4 py-2", c.align === "right" && "text-right tabular-nums")}>
+                    <td key={c.key} className={cn("px-3 py-2 first:pl-4 last:pr-4 sm:first:pl-5 sm:last:pr-5", c.align === "right" && "text-right tabular-nums")}>
                       {c.render(r)}
                     </td>
                   ))}
@@ -98,15 +98,15 @@ export function DataTable<T>({
         </div>
       )}
       {total > pageSize && (
-        <nav className="flex items-center justify-between border-t border-border px-4 py-2 text-xs text-muted" aria-label={`${title} pagination`}>
-          <span>{from}–{to} of {total.toLocaleString("en-US")}</span>
+        <nav className="flex items-center justify-between border-t border-hairline px-4 py-2.5 text-xs text-muted sm:px-5" aria-label={`${title} pagination`}>
+          <span className="tabular-nums">{from}–{to} of {total.toLocaleString("en-US")}</span>
           <span className="flex gap-2">
             {page > 1 && (
-              <Link className="rounded-md border border-border px-2 py-1 hover:bg-surface-muted"
+              <Link className="inline-flex h-7 items-center rounded-md border border-border-strong px-2.5 font-medium text-secondary hover:bg-surface-muted hover:text-foreground"
                 href={withParams(path, sp, { [`${prefix}_page`]: String(page - 1) })}>Previous</Link>
             )}
             {page < pages && (
-              <Link className="rounded-md border border-border px-2 py-1 hover:bg-surface-muted"
+              <Link className="inline-flex h-7 items-center rounded-md border border-border-strong px-2.5 font-medium text-secondary hover:bg-surface-muted hover:text-foreground"
                 href={withParams(path, sp, { [`${prefix}_page`]: String(page + 1) })}>Next</Link>
             )}
           </span>

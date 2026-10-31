@@ -42,7 +42,7 @@ export function DataForSeoSettings({ dailyBudget, autoRefresh, defaultBudget }: 
           className="inline-flex items-center gap-1.5 rounded-lg bg-accent px-3 py-1.5 text-sm font-medium text-accent-foreground hover:opacity-90 disabled:opacity-60">
           {pending && <Loader2 className="size-4 animate-spin" />} Save
         </button>
-        {value !== defaultBudget && <button type="button" className="pb-1.5 text-xs text-accent hover:underline" onClick={() => setLimit(String(defaultBudget))}>Reset to ${defaultBudget.toFixed(2)}</button>}
+        {value !== defaultBudget && <button type="button" className="pb-1.5 text-xs text-foreground underline decoration-border-strong underline-offset-2 hover:decoration-foreground" onClick={() => setLimit(String(defaultBudget))}>Reset to ${defaultBudget.toFixed(2)}</button>}
       </div>
       {!valid && <p role="alert" className="mt-1 text-xs text-negative">Enter an amount between $0.10 and $100.</p>}
       <p className="mt-2 text-xs text-muted">

@@ -1,6 +1,6 @@
 "use server";
 
-import { revalidatePath } from "next/cache";
+import { revalidatePath } from "@/lib/revalidate";
 import { getSession } from "@/lib/analytics/client-context";
 import { normalizeTerms } from "@/lib/brand";
 import { createAdminClient } from "@/lib/supabase/admin";

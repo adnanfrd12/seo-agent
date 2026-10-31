@@ -1,3 +1,4 @@
+import { GeoCards, type GeoCard } from "./geo-cards";
 import type { SupabaseClient } from "@supabase/supabase-js";
 import { Star } from "lucide-react";
 import { fmtInt, fmtPercent } from "@/lib/analytics/format";
@@ -20,32 +21,41 @@ type LbmLocation = {
   service_area?: { places?: { place_infos?: { name: string }[] } } | null; store_code?: string | null; created_at?: string;
 };
 
-const card = "rounded-xl border border-border bg-surface p-4";
+const card = "rounded-[10px] border border-border bg-surface p-4";
 const num = (v: unknown) => (v == null ? null : Number(v));
 const day = (iso: string | null) => (iso ? new Date(iso).toLocaleDateString("en-US", { year: "numeric", month: "short", day: "numeric" }) : "—");
 /** LBM reports SoLV as a fraction (0.93 = 93%). */
 const solvPct = (v: unknown) => (v == null ? "—" : `${(Number(v) * 100).toFixed(0)}%`);
 const safeUrl = (u: unknown) => (typeof u === "string" && u.startsWith("https://") ? u : null);
 
-/** Rank cell colour: top 3 green, 4-10 amber, 11-20 orange, not ranked grey. */
-function cellClass(v: number | string) {
-  const r = typeof v === "number" ? v : Number(v);
-  if (!Number.isFinite(r)) return "bg-surface-muted text-muted";
-  if (r <= 3) return "bg-positive text-white";
-  if (r <= 10) return "bg-[#D4970A] text-white";
-  return "bg-negative/70 text-white";
-}
+const DAYS = ["MONDAY", "TUESDAY", "WEDNESDAY", "THURSDAY", "FRIDAY", "SATURDAY", "SUNDAY"];
+const hrs = (t: string) => { const [h, m] = t.split(":").map(Number); return (h || 0) + (m || 0) / 60; };
 
-function Grid({ ranks }: { ranks: (number | string)[][] }) {
-  const size = ranks.length;
+/** Opening hours as a week of bars on a 24-hour axis; each row prints its times, closed days say so. */
+function HoursChart({ hours }: { hours: { open_day: string; open_time: string; close_time: string }[] }) {
   return (
-    <div className="grid gap-px" style={{ gridTemplateColumns: `repeat(${size}, minmax(0, 1fr))` }} role="img"
-      aria-label={`Rank grid, ${size} by ${size}. X means not in the top 20.`}>
-      {ranks.flatMap((row, y) => row.map((v, x) => (
-        <span key={`${y}-${x}`} className={`flex aspect-square items-center justify-center rounded-[2px] text-[9px] font-semibold ${cellClass(v)}`}>
-          {String(v) === "X" ? "" : v}
-        </span>
-      )))}
+    <div>
+      <p className="mb-2 font-medium">Opening hours</p>
+      <ul className="space-y-1.5 text-xs" aria-label="Opening hours">
+        {DAYS.map((d) => {
+          const list = hours.filter((h) => h.open_day === d);
+          return (
+            <li key={d} className="grid grid-cols-[2.25rem_minmax(0,1fr)_7rem] items-center gap-2">
+              <span className="text-muted">{d.charAt(0) + d.slice(1, 3).toLowerCase()}</span>
+              <span className="relative h-2.5 rounded-full bg-surface-muted" aria-hidden>
+                {list.map((h, i) => {
+                  const a = hrs(h.open_time), b = hrs(h.close_time) || 24;
+                  return <span key={i} className="absolute inset-y-0 rounded-full bg-series" style={{ left: `${(a / 24) * 100}%`, width: `${(Math.max(0, (b > a ? b : 24) - a) / 24) * 100}%` }} />;
+                })}
+              </span>
+              <span className="text-right tabular-nums text-secondary">{list.length ? list.map((h) => `${h.open_time}–${h.close_time}`).join(", ") : "Closed"}</span>
+            </li>
+          );
+        })}
+      </ul>
+      <div className="mt-1 grid grid-cols-[2.25rem_minmax(0,1fr)_7rem] gap-2 text-[10px] text-faint" aria-hidden>
+        <span /><span className="flex justify-between"><span>0h</span><span>6h</span><span>12h</span><span>18h</span><span>24h</span></span><span />
+      </div>
     </div>
   );
 }
@@ -79,12 +89,24 @@ export async function LbmSections({ supabase, resourceIds, range }: {
   const dist = [5, 4, 3, 2, 1].map((s) => ({ s, n: rated.filter((r) => r.rating === s).length }));
   const inRange = reviews.filter((r) => r.reviewed_at && r.reviewed_at.slice(0, 10) >= range.start && r.reviewed_at.slice(0, 10) <= range.end);
   const replied = reviews.filter((r) => r.reply_text).length;
+  // the 12 calendar months ending with the range's last month
+  const end = new Date(`${range.end.slice(0, 7)}-01T00:00:00Z`);
+  const perMonth = Array.from({ length: 12 }, (_, i) => {
+    const d = new Date(Date.UTC(end.getUTCFullYear(), end.getUTCMonth() - 11 + i, 1));
+    const key = d.toISOString().slice(0, 7);
+    const list = reviews.filter((r) => r.reviewed_at?.startsWith(key));
+    const stars = list.filter((r) => r.rating != null);
+    return { key, label: d.toLocaleDateString("en-US", { month: "short", year: "numeric", timeZone: "UTC" }), n: list.length, avg: stars.length ? stars.reduce((a, r) => a + (r.rating ?? 0), 0) / stars.length : null };
+  });
+  const maxMonth = Math.max(1, ...perMonth.map((m) => m.n));
 
   /* ------------------------------------------------------------ geogrids */
   const latestByTerm = new Map<string, Geogrid>();
   for (const g of grids) if (g.state !== "error" && !latestByTerm.has(g.search_term)) latestByTerm.set(g.search_term, g);
   const historyByTerm = new Map<string, Geogrid[]>();
   for (const g of grids) historyByTerm.set(g.search_term, [...(historyByTerm.get(g.search_term) ?? []), g]);
+
+  const bySolv = [...latestByTerm.values()].sort((a, b) => (num(b.solv) ?? -1) - (num(a.solv) ?? -1));
 
   /* ------------------------------------------------------------ keywords by month */
   const months = [...new Set(keywords.map((k) => k.month))].sort().reverse();
@@ -100,23 +122,42 @@ export async function LbmSections({ supabase, resourceIds, range }: {
         {reviews.length === 0 ? <p className="text-sm text-muted">No reviews stored yet.</p> : (
           <>
             <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
-              <div><p className="text-xs font-semibold uppercase text-muted">Average rating</p>
-                <p className="mt-1 flex items-center gap-1 text-2xl font-bold">{avg?.toFixed(2) ?? "—"} <Star className="size-5 fill-[#D4970A] text-[#D4970A]" aria-hidden /></p></div>
-              <div><p className="text-xs font-semibold uppercase text-muted">Total reviews</p><p className="mt-1 text-2xl font-bold">{fmtInt(reviews.length)}</p></div>
-              <div><p className="text-xs font-semibold uppercase text-muted">New in this period</p><p className="mt-1 text-2xl font-bold">{fmtInt(inRange.length)}</p>
+              <div><p className="text-xs font-medium text-muted">Average rating</p>
+                <p className="mt-1 flex items-center gap-1 text-[26px] font-semibold tracking-[-0.02em]">{avg?.toFixed(2) ?? "—"} <Star className="size-5 fill-[#D4970A] text-warn" aria-hidden /></p></div>
+              <div><p className="text-xs font-medium text-muted">Total reviews</p><p className="mt-1 text-[26px] font-semibold tracking-[-0.02em]">{fmtInt(reviews.length)}</p></div>
+              <div><p className="text-xs font-medium text-muted">New in this period</p><p className="mt-1 text-[26px] font-semibold tracking-[-0.02em]">{fmtInt(inRange.length)}</p>
                 {inRange.length > 0 && <p className="text-xs text-muted">avg {(inRange.reduce((a, r) => a + (r.rating ?? 0), 0) / inRange.length).toFixed(1)}★</p>}</div>
-              <div><p className="text-xs font-semibold uppercase text-muted">Owner reply rate</p><p className="mt-1 text-2xl font-bold">{fmtPercent(replied / reviews.length, 0)}</p>
+              <div><p className="text-xs font-medium text-muted">Owner reply rate</p><p className="mt-1 text-[26px] font-semibold tracking-[-0.02em]">{fmtPercent(replied / reviews.length, 0)}</p>
                 <p className="text-xs text-muted">{fmtInt(reviews.length - replied)} without a reply</p></div>
             </div>
-            <ul className="mt-4 space-y-1 text-sm" aria-label="Rating distribution">
-              {dist.map((d) => (
-                <li key={d.s} className="flex items-center gap-2">
-                  <span className="w-6 shrink-0 tabular-nums">{d.s}★</span>
-                  <span className="h-2 flex-1 overflow-hidden rounded-full bg-surface-muted"><span className="block h-full rounded-full bg-[#D4970A]" style={{ width: `${rated.length ? (d.n / rated.length) * 100 : 0}%` }} /></span>
-                  <span className="w-10 shrink-0 text-right tabular-nums text-muted">{d.n}</span>
-                </li>
-              ))}
-            </ul>
+            <div className="mt-5 grid gap-x-8 gap-y-5 lg:grid-cols-2">
+              <div>
+                <p className="mb-2 text-xs font-medium text-muted">Rating distribution</p>
+                <ul className="space-y-2 text-sm" aria-label="Rating distribution">
+                  {dist.map((d) => (
+                    <li key={d.s} className="flex items-center gap-2">
+                      <span className="w-6 shrink-0 tabular-nums">{d.s}★</span>
+                      <span className="h-2 flex-1 overflow-hidden rounded-full bg-surface-muted"><span className="block h-full rounded-full bg-warn" style={{ width: `${rated.length ? (d.n / rated.length) * 100 : 0}%` }} /></span>
+                      <span className="w-16 shrink-0 text-right tabular-nums text-muted">{d.n} · {rated.length ? Math.round((d.n / rated.length) * 100) : 0}%</span>
+                    </li>
+                  ))}
+                </ul>
+              </div>
+              <div>
+                <p className="mb-2 text-xs font-medium text-muted">New reviews per month · last 12 months (bar label = average rating)</p>
+                <div className="flex h-32 items-end gap-1.5" role="img" aria-label={`New reviews per month: ${perMonth.map((m) => `${m.label} ${m.n}`).join(", ")}`}>
+                  {perMonth.map((m) => (
+                    <div key={m.key} className="flex h-full min-w-0 flex-1 flex-col items-center justify-end gap-1" title={`${m.label}: ${m.n} review${m.n === 1 ? "" : "s"}${m.avg != null ? `, average ${m.avg.toFixed(1)}★` : ""}`}>
+                      <span className="text-[11px] tabular-nums text-secondary">{m.n || ""}</span>
+                      <span className="w-full max-w-8 rounded-t-[3px] bg-series" style={{ height: `${m.n ? Math.max(4, (m.n / maxMonth) * 100) : 2}%`, opacity: m.n ? 1 : 0.25 }} />
+                    </div>
+                  ))}
+                </div>
+                <div className="mt-1 flex gap-1.5 border-t border-hairline pt-1">
+                  {perMonth.map((m) => <span key={m.key} className="min-w-0 flex-1 truncate text-center text-[10px] text-muted">{m.label.slice(0, 1)}{m.avg != null && <span className="hidden sm:inline"> {m.avg.toFixed(1)}</span>}</span>)}
+                </div>
+              </div>
+            </div>
             <details className="mt-4">
               <summary className="cursor-pointer text-sm font-medium text-accent">Show all {fmtInt(reviews.length)} reviews</summary>
               <ul className="mt-3 max-h-[36rem] space-y-3 overflow-y-auto pr-1">
@@ -148,36 +189,35 @@ export async function LbmSections({ supabase, resourceIds, range }: {
               AGR = average rank where the business appears · ATGR = average rank over all points (not found counts as 21) · SoLV = share of points in the top 3.
               Lower AGR/ATGR and higher SoLV are better.
             </p>
-            <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-3">
-              {[...latestByTerm.values()].map((g) => {
-                const hist = historyByTerm.get(g.search_term) ?? [];
-                const prev = hist.find((h) => h.id !== g.id && h.state !== "error");
-                return (
-                  <article key={g.id} className="rounded-lg border border-border p-3">
-                    <h3 className="font-semibold">“{g.search_term}”</h3>
-                    <p className="text-xs text-muted">Scanned {day(g.scanned_at)}{g.grid_size ? ` · ${g.grid_size}×${g.grid_size} grid, ${g.point_distance} ${g.distance_measure ?? ""} apart` : ""}</p>
-                    <dl className="my-2 grid grid-cols-3 gap-2 text-center text-sm">
-                      {([["AGR", g.agr, prev?.agr, false], ["ATGR", g.atgr, prev?.atgr, false], ["SoLV", g.solv, prev?.solv, true]] as const).map(([k, v, p, higher]) => {
-                        const cur = num(v), before = num(p);
-                        const better = cur != null && before != null && cur !== before ? (higher ? cur > before : cur < before) : null;
-                        return (
-                          <div key={k} className="rounded-md bg-surface-muted p-1.5">
-                            <dt className="text-[10px] font-semibold uppercase text-muted">{k}</dt>
-                            <dd className="font-bold tabular-nums">{cur == null ? "—" : k === "SoLV" ? solvPct(cur) : cur.toFixed(1)}</dd>
-                            {better != null && <dd className={`text-[10px] ${better ? "text-positive" : "text-negative"}`}>{better ? "better" : "worse"} than {k === "SoLV" ? solvPct(before) : before!.toFixed(1)}</dd>}
-                          </div>
-                        );
-                      })}
-                    </dl>
-                    {g.ranks && g.ranks.length > 0 && <Grid ranks={g.ranks} />}
-                    <div className="mt-2 flex flex-wrap gap-3 text-xs">
-                      {safeUrl(g.public_url) && <a href={safeUrl(g.public_url)!} target="_blank" rel="noopener noreferrer" className="text-accent hover:underline">Open report →</a>}
-                      {safeUrl(g.image_url) && <a href={safeUrl(g.image_url)!} target="_blank" rel="noopener noreferrer" className="text-accent hover:underline">Map image →</a>}
-                    </div>
-                  </article>
-                );
-              })}
-            </div>
+            <GeoCards initial={9} cards={[...latestByTerm.values()].map((g): GeoCard => {
+              const hist = historyByTerm.get(g.search_term) ?? [];
+              const prev = hist.find((h) => h.id !== g.id && h.state !== "error");
+              return {
+                id: g.id, term: g.search_term, ranks: g.ranks && g.ranks.length > 0 ? g.ranks : null, publicUrl: safeUrl(g.public_url), imageUrl: safeUrl(g.image_url),
+                meta: `Scanned ${day(g.scanned_at)}${g.grid_size ? ` · ${g.grid_size}×${g.grid_size} grid, ${g.point_distance} ${g.distance_measure ?? ""} apart` : ""}`,
+                stats: ([["AGR", g.agr, prev?.agr, false], ["ATGR", g.atgr, prev?.atgr, false], ["SoLV", g.solv, prev?.solv, true]] as const).map(([k, v, p, higher]) => {
+                  const cur = num(v), before = num(p);
+                  const better = cur != null && before != null && cur !== before ? (higher ? cur > before : cur < before) : null;
+                  const f = (n: number) => (k === "SoLV" ? solvPct(n) : n.toFixed(1));
+                  return { k, v: cur == null ? "—" : f(cur), delta: better == null ? null : { better, before: f(before!) } };
+                }),
+              };
+            })} closer={
+              <article className="flex flex-col rounded-lg border border-border p-3">
+                <h3 className="font-semibold">Share of local voice by term</h3>
+                <p className="text-xs text-muted">Latest scan per term, best first · {fmtInt(latestByTerm.size)} terms</p>
+                <div className="relative mt-3 min-h-60 flex-1">
+                  <ul className="absolute inset-0 space-y-2 overflow-y-auto pr-1 text-[13px]">
+                    {bySolv.map((g) => (
+                      <li key={g.id} title={`${g.search_term}: SoLV ${solvPct(g.solv)}, ATGR ${num(g.atgr)?.toFixed(1) ?? "—"}`}>
+                        <div className="flex justify-between gap-3"><span className="truncate">{g.search_term}</span><span className="shrink-0 tabular-nums">{solvPct(g.solv)}</span></div>
+                        <div className="mt-1 h-1 overflow-hidden rounded-full bg-surface-muted" aria-hidden><div className="h-full rounded-full bg-series" style={{ width: `${Math.max(0, Math.min(100, (num(g.solv) ?? 0) * 100))}%` }} /></div>
+                      </li>
+                    ))}
+                  </ul>
+                </div>
+              </article>
+            } />
             <details className="mt-4">
               <summary className="cursor-pointer text-sm font-medium text-accent">Show all {fmtInt(grids.length)} scans (history)</summary>
               <div className="mt-2 max-h-[30rem] overflow-auto">
@@ -189,7 +229,7 @@ export async function LbmSections({ supabase, resourceIds, range }: {
                         <td className="px-2 py-1">{g.search_term}</td><td className="px-2 py-1">{day(g.scanned_at)}</td>
                         <td className="px-2 py-1 tabular-nums">{num(g.agr)?.toFixed(1) ?? "—"}</td><td className="px-2 py-1 tabular-nums">{num(g.atgr)?.toFixed(1) ?? "—"}</td>
                         <td className="px-2 py-1 tabular-nums">{solvPct(g.solv)}</td>
-                        <td className="px-2 py-1">{safeUrl(g.public_url) && <a href={safeUrl(g.public_url)!} target="_blank" rel="noopener noreferrer" className="text-accent hover:underline">view</a>}{g.state === "error" && <span className="text-negative">scan failed</span>}</td>
+                        <td className="px-2 py-1">{safeUrl(g.public_url) && <a href={safeUrl(g.public_url)!} target="_blank" rel="noopener noreferrer" className="text-foreground underline decoration-border-strong underline-offset-2 hover:decoration-foreground">view</a>}{g.state === "error" && <span className="text-negative">scan failed</span>}</td>
                       </tr>
                     ))}
                   </tbody>
@@ -243,40 +283,16 @@ export async function LbmSections({ supabase, resourceIds, range }: {
             <div className="grid gap-6 lg:grid-cols-2">
               <div className="space-y-3 text-sm">
                 {loc?.description && <p className="whitespace-pre-line">{loc.description}</p>}
-                <dl className="grid grid-cols-[auto_1fr] gap-x-4 gap-y-1">
+                <dl className="grid grid-cols-[auto_1fr] items-baseline gap-x-4 gap-y-1">
                   {loc?.additional_categories?.length ? <><dt className="text-muted">More categories</dt><dd>{loc.additional_categories.join(", ")}</dd></> : null}
                   {loc?.states?.length ? <><dt className="text-muted">Profile status</dt><dd>{loc.states.filter((x) => !x.startsWith("can_")).join(", ").replace(/_/g, " ") || "—"}</dd></> : null}
                   {loc?.labels?.length ? <><dt className="text-muted">Labels</dt><dd>{loc.labels.join(", ")}</dd></> : null}
                   {loc?.store_code ? <><dt className="text-muted">Store code</dt><dd>{loc.store_code}</dd></> : null}
                   {areas.length ? <><dt className="text-muted">Service area</dt><dd>{areas.map((a) => a.name).join("; ")}</dd></> : null}
                 </dl>
-                {hours.length > 0 && (
-                  <div><p className="mb-1 font-medium">Opening hours</p>
-                    <ul className="grid grid-cols-2 gap-x-4 text-xs">{hours.map((h, i) => <li key={i}>{h.open_day.charAt(0) + h.open_day.slice(1).toLowerCase()}: {h.open_time}–{h.close_time}</li>)}</ul>
-                  </div>
-                )}
               </div>
               <div className="space-y-4 text-sm">
-                {configs.length > 0 && (
-                  <div>
-                    <p className="mb-1 font-medium">Rank-tracking schedule</p>
-                    {configs.map((c) => (
-                      <div key={c.id} className="mb-2 rounded-lg bg-surface-muted p-2 text-xs">
-                        <p>{c.period === "day_of_month" ? `Monthly on day ${c.month_day}` : c.period?.replace(/_/g, " ") ?? "Scheduled"}{c.hour != null ? ` at ${c.hour}:00` : ""} {c.time_zone ? `(${c.time_zone})` : ""} · next {c.scheduled_at ?? "—"}</p>
-                        <p className="mt-1">Tracked terms: {c.search_terms.map((t) => `${t.text}${t.active ? "" : " (paused)"}${t.geogrids_count ? ` · ${t.geogrids_count} scans` : ""}`).join("; ")}</p>
-                      </div>
-                    ))}
-                  </div>
-                )}
-                {reports.length > 0 && (
-                  <div>
-                    <p className="mb-1 font-medium">Local Brand Manager reports</p>
-                    <ul className="space-y-1">{reports.map((p, i) => (
-                      <li key={i}>{safeUrl(p.url) ? <a href={safeUrl(p.url)!} target="_blank" rel="noopener noreferrer" className="text-accent hover:underline">{p.name}</a> : p.name}
-                        <span className="text-xs text-muted"> · {p.periods.join(" vs ")} · {p.created_at}</span></li>
-                    ))}</ul>
-                  </div>
-                )}
+                {hours.length > 0 && <HoursChart hours={hours} />}
                 {legacy.length > 0 && (
                   <div>
                     <p className="mb-1 font-medium">Legacy Google insights (retired API)</p>
@@ -285,6 +301,26 @@ export async function LbmSections({ supabase, resourceIds, range }: {
                 )}
               </div>
             </div>
+            {reports.length > 0 && (
+              <div className="mt-6 text-sm">
+                <p className="mb-1 font-medium">Local Brand Manager reports</p>
+                <ul className="space-y-1">{reports.map((p, i) => (
+                  <li key={i}>{safeUrl(p.url) ? <a href={safeUrl(p.url)!} target="_blank" rel="noopener noreferrer" className="text-foreground underline decoration-border-strong underline-offset-2 hover:decoration-foreground">{p.name}</a> : p.name}
+                    <span className="text-xs text-muted"> · {p.periods.join(" vs ")} · {p.created_at}</span></li>
+                ))}</ul>
+              </div>
+            )}
+            {configs.length > 0 && (
+              <div className="mt-6 text-sm">
+                <p className="mb-1 font-medium">Rank-tracking schedule</p>
+                {configs.map((c) => (
+                  <div key={c.id} className="mb-2 rounded-lg bg-surface-muted p-2 text-xs">
+                    <p>{c.period === "day_of_month" ? `Monthly on day ${c.month_day}` : c.period?.replace(/_/g, " ") ?? "Scheduled"}{c.hour != null ? ` at ${c.hour}:00` : ""} {c.time_zone ? `(${c.time_zone})` : ""} · next {c.scheduled_at ?? "—"}</p>
+                    <p className="mt-1">Tracked terms: {c.search_terms.map((t) => `${t.text}${t.active ? "" : " (paused)"}${t.geogrids_count ? ` · ${t.geogrids_count} scans` : ""}`).join("; ")}</p>
+                  </div>
+                ))}
+              </div>
+            )}
           </section>
         );
       })}

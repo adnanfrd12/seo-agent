@@ -9,17 +9,13 @@ export function SectionHeader({
     <div className="mb-3 flex flex-wrap items-end justify-between gap-2">
       <div className="min-w-0">
         <div className="flex items-center gap-2">
-          {source && (
-            <span className="rounded bg-accent-soft px-1.5 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-accent">
-              {source}
-            </span>
-          )}
-          <h2 id={id} className="text-base font-semibold tracking-tight">{title}</h2>
+          <h2 id={id} className="text-[15px] font-semibold">{title}</h2>
+          {source && <span className="text-xs text-muted">{source}</span>}
         </div>
         {subtitle && <p className="mt-0.5 truncate text-xs text-muted">{subtitle}</p>}
       </div>
       {href && (
-        <Link href={href} className="inline-flex items-center gap-1 text-sm font-medium text-accent hover:underline">
+        <Link href={href} className="inline-flex items-center gap-1 text-[13px] font-medium text-secondary hover:text-foreground">
           View details <ArrowRight className="size-3.5" aria-hidden />
         </Link>
       )}

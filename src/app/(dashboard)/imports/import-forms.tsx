@@ -35,7 +35,7 @@ export function UploadForm() {
 
   return (
     <div className="space-y-3">
-      <label className="flex cursor-pointer flex-col items-center justify-center gap-2 rounded-xl border-2 border-dashed border-border bg-surface p-8 text-center hover:bg-surface-muted">
+      <label className="flex cursor-pointer flex-col items-center justify-center gap-2 rounded-[10px] border-2 border-dashed border-border bg-surface p-8 text-center hover:bg-surface-muted">
         <FileUp className="size-8 text-muted" aria-hidden />
         <span className="text-sm font-medium">{file ? file.name : "Choose a PDF report (up to 20 MB)"}</span>
         <span className="text-xs text-muted">Text and image-only (screenshot) PDFs are supported</span>
@@ -61,7 +61,7 @@ export function ReviewTable({ importId, metrics, confirmed }: { importId: string
   const [msg, setMsg] = useState<string | null>(null);
   return (
     <div className="space-y-3">
-      <div className="overflow-x-auto rounded-xl border border-border bg-surface">
+      <div className="overflow-x-auto rounded-[10px] border border-border bg-surface">
         <table className="w-full min-w-[44rem] text-sm">
           <thead><tr className="text-left text-xs text-muted">{["Use", "Label (as written)", "Value", "Source", "Maps to", "Confidence", "Page"].map((h) => <th key={h} className="px-3 py-2 font-medium">{h}</th>)}</tr></thead>
           <tbody>

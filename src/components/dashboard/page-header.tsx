@@ -1,8 +1,8 @@
 export function PageHeader({ title, description }: { title: string; description?: string }) {
   return (
-    <div className="rise mb-6 border-l-4 border-accent pl-4">
-      <h1 className="text-2xl font-bold tracking-tight sm:text-3xl">{title}</h1>
-      {description && <p className="mt-1 text-sm text-muted">{description}</p>}
+    <div className="mb-6">
+      <h1 className="text-2xl font-semibold tracking-[-0.015em]">{title}</h1>
+      {description && <p className="mt-1.5 max-w-3xl text-sm leading-relaxed text-secondary">{description}</p>}
     </div>
   );
 }
@@ -11,12 +11,12 @@ export function EmptyState({
   title, body, action,
 }: { title: string; body: string; action?: { href: string; label: string } }) {
   return (
-    <div className="rounded-xl border border-dashed border-border bg-surface p-10 text-center">
-      <h2 className="font-medium">{title}</h2>
-      <p className="mx-auto mt-1 max-w-md text-sm text-muted">{body}</p>
+    <div className="rounded-[10px] border border-dashed border-border-strong bg-surface px-6 py-12 text-center">
+      <h2 className="text-[15px] font-semibold">{title}</h2>
+      <p className="mx-auto mt-1.5 max-w-md text-sm leading-relaxed text-secondary">{body}</p>
       {action && (
         <a href={action.href}
-          className="mt-4 inline-block rounded-lg bg-accent px-4 py-2 text-sm font-medium text-accent-foreground hover:opacity-90">
+          className="mt-5 inline-flex h-9 items-center rounded-md bg-accent px-4 text-sm font-medium text-accent-foreground hover:opacity-90">
           {action.label}
         </a>
       )}

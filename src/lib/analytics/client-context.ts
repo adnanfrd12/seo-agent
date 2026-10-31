@@ -2,6 +2,7 @@ import "server-only";
 import { cache } from "react";
 import { cookies } from "next/headers";
 import { redirect } from "next/navigation";
+import { memo } from "@/lib/memo";
 import { createClient } from "@/lib/supabase/server";
 
 export const ACTIVE_CLIENT_COOKIE = "sa_client";
@@ -30,16 +31,22 @@ type ClientRow = { id: string; name: string; timezone: string; default_range_day
  */
 export const getSession = cache(async () => {
   const supabase = await createClient();
-  const { data: { user } } = await supabase.auth.getUser();
-  if (!user) redirect("/login");
+  // getClaims verifies the signed session token locally (the proxy already refreshed it), so no round trip to Supabase Auth
+  const { data: auth } = await supabase.auth.getClaims();
+  const claims = auth?.claims;
+  if (!claims?.sub) redirect("/login");
+  const user = { id: claims.sub, email: typeof claims.email === "string" ? claims.email : "" };
 
-  const [{ data: memberships }, { data: profile }, cookieStore] = await Promise.all([
-    supabase
-      .from("client_members")
-      .select("role, created_at, clients(id, name, timezone, default_range_days)")
-      .eq("user_id", user.id)
-      .order("created_at"),
-    supabase.from("profiles").select("full_name, avatar_url").eq("user_id", user.id).maybeSingle(),
+  // memberships and profile change rarely: reused for a minute (RLS still checks every data read)
+  const [{ memberships, profile }, cookieStore] = await Promise.all([
+    memo(`session|${user.id}`, 60_000, async () => {
+      const [m, p] = await Promise.all([
+        supabase.from("client_members").select("role, created_at, clients(id, name, timezone, default_range_days)").eq("user_id", user.id).order("created_at"),
+        supabase.from("profiles").select("full_name, avatar_url").eq("user_id", user.id).maybeSingle(),
+      ]);
+      if (m.error) throw m.error;
+      return { memberships: m.data, profile: p.data };
+    }),
     cookies(),
   ]);
 
@@ -52,7 +59,7 @@ export const getSession = cache(async () => {
 
   const me: CurrentUser = {
     id: user.id,
-    email: user.email ?? "",
+    email: user.email,
     fullName: profile?.full_name ?? null,
     avatarUrl: profile?.avatar_url ?? null,
   };

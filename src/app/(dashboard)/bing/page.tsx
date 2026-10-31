@@ -1,6 +1,8 @@
+import { Columns } from "@/components/charts/ai-charts";
+import { PositionScatter, ShareDonut } from "@/components/charts/analytics-charts";
 import { MetricTrend } from "@/components/charts/metric-trend";
 import { FilterSelect } from "@/components/dashboard/filter-select";
-import { KpiCard } from "@/components/dashboard/kpi-card";
+import { KpiCard, StatCard } from "@/components/dashboard/kpi-card";
 import { EmptyState } from "@/components/dashboard/page-header";
 import { Highlights } from "@/components/dashboard/highlights";
 import { TabHeader } from "@/components/dashboard/tab-header";
@@ -39,7 +41,8 @@ type BingMeta = {
 };
 type Volume = Record<string, { week: string | null; impressions: number; broad: number }[]>;
 
-const card = "rounded-xl border border-border bg-surface p-4";
+const card = "rounded-[10px] border border-border bg-surface p-4";
+const POS_BINS: [string, number, number][] = [["1–3", 0, 3.5], ["4–10", 3.5, 10.5], ["11–20", 10.5, 20.5], ["21–50", 20.5, 50.5], ["51+", 50.5, Infinity]];
 const pick = (t: Totals | undefined, k: string) => (t?.has_data ? toNum(t[k]) : null);
 const host = (u: string) => { try { const x = new URL(u); return `${x.host}${x.pathname}${x.search}`; } catch { return u; } };
 const safe = (u: string) => /^https?:\/\//.test(u);
@@ -153,7 +156,7 @@ export default async function BingPage({ searchParams }: { searchParams: Promise
       ) : (
         <>
           <Highlights items={hl} />
-          <section aria-label="Key metrics" className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
+          <section aria-label="Key metrics" className="grid grid-cols-2 gap-3 lg:grid-cols-4 xl:grid-cols-4">
             {([
               { label: "Bing clicks", k: "clicks", format: fmtInt, higher: true },
               { label: "Bing impressions", k: "impressions", format: fmtInt, higher: true },
@@ -179,6 +182,13 @@ export default async function BingPage({ searchParams }: { searchParams: Promise
               { key: "in_links", label: "Inbound links", data: dailySeries(crawlTrend, "in_links", range, "ratio") },
             ]} />
           </div>
+
+          <div className="mt-4 grid grid-cols-1 gap-4 lg:grid-cols-2">
+            <PositionScatter title="Click-through vs position" sub="Every Bing query in the period: high on the left is healthy, low on the left needs a better title"
+              points={s.queries.filter((q) => toNum(q.position) != null && Number(q.impressions) > 0).map((q) => ({ label: q.query, position: toNum(q.position)!, ctr: toNum(q.ctr) ?? 0, impressions: Number(q.impressions), clicks: Number(q.clicks) }))} />
+            <Columns title="Where Bing queries rank" sub="Queries by average position in the period; page one highlighted" valueLabel="Queries"
+              bins={POS_BINS.map(([label, lo, hi]) => ({ label, value: s.queries.filter((q) => { const p = toNum(q.position); return p != null && p >= lo && p < hi; }).length, highlight: hi <= 10.5 }))} />
+          </div>
         </>
       )}
 
@@ -196,7 +206,7 @@ export default async function BingPage({ searchParams }: { searchParams: Promise
           cols={[
             { label: "Page", render: (r) => (
               <div>
-                {safe(r.page) ? <a href={r.page} target="_blank" rel="noopener noreferrer" className="break-all hover:text-accent hover:underline">{host(r.page)}</a> : <span className="break-all">{r.page}</span>}
+                {safe(r.page) ? <a href={r.page} target="_blank" rel="noopener noreferrer" className="break-all hover:text-foreground underline decoration-border-strong underline-offset-2 hover:decoration-foreground">{host(r.page)}</a> : <span className="break-all">{r.page}</span>}
                 {pq.has(r.page) && (
                   <details className="mt-1 text-xs">
                     <summary className="cursor-pointer text-accent">{pq.get(r.page)!.length} queries for this page</summary>
@@ -215,19 +225,27 @@ export default async function BingPage({ searchParams }: { searchParams: Promise
           ]} />
 
         {crawl.length > 0 && (
-          <section className={card} aria-label="Crawl health">
-            <h2 className="mb-3 text-sm font-semibold">Crawl health ({crawl.length} days in range)</h2>
-            <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
-              {[["Pages in Bing's index", latest?.in_index], ["Inbound links", latest?.in_links], ["Pages crawled", sumC("crawled_pages")], ["Crawl errors", sumC("crawl_errors")]].map(([l, v]) => (
-                <div key={String(l)} className="rounded-lg bg-surface-muted p-3"><p className="text-[11px] font-semibold uppercase text-muted">{l}</p><p className="mt-1 text-2xl font-bold tabular-nums">{fmtInt(toNum(v))}</p></div>
-              ))}
+          <div className="grid grid-cols-1 gap-4 lg:grid-cols-3">
+            <section className={`${card} lg:col-span-2`} aria-label="Crawl health">
+              <h2 className="mb-3 text-sm font-semibold">Crawl health ({crawl.length} days in range)</h2>
+              <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
+                {[["Pages in Bing's index", latest?.in_index], ["Inbound links", latest?.in_links], ["Pages crawled", sumC("crawled_pages")], ["Crawl errors", sumC("crawl_errors")]].map(([l, v]) => (
+                  <div key={String(l)} className="rounded-lg bg-surface-muted p-3"><p className="text-xs font-medium text-muted">{l}</p><p className="mt-1 text-[26px] font-semibold tabular-nums tracking-[-0.02em]">{fmtInt(toNum(v))}</p></div>
+                ))}
+              </div>
+              <p className="mt-1 text-xs text-muted">Index and inbound-link counts are the latest day ({latest?.metric_date}); crawled pages and errors are summed over the range.</p>
+              <ul className="mt-3 grid gap-x-6 gap-y-1 text-sm sm:grid-cols-2">
+                {codes.map(([label, k]) => <li key={k} className="flex justify-between border-b border-border/60 py-1"><span>{label}</span><span className="tabular-nums">{fmtInt(sumC(k))}</span></li>)}
+              </ul>
+              <p className="mt-1 text-xs text-muted">HTTP response counts summed over the days in range.</p>
+            </section>
+            <div className="grid min-w-0 content-start gap-4">
+              <ShareDonut title="HTTP responses" sub="Share of crawl responses in the period" centerLabel="responses" keepOrder top={codes.length}
+                items={codes.map(([label, k]) => ({ label, value: sumC(k) }))} />
+              <StatCard label="Crawl error rate" value={crawlErrPct == null ? "—" : `${crawlErrPct.toFixed(1)}%`} tone={crawlErrPct == null ? undefined : crawlErrPct >= 5 ? "bad" : "good"}
+                sub={`Crawl errors ÷ pages crawled on ${latest?.metric_date ?? "the latest day"}`} />
             </div>
-            <p className="mt-1 text-xs text-muted">Index and inbound-link counts are the latest day ({latest?.metric_date}); crawled pages and errors are summed over the range.</p>
-            <ul className="mt-3 grid gap-x-6 gap-y-1 text-sm sm:grid-cols-2">
-              {codes.map(([label, k]) => <li key={k} className="flex justify-between border-b border-border/60 py-1"><span>{label}</span><span className="tabular-nums">{fmtInt(sumC(k))}</span></li>)}
-            </ul>
-            <p className="mt-1 text-xs text-muted">HTTP response counts summed over the days in range.</p>
-          </section>
+          </div>
         )}
 
         {resources.map((r) => {
@@ -264,27 +282,33 @@ export default async function BingPage({ searchParams }: { searchParams: Promise
                     { label: "Avg / week", right: true, render: ([, v]) => fmtInt(v.length ? Math.round(v.reduce((a, x) => a + x.impressions, 0) / v.length) : null) },
                   ]} />
               )}
-              <section className={card} aria-label="Bing settings">
-                <h3 className="mb-2 text-sm font-semibold">Index, quotas and settings</h3>
-                <dl className="grid gap-x-6 gap-y-1 text-sm sm:grid-cols-[auto_1fr]">
-                  {b.home_index && <>
-                    <dt className="text-muted">Homepage first discovered</dt><dd>{bingDate(b.home_index.DiscoveryDate) ?? "—"}</dd>
-                    <dt className="text-muted">Homepage last crawled</dt><dd>{bingDateTime(b.home_index.LastCrawledDate)?.replace("T", " ").slice(0, 16) ?? "—"}</dd>
-                    <dt className="text-muted">Homepage anchors (links found)</dt><dd>{fmtInt(b.home_index.AnchorCount ?? null)}</dd>
-                  </>}
-                  {b.url_submission_quota && <><dt className="text-muted">URL submission quota</dt><dd>{fmtInt(b.url_submission_quota.DailyQuota)} / day · {fmtInt(b.url_submission_quota.MonthlyQuota)} / month</dd></>}
-                  {b.content_submission_quota && <><dt className="text-muted">Content submission quota</dt><dd>{fmtInt(b.content_submission_quota.DailyQuota)} / day · {fmtInt(b.content_submission_quota.MonthlyQuota)} / month</dd></>}
-                  {settings && <>
-                    <dt className="text-muted">Crawl boost</dt><dd>{settings.CrawlBoostEnabled ? "Enabled" : settings.CrawlBoostAvailable ? "Available, not enabled" : "Not available"}</dd>
-                    <dt className="text-muted">Crawl rate by hour (UTC)</dt><dd className="font-mono text-xs">{settings.CrawlRate?.join(" ")}</dd>
-                  </>}
-                  <dt className="text-muted">Blocked URLs</dt><dd>{(b.blocked_urls ?? []).length ? (b.blocked_urls ?? []).map((u) => u.Url).join(", ") : "None"}</dd>
-                  <dt className="text-muted">URL parameters ignored</dt><dd>{(b.query_parameters ?? []).length ? (b.query_parameters ?? []).map((q) => `${q.Parameter}${q.IsEnabled ? "" : " (off)"}`).join(", ") : "None"}</dd>
-                  <dt className="text-muted">Other settings</dt>
-                  <dd>{[["connected pages", b.connected_pages], ["country/region settings", b.country_region_settings], ["deep-link blocks", b.deep_link_blocks],
-                    ["page-preview blocks", b.page_preview_blocks], ["fetched URLs", b.fetched_urls]].map(([l, v]) => `${(v as unknown[] | null)?.length ?? 0} ${l}`).join(" · ")}</dd>
-                </dl>
-              </section>
+              <div className={`grid grid-cols-1 gap-4 ${settings?.CrawlRate?.length ? "lg:grid-cols-2" : ""}`}>
+                {settings?.CrawlRate?.length ? (
+                  <Columns title="Crawl rate by hour" sub="Bing's crawl rate setting per hour (UTC); busiest hours highlighted" valueLabel="Rate"
+                    bins={settings.CrawlRate.map((v, h) => ({ label: String(h), value: v, highlight: v === Math.max(...settings.CrawlRate) }))} />
+                ) : null}
+                <section className={card} aria-label="Bing settings">
+                  <h3 className="mb-2 text-sm font-semibold">Index, quotas and settings</h3>
+                  <dl className="grid gap-x-6 gap-y-1 text-sm sm:grid-cols-[auto_1fr]">
+                    {b.home_index && <>
+                      <dt className="text-muted">Homepage first discovered</dt><dd>{bingDate(b.home_index.DiscoveryDate) ?? "—"}</dd>
+                      <dt className="text-muted">Homepage last crawled</dt><dd>{bingDateTime(b.home_index.LastCrawledDate)?.replace("T", " ").slice(0, 16) ?? "—"}</dd>
+                      <dt className="text-muted">Homepage anchors (links found)</dt><dd>{fmtInt(b.home_index.AnchorCount ?? null)}</dd>
+                    </>}
+                    {b.url_submission_quota && <><dt className="text-muted">URL submission quota</dt><dd>{fmtInt(b.url_submission_quota.DailyQuota)} / day · {fmtInt(b.url_submission_quota.MonthlyQuota)} / month</dd></>}
+                    {b.content_submission_quota && <><dt className="text-muted">Content submission quota</dt><dd>{fmtInt(b.content_submission_quota.DailyQuota)} / day · {fmtInt(b.content_submission_quota.MonthlyQuota)} / month</dd></>}
+                    {settings && <>
+                      <dt className="text-muted">Crawl boost</dt><dd>{settings.CrawlBoostEnabled ? "Enabled" : settings.CrawlBoostAvailable ? "Available, not enabled" : "Not available"}</dd>
+                      <dt className="text-muted">Crawl rate by hour (UTC)</dt><dd className="font-mono text-xs">{settings.CrawlRate?.join(" ")}</dd>
+                    </>}
+                    <dt className="text-muted">Blocked URLs</dt><dd>{(b.blocked_urls ?? []).length ? (b.blocked_urls ?? []).map((u) => u.Url).join(", ") : "None"}</dd>
+                    <dt className="text-muted">URL parameters ignored</dt><dd>{(b.query_parameters ?? []).length ? (b.query_parameters ?? []).map((q) => `${q.Parameter}${q.IsEnabled ? "" : " (off)"}`).join(", ") : "None"}</dd>
+                    <dt className="text-muted">Other settings</dt>
+                    <dd>{[["connected pages", b.connected_pages], ["country/region settings", b.country_region_settings], ["deep-link blocks", b.deep_link_blocks],
+                      ["page-preview blocks", b.page_preview_blocks], ["fetched URLs", b.fetched_urls]].map(([l, v]) => `${(v as unknown[] | null)?.length ?? 0} ${l}`).join(" · ")}</dd>
+                  </dl>
+                </section>
+              </div>
             </div>
           );
         })}

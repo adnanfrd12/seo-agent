@@ -1,4 +1,6 @@
+import { Donut, StackedBars } from "@/components/charts/ai-charts";
 import { BarList } from "@/components/charts/bar-list";
+import { FillColumns, RatingCompare } from "@/components/charts/research-charts";
 import { MetricTrend } from "@/components/charts/metric-trend";
 import { Highlights } from "@/components/dashboard/highlights";
 import { StatCard } from "@/components/dashboard/kpi-card";
@@ -17,11 +19,11 @@ import { createClient } from "@/lib/supabase/server";
 
 type Row = Record<string, unknown>;
 const stars = (n: number | null) => (n == null ? "—" : `${"★".repeat(Math.round(n))}${"☆".repeat(5 - Math.round(n))}`);
-const cellTone = (r: number | null) => (r == null ? "bg-surface-muted text-muted" : r <= 3 ? "bg-positive/80 text-white" : r <= 10 ? "bg-[#D4970A]/80 text-white" : "bg-negative/75 text-white");
+const cellTone = (r: number | null) => (r == null ? "bg-surface-muted text-muted" : r <= 3 ? "bg-positive/80 text-white" : r <= 10 ? "bg-warn/80 text-white" : "bg-negative/75 text-white");
 
 function GridCard({ g }: { g: Grid }) {
   return (
-    <div className="rounded-xl border border-border bg-surface p-4">
+    <div className="rounded-[10px] border border-border bg-surface p-4">
       <p className="text-sm font-semibold">“{g.keyword}” <span className="font-normal text-muted">· {g.size}×{g.size}, {g.spacingKm} km apart · {g.checkedAt.slice(0, 10)}</span></p>
       <div className="mx-auto my-3 grid max-w-[15rem] gap-1" style={{ gridTemplateColumns: `repeat(${g.size}, minmax(0, 1fr))` }}>
         {g.points.map((p) => (
@@ -49,6 +51,7 @@ export default async function LocalSeoPage() {
     { term: "Reply rate", text: "Share of the newest reviews the owner answered." },
     { term: "Sentiment", text: "From the stars: 4-5 positive, 3 neutral, 1-2 negative." },
     { term: "Map grid", text: "Where the business shows on Google Maps when people search from points around it." },
+    { term: "Map coverage", text: "For each scanned keyword, how many grid points put the business in the top 3, 4-10, 11-20 or nowhere in the top 20." },
   ]} />;
   if (!configured) return <>{header}<EmptyState title="DataForSEO isn't configured" body="Add DATAFORSEO_LOGIN and DATAFORSEO_PASSWORD to the environment, then redeploy." action={{ href: "/integrations", label: "Open Integrations" }} /></>;
 
@@ -92,6 +95,29 @@ export default async function LocalSeoPage() {
 
   const stars5 = (n: number | null) => (n == null ? "—" : `${n.toFixed(1)} ★`);
   const grids = groupGrids(local.grids);
+  const sentimentTotal = st.positive + st.neutral + st.negative;
+  const ratingRows = rivalRows.map((r, i) => ({ label: String(r.business), rating: r.rating == null ? null : Number(r.rating), reviews: r.reviews == null ? null : Number(r.reviews), you: Boolean(p) && i === 0 }));
+  const coverage = grids.map(([kw, list]) => {
+    const pts = list[0].points;
+    const n = (lo: number, hi: number) => pts.filter((x) => x.rank != null && x.rank >= lo && x.rank <= hi).length;
+    return { label: kw, values: { top3: n(1, 3), top10: n(4, 10), top20: n(11, 20), none: pts.filter((x) => x.rank == null).length } };
+  });
+  const coverageChart = coverage.length > 0 && (
+    <StackedBars title="Map coverage by keyword" sub="Grid points per rank band in the latest scan of each keyword" valueLabel="Grid points" percent
+      keys={[{ key: "top3", label: "Top 3", color: "var(--positive)" }, { key: "top10", label: "4-10", color: "var(--warn)" }, { key: "top20", label: "11-20", color: "var(--negative)" }, { key: "none", label: "Not in top 20", color: "var(--series-prev)" }]}
+      rows={coverage.map((c) => ({ ...c, note: `${c.values.top3 + c.values.top10 + c.values.top20} of ${c.values.top3 + c.values.top10 + c.values.top20 + c.values.none} found` }))} />
+  );
+  // who holds the map top 3 most often across the latest scans (the business itself excluded)
+  const selfName = (p?.title ?? local.identity.name).toLowerCase();
+  const mapLead = new Map<string, number>();
+  for (const [, list] of grids) for (const pt of list[0].points) for (const t of pt.top) if (t && t.toLowerCase() !== selfName) mapLead.set(t, (mapLead.get(t) ?? 0) + 1);
+  const mapLeaders = (
+    <BarList title="Who shows on the map instead" valueLabel="Grid points in their top 3" emptyText="No other businesses seen yet."
+      items={[...mapLead.entries()].sort((a, b) => b[1] - a[1]).slice(0, 8).map(([label, value]) => ({ label, value }))} />
+  );
+  // grid cards: 3 across when they divide evenly, else 2; a single card or an odd remainder cell gets the leaders list beside it
+  const gridCols = grids.length % 3 === 0 ? 3 : grids.length % 2 === 0 ? 2 : grids.length === 1 ? 2 : 3;
+  const spare = grids.length % gridCols ? gridCols - (grids.length % gridCols) : 0;
   return (
     <>
       {header}
@@ -104,7 +130,7 @@ export default async function LocalSeoPage() {
         <EmptyState title="No profile or review data yet" body="It loads automatically in the next daily run, or press the button above." />
       ) : (
         <>
-          <section aria-label="Reputation summary" className="grid gap-4 sm:grid-cols-3 xl:grid-cols-6">
+          <section aria-label="Reputation summary" className="grid grid-cols-2 gap-3 sm:grid-cols-3 xl:grid-cols-6">
             <StatCard label="Google rating" value={stars5(p?.rating ?? local.reviews?.rating ?? null)} tone={(p?.rating ?? 0) >= 4.5 ? "good" : undefined} />
             <StatCard label="Total reviews" value={fmtInt(p?.votes ?? local.reviews?.total ?? null)} />
             <StatCard label="Replied" value={st.loaded ? fmtInt(st.replied) : "—"} tone="good" />
@@ -115,11 +141,17 @@ export default async function LocalSeoPage() {
 
           {picks.length > 0 && <div className="mt-6"><Highlights items={picks.slice(0, 3)} /></div>}
 
-          <div className="mt-6 grid gap-4 md:grid-cols-2 xl:grid-cols-4">
-            <BarList title="Ratings" valueLabel="Reviews" items={dist.map((d) => ({ label: stars(d.stars), value: d.count, detail: distTotal ? `${((d.count / distTotal) * 100).toFixed(0)}%` : undefined }))} />
-            <BarList title="Sentiment" valueLabel="Reviews" items={[{ label: "Positive", value: st.positive }, { label: "Neutral", value: st.neutral }, { label: "Negative", value: st.negative }]} />
-            <BarList title="Owner replies" valueLabel="Reviews" items={[{ label: "Replied", value: st.replied }, { label: "Not replied", value: st.notReplied }, { label: "Unhappy, no reply", value: st.unansweredNegative }]} />
+          <div className="mt-6 grid gap-4 lg:grid-cols-3">
+            <FillColumns title="Ratings" sub={distTotal ? `${fmtInt(distTotal)} rated reviews by stars` : "Reviews by stars"} valueLabel="Reviews" empty="No ratings yet."
+              bins={dist.map((d) => ({ label: `${d.stars}★`, value: d.count, detail: stars(d.stars), color: d.stars >= 4 ? "var(--positive)" : d.stars === 3 ? "var(--series-prev)" : "var(--negative)" }))} />
+            <Donut title="Sentiment" sub="From the stars: 4-5 positive, 3 neutral, 1-2 negative" center={sentimentTotal ? `${Math.round((st.positive / sentimentTotal) * 100)}%` : "—"} centerLabel="positive"
+              items={[{ label: `Positive · ${fmtInt(st.positive)}`, value: st.positive, color: "var(--positive)" }, { label: `Neutral · ${fmtInt(st.neutral)}`, value: st.neutral, color: "var(--series-prev)" }, { label: `Negative · ${fmtInt(st.negative)}`, value: st.negative, color: "var(--negative)" }]} />
+            <Donut title="Owner replies" sub={`${fmtInt(st.unansweredNegative)} unhappy review${st.unansweredNegative === 1 ? "" : "s"} (3★ or fewer) without a reply`} center={fmtPercent(st.replyRate, 0)} centerLabel="reply rate"
+              items={[{ label: `Replied · ${fmtInt(st.replied)}`, value: st.replied, color: "var(--positive)" }, { label: `Other, no reply · ${fmtInt(st.notReplied - st.unansweredNegative)}`, value: Math.max(0, st.notReplied - st.unansweredNegative), color: "var(--series-prev)" }, { label: `Unhappy, no reply · ${fmtInt(st.unansweredNegative)}`, value: st.unansweredNegative, color: "var(--negative)" }]} />
+          </div>
+          <div className={`mt-4 grid gap-4 ${ratingRows.length > 1 ? "lg:grid-cols-2" : ""}`}>
             <BarList title="What reviewers mention" valueLabel="Reviews" emptyText="No topics reported." items={(p?.topics ?? []).slice(0, 6).map((t) => ({ label: t.topic, value: t.count }))} />
+            {ratingRows.length > 1 && <RatingCompare title="Rating vs nearby businesses" sub="Your Google profile against the competitors on the Competitors tab" rows={ratingRows} />}
           </div>
 
           <div className="mt-6">
@@ -136,18 +168,25 @@ export default async function LocalSeoPage() {
                         ]}
                         facets={[{ key: "replied", label: "Owner reply" }, { key: "sentiment", label: "Sentiment" }]}
                         presets={[{ label: "Not replied", where: [{ key: "replied", op: "eq", value: "No reply" }] }, { label: "Unhappy (≤3★)", where: [{ key: "rating", op: "lte", value: 3 }] }]} />
-                    ) : <p className="rounded-xl border border-dashed border-border p-4 text-sm text-muted">{waiting ? "Collecting reviews…" : local.reviewTask?.status === "failed" ? `Reviews couldn't be collected: ${local.reviewTask.error ?? "unknown error"}.` : "No reviews loaded yet."}</p>}
+                    ) : <p className="rounded-[10px] border border-dashed border-border p-4 text-sm text-muted">{waiting ? "Collecting reviews…" : local.reviewTask?.status === "failed" ? `Reviews couldn't be collected: ${local.reviewTask.error ?? "unknown error"}.` : "No reviews loaded yet."}</p>}
                   </div>
                 ),
               },
               {
                 key: "map", label: "Map rankings", badge: grids.length, content: (
                   <div className="space-y-4">
-                    {grids.length === 0 ? <p className="rounded-xl border border-dashed border-border p-4 text-sm text-muted">The first map scan runs in the next daily update.</p> : (
-                      <div className="grid gap-4 lg:grid-cols-2 xl:grid-cols-3">{grids.map(([kw, list]) => <GridCard key={kw} g={list[0]} />)}</div>
+                    {grids.length === 0 ? <p className="rounded-[10px] border border-dashed border-border p-4 text-sm text-muted">The first map scan runs in the next daily update.</p> : (
+                      <>
+                        {coverageChart}
+                        <div className={`grid gap-4 md:grid-cols-2 ${gridCols === 3 ? "xl:grid-cols-3" : ""}`}>
+                          {grids.map(([kw, list]) => <GridCard key={kw} g={list[0]} />)}
+                          {spare > 0 && <div className={`grid min-w-0 ${spare === 2 ? "xl:col-span-2" : ""}`}>{mapLeaders}</div>}
+                        </div>
+                        {!spare && mapLeaders}
+                      </>
                     )}
                     {grids.some(([, l]) => l.length > 1) && <MetricTrend title="Map visibility over time (points in the top 3)" source="Google Maps" options={grids.filter(([, l]) => l.length > 1).map(([kw, l]) => ({ key: kw, label: kw, data: [...l].reverse().map((g) => ({ date: g.checkedAt.slice(0, 10), value: g.summary.top3 })) }))} />}
-                    {canEdit && <details className="rounded-xl border border-border bg-surface p-4"><summary className="cursor-pointer text-sm font-medium">Scan another keyword</summary><div className="mt-3"><GridForm canEdit={canEdit} suggestions={gridSuggestions} /></div></details>}
+                    {canEdit && <details className="rounded-[10px] border border-border bg-surface p-4"><summary className="cursor-pointer text-sm font-medium">Scan another keyword</summary><div className="mt-3"><GridForm canEdit={canEdit} suggestions={gridSuggestions} /></div></details>}
                   </div>
                 ),
               },
@@ -161,37 +200,41 @@ export default async function LocalSeoPage() {
                           { key: "last90", label: "New · 90 days", type: "int" }, { key: "reply_rate", label: "Reply rate %", type: "int" },
                           { key: "negative", label: "Negative", type: "int" }, { key: "photos", label: "Photos", type: "int" }, { key: "category", label: "Category" },
                         ]} />
-                    ) : <p className="rounded-xl border border-dashed border-border p-4 text-sm text-muted">Competitors are added automatically from the map scans.</p>}
+                    ) : <p className="rounded-[10px] border border-dashed border-border p-4 text-sm text-muted">Competitors are added automatically from the map scans.</p>}
                     {velocity.length > 1 && <MetricTrend title="New reviews per month: you vs competitors" source="Google" options={velocity} />}
-                    {canEdit && <details className="rounded-xl border border-border bg-surface p-4"><summary className="cursor-pointer text-sm font-medium">Compare other businesses</summary><div className="mt-3"><RivalForm canEdit={canEdit} suggestions={[...new Set([...(p?.alsoSearch.map((a) => a.title) ?? []), ...gridRivals(local.grids, p?.title ?? local.identity.name).map((r) => r.name)])]} /></div></details>}
+                    {canEdit && <details className="rounded-[10px] border border-border bg-surface p-4"><summary className="cursor-pointer text-sm font-medium">Compare other businesses</summary><div className="mt-3"><RivalForm canEdit={canEdit} suggestions={[...new Set([...(p?.alsoSearch.map((a) => a.title) ?? []), ...gridRivals(local.grids, p?.title ?? local.identity.name).map((r) => r.name)])]} /></div></details>}
                   </div>
                 ),
               },
               ...(p ? [{
                 key: "profile", label: "Profile", content: (
-                  <div className="grid gap-4 lg:grid-cols-2">
-                    <div className="rounded-xl border border-border bg-surface p-4">
-                      <dl className="grid grid-cols-[8rem_1fr] gap-x-3 gap-y-2 text-sm">
-                        {([
-                          ["Name", p.title], ["Category", [p.category, ...p.additional].filter(Boolean).join(" · ")], ["Address", p.address], ["Phone", p.phone], ["Website", p.url],
-                          ["Claimed", p.claimed == null ? null : p.claimed ? "Yes" : "No"], ["Photos", p.photos != null ? fmtInt(p.photos) : null], ["Q&A", p.questions != null ? fmtInt(p.questions) : null],
-                        ] as const).filter(([, v]) => v).map(([k, v]) => <div key={k} className="contents"><dt className="text-muted">{k}</dt><dd className="break-words">{v}</dd></div>)}
-                      </dl>
-                    </div>
-                    <div className="space-y-4">
+                  <div className="space-y-4">
+                    <div className={`grid gap-4 ${p.hours.length > 0 ? "lg:grid-cols-2" : ""}`}>
+                      <div className="min-w-0 rounded-[10px] border border-border bg-surface p-4">
+                        <dl className="grid grid-cols-[minmax(0,8rem)_minmax(0,1fr)] gap-x-3 gap-y-2 text-sm">
+                          {([
+                            ["Name", p.title], ["Category", [p.category, ...p.additional].filter(Boolean).join(" · ")], ["Address", p.address], ["Phone", p.phone], ["Website", p.url],
+                            ["Claimed", p.claimed == null ? null : p.claimed ? "Yes" : "No"], ["Photos", p.photos != null ? fmtInt(p.photos) : null], ["Q&A", p.questions != null ? fmtInt(p.questions) : null],
+                          ] as const).filter(([, v]) => v).map(([k, v]) => <div key={k} className="contents"><dt className="text-muted">{k}</dt><dd className="break-words">{v}</dd></div>)}
+                        </dl>
+                      </div>
                       {p.hours.length > 0 && (
-                        <div className="rounded-xl border border-border bg-surface p-4">
+                        <div className="rounded-[10px] border border-border bg-surface p-4">
                           <h3 className="mb-2 text-sm font-semibold">Opening hours</h3>
                           <dl className="grid grid-cols-[7rem_1fr] gap-y-1 text-sm">{p.hours.map((h) => <div key={h.day} className="contents"><dt className="capitalize text-muted">{h.day}</dt><dd>{h.open}</dd></div>)}</dl>
                         </div>
                       )}
-                      {p.attributes.length > 0 && (
-                        <div className="rounded-xl border border-border bg-surface p-4">
-                          <h3 className="mb-2 text-sm font-semibold">Attributes</h3>
-                          <ul className="flex flex-wrap gap-1.5 text-xs">{p.attributes.map((a) => <li key={a} className="rounded bg-surface-muted px-2 py-0.5 capitalize">{a}</li>)}</ul>
-                        </div>
-                      )}
                     </div>
+                    {p.attributes.length > 0 && (
+                      <div className="rounded-[10px] border border-border bg-surface p-4">
+                        <h3 className="mb-2 text-sm font-semibold">Attributes</h3>
+                        <ul className="flex flex-wrap gap-1.5 text-xs">{p.attributes.map((a) => <li key={a} className="rounded bg-surface-muted px-2 py-0.5 capitalize">{a}</li>)}</ul>
+                      </div>
+                    )}
+                    {p.alsoSearch.length > 0 && (
+                      <BarList title="People also search for" valueLabel="Google reviews · rating"
+                        items={p.alsoSearch.map((a) => ({ label: a.title, value: a.votes ?? 0, detail: a.rating != null ? `${a.rating.toFixed(1)} ★` : "—" }))} />
+                    )}
                   </div>
                 ),
               }] : []),

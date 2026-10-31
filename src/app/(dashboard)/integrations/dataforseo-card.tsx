@@ -2,6 +2,7 @@ import Link from "next/link";
 import { AUTO_SHARE, DEFAULT_DAILY_BUDGET, getSettings, PER_CLIENT_SHARE, spendHistory, spendOrZero } from "@/lib/dataforseo/budget";
 import { dfsBalance, dfsConfigured } from "@/lib/dataforseo/client";
 import { createAdminClient } from "@/lib/supabase/admin";
+import { StackedColumns } from "@/components/charts/ops-charts";
 import { DataForSeoSettings } from "./dataforseo-settings";
 
 /** DataForSEO status: credentials, balance, today's spend against the cap, and the last 7 days. */
@@ -19,7 +20,7 @@ export async function DataForSeoCard({ canEdit, clientId }: { canEdit: boolean; 
   const pct = Math.min(100, (today / cap) * 100);
 
   return (
-    <section className="mt-4 rounded-xl border border-border bg-surface p-5" aria-labelledby="dfs-title">
+    <section className="mt-4 rounded-[10px] border border-border bg-surface p-5" aria-labelledby="dfs-title">
       <div className="flex flex-wrap items-start justify-between gap-3">
         <div>
           <h2 id="dfs-title" className="text-base font-semibold">DataForSEO</h2>
@@ -33,7 +34,9 @@ export async function DataForSeoCard({ canEdit, clientId }: { canEdit: boolean; 
         <p className="mt-3 text-sm text-muted">Spend details are visible to owners and admins.</p>
       ) : (
         <>
-          <dl className="mt-3 grid gap-x-6 gap-y-1 text-sm sm:grid-cols-[auto_1fr]">
+          <div className="mt-3 grid items-start gap-4 lg:grid-cols-2">
+          <div className="min-w-0">
+          <dl className="grid gap-x-6 gap-y-1 text-sm sm:grid-cols-[auto_1fr]">
             <dt className="text-muted">Account balance</dt><dd>{balance != null ? `$${balance.toFixed(2)}` : "—"}</dd>
             <dt className="text-muted">Spent today</dt>
             <dd>${today.toFixed(2)} of ${cap.toFixed(2)} daily cap
@@ -43,6 +46,11 @@ export async function DataForSeoCard({ canEdit, clientId }: { canEdit: boolean; 
             <dt className="text-muted">Automatic refresh</dt><dd>{settings.autoRefresh ? `${targets?.count ?? 0} clients, weekly, using at most $${(cap * AUTO_SHARE).toFixed(2)}/day of the limit` : "Off"}</dd>
           </dl>
           <DataForSeoSettings dailyBudget={cap} autoRefresh={settings.autoRefresh} defaultBudget={DEFAULT_DAILY_BUDGET} />
+          </div>
+          <StackedColumns title="Spend per day" sub={`Last 7 days, all clients · daily cap $${cap.toFixed(2)}`} format="usd" valueLabel="USD" empty="Nothing spent in the last 7 days."
+            keys={[{ key: "auto", label: "Automatic", color: "var(--series)" }, { key: "manual", label: "Manual", color: "color-mix(in oklab, var(--series) 40%, var(--surface))" }]}
+            columns={[...history].reverse().map((d) => ({ label: new Date(`${d.day}T00:00:00Z`).toLocaleDateString("en-US", { month: "short", day: "numeric", timeZone: "UTC" }), values: { auto: d.auto, manual: d.manual } }))} />
+          </div>
           {history.length > 0 && (
             <details className="mt-3 text-sm">
               <summary className="cursor-pointer font-medium text-accent">Last 7 days</summary>
@@ -57,8 +65,8 @@ export async function DataForSeoCard({ canEdit, clientId }: { canEdit: boolean; 
         </>
       )}
       <p className="mt-3 text-xs text-muted">
-        Open <Link href="/backlinks" className="text-accent hover:underline">Backlinks</Link>, <Link href="/organic-keywords" className="text-accent hover:underline">Organic Keywords</Link> or{" "}
-        <Link href="/keyword-research" className="text-accent hover:underline">Keyword Research</Link>. Opening pages never spends credit.
+        Open <Link href="/backlinks" className="text-foreground underline decoration-border-strong underline-offset-2 hover:decoration-foreground">Backlinks</Link>, <Link href="/organic-keywords" className="text-foreground underline decoration-border-strong underline-offset-2 hover:decoration-foreground">Organic Keywords</Link> or{" "}
+        <Link href="/keyword-research" className="text-foreground underline decoration-border-strong underline-offset-2 hover:decoration-foreground">Keyword Research</Link>. Opening pages never spends credit.
       </p>
     </section>
   );

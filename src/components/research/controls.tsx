@@ -5,6 +5,7 @@ import { useRouter } from "next/navigation";
 import { Loader2, RefreshCw } from "lucide-react";
 import { checkLinkChanges, runCoreRefresh, runDeepDive, runLinkGap, saveResearchTarget, researchKeywords, type KeywordRows } from "@/app/(dashboard)/research-actions";
 import { MARKETS } from "@/lib/dataforseo/locations";
+import { KeywordCharts } from "@/components/charts/research-charts";
 import { ResearchTable, type Col } from "./research-table";
 import { Tabs } from "./tabs";
 
@@ -164,7 +165,7 @@ export function KeywordResearch({ canEdit, defaultLocation }: { canEdit: boolean
 
   return (
     <div className="space-y-4">
-      <div className="rounded-xl border border-border bg-surface p-4">
+      <div className="rounded-[10px] border border-border bg-surface p-4">
         <div className="grid gap-3 sm:grid-cols-[1fr_14rem_auto] sm:items-end">
           <label className="text-sm">Seed keyword<input className={`${field} mt-1`} value={seed} onChange={(e) => setSeed(e.target.value)} placeholder="e.g. led signs"
             onKeyDown={(e) => { if (e.key === "Enter" && canEdit && seed.trim().length >= 2) search(kind); }} /></label>
@@ -191,13 +192,14 @@ export function KeywordResearch({ canEdit, defaultLocation }: { canEdit: boolean
                   “{results[k.key].seed}” · {results[k.key].fromCache ? `stored result from ${ago(results[k.key].fetchedAt)} (free)` : "fetched just now"}
                   {results[k.key].total > results[k.key].rows.length ? ` · showing the top ${results[k.key].rows.length} of ${results[k.key].total.toLocaleString("en-US")}` : ""}
                 </p>
+                <KeywordCharts rows={results[k.key].rows} />
                 <ResearchTable title={k.label} rows={results[k.key].rows} columns={KW_COLS} searchKeys={["keyword"]} presets={KW_PRESETS}
                   ranges={[{ key: "volume", label: "Volume / mo" }, { key: "difficulty", label: "Difficulty" }, { key: "cpc", label: "CPC ($)" }]}
                   facets={[{ key: "intent", label: "Intent" }, { key: "competition", label: "Ad competition" }]}
                   initialSort={{ key: "volume", dir: "desc" }} csvName={`keywords-${k.key}-${results[k.key].seed.replace(/\W+/g, "-")}`} />
               </>
             ) : (
-              <div className="rounded-xl border border-dashed border-border p-8 text-center text-sm text-muted">
+              <div className="rounded-[10px] border border-dashed border-border p-8 text-center text-sm text-muted">
                 {pending && kind === k.key ? "Searching…" : canEdit ? <button className={btn2} disabled={pending || seed.trim().length < 2} onClick={() => { setKind(k.key); search(k.key); }}>Load {k.label.toLowerCase()} for “{seed.trim() || "…"}”</button> : "No search yet."}
               </div>
             )}

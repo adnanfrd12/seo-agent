@@ -4,17 +4,22 @@ import { marketLabel } from "@/lib/dataforseo/locations";
 import type { LinkSpike } from "@/lib/dataforseo/research";
 import { TargetForm } from "./controls";
 
-/** "Today's API spend" line, shown to owners and admins only. */
+/** "Today's API spend", for owners and admins only (budget is null for everyone else), folded into a small "Manage" disclosure. */
 export function SpendLine({ budget }: { budget: { spent: number; cap: number; balance: number | null } | null }) {
   if (!budget) return null;
   const pct = Math.min(100, (budget.spent / budget.cap) * 100);
   return (
-    <p className="text-xs text-muted">
-      API spend today ${budget.spent.toFixed(2)} of ${budget.cap.toFixed(2)} daily cap
-      <span className="mx-1.5 inline-block h-1.5 w-16 overflow-hidden rounded-full bg-surface-muted align-middle"><span className="block h-full rounded-full bg-accent" style={{ width: `${pct}%` }} /></span>
-      {budget.balance != null && <>· DataForSEO balance ${budget.balance.toFixed(2)} · </>}
-      <Link href="/integrations" className="text-accent hover:underline">spend details</Link>
-    </p>
+    <details className="group inline-block text-xs text-muted">
+      <summary className="inline-flex cursor-pointer list-none items-center gap-1.5 rounded-md hover:text-foreground [&::-webkit-details-marker]:hidden">
+        <span className="size-1.5 rounded-full bg-faint" aria-hidden /> Manage · API usage
+      </summary>
+      <p className="mt-1.5 rounded-md border border-border bg-surface px-3 py-2 tabular-nums">
+        Today ${budget.spent.toFixed(2)} of ${budget.cap.toFixed(2)} daily cap
+        <span className="mx-1.5 inline-block h-1 w-16 overflow-hidden rounded-full bg-surface-muted align-middle"><span className="block h-full rounded-full bg-foreground/60" style={{ width: `${pct}%` }} /></span>
+        {budget.balance != null && <>· DataForSEO balance ${budget.balance.toFixed(2)} · </>}
+        <Link href="/integrations" className="font-medium text-foreground underline underline-offset-2">Spend details</Link>
+      </p>
+    </details>
   );
 }
 
@@ -22,10 +27,10 @@ export function TargetSettings({ canEdit, target }: {
   canEdit: boolean; target: { domain: string; location_code: number; auto_refresh: boolean; competitors: string[] };
 }) {
   return (
-    <details className="rounded-xl border border-border bg-surface p-4">
-      <summary className="cursor-pointer text-sm font-medium">
-        Website: <span className="font-semibold">{target.domain}</span> · {marketLabel(target.location_code)} · {target.auto_refresh ? "weekly auto-refresh on" : "auto-refresh off"}
-        <span className="ml-2 text-accent">{canEdit ? "Change" : "View"}</span>
+    <details className="rounded-[10px] border border-border bg-surface px-4 py-3">
+      <summary className="cursor-pointer text-[13px] text-secondary">
+        <span className="font-medium text-foreground">{target.domain}</span> · {marketLabel(target.location_code)} · {target.auto_refresh ? "refreshes weekly" : "auto-refresh off"}
+        <span className="ml-2 font-medium text-foreground underline underline-offset-2">{canEdit ? "Change" : "View"}</span>
       </summary>
       <div className="mt-3"><TargetForm canEdit={canEdit} domain={target.domain} location={target.location_code} autoRefresh={target.auto_refresh} competitors={target.competitors} /></div>
     </details>
@@ -34,7 +39,7 @@ export function TargetSettings({ canEdit, target }: {
 
 export function SpikeAlert({ spike }: { spike: LinkSpike }) {
   return (
-    <div role="alert" className="flex gap-3 rounded-xl border border-negative/40 bg-negative/10 p-4 text-sm">
+    <div role="alert" className="flex gap-3 rounded-[10px] border border-negative/30 bg-negative-soft p-4 text-sm">
       <AlertTriangle className="mt-0.5 size-5 shrink-0 text-negative" aria-hidden />
       <div>
         <p className="font-semibold text-negative">Unusual jump in new links in {spike.month}</p>

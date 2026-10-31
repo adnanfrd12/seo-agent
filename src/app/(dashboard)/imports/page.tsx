@@ -1,4 +1,5 @@
 import Link from "next/link";
+import { SplitBar } from "@/components/charts/ops-charts";
 import { TabHeader } from "@/components/dashboard/tab-header";
 import { Unavailable } from "@/components/report/report-ui";
 import { getSession } from "@/lib/analytics/client-context";
@@ -44,6 +45,8 @@ export default async function ImportsPage({ searchParams }: { searchParams: Prom
     const o = data as { ga4?: { current?: Record<string, unknown> }; gsc?: { current?: Record<string, unknown> } } | null;
     api = { ga4: o?.ga4?.current, gsc: o?.gsc?.current };
   }
+  const ms = (metrics ?? []) as Metric[];
+  const tally = (f: (m: Metric) => boolean) => ms.filter(f).length;
   const comparable = ((metrics ?? []) as Metric[]).filter((m) => m.review_status === "accepted" && m.normalized_metric && COMPARABLE[m.normalized_metric]);
 
   return (
@@ -56,7 +59,7 @@ export default async function ImportsPage({ searchParams }: { searchParams: Prom
       {(reports ?? []).length > 0 && (
         <section>
           <h2 className="mb-2 text-sm font-semibold">Imported reports</h2>
-          <ul className="divide-y divide-border rounded-xl border border-border bg-surface">
+          <ul className="divide-y divide-border rounded-[10px] border border-border bg-surface">
             {((reports ?? []) as Report[]).map((r) => (
               <li key={r.id}>
                 <Link href={`/imports?id=${r.id}`} className={`flex flex-wrap items-center gap-3 px-4 py-3 text-sm hover:bg-surface-muted ${r.id === selected?.id ? "bg-surface-muted" : ""}`}>
@@ -81,15 +84,27 @@ export default async function ImportsPage({ searchParams }: { searchParams: Prom
             {selected.error && <p className="mt-1 text-sm text-negative">{selected.error}</p>}
           </div>
           {(selected.extraction?.notes?.length ?? 0) > 0 && (
-            <div className="rounded-xl border border-dashed border-border bg-surface p-4 text-sm">
+            <div className="rounded-[10px] border border-dashed border-border bg-surface p-4 text-sm">
               <p className="font-semibold">Extraction notes</p>
               <ul className="mt-1 list-disc pl-5 text-muted">{selected.extraction!.notes!.map((n, i) => <li key={i}>{n}</li>)}</ul>
+            </div>
+          )}
+          {ms.length > 0 && (
+            <div className="grid gap-4 md:grid-cols-2">
+              <SplitBar title="Review progress" sub="Figures accepted, rejected or still to review" total={`${tally((m) => m.review_status === "accepted")} of ${ms.length}`} totalLabel="accepted" segments={[
+                { label: "Accepted", value: tally((m) => m.review_status === "accepted"), color: "var(--positive)" }, { label: "Rejected", value: tally((m) => m.review_status === "rejected"), color: "var(--negative)" },
+                { label: "To review", value: tally((m) => !["accepted", "rejected"].includes(m.review_status)), color: "var(--cat-other)" },
+              ]} />
+              <SplitBar title="Extraction confidence" sub="How sure the extraction is about each figure" segments={[
+                { label: "High", value: tally((m) => m.confidence === "high"), color: "var(--series)" }, { label: "Medium", value: tally((m) => m.confidence === "medium"), color: "color-mix(in oklab, var(--series) 55%, var(--surface))" },
+                { label: "Low", value: tally((m) => m.confidence === "low"), color: "color-mix(in oklab, var(--series) 22%, var(--surface))" },
+              ]} />
             </div>
           )}
           {(metrics ?? []).length > 0 && <ReviewTable importId={selected.id} metrics={(metrics ?? []) as Metric[]} confirmed={selected.status === "confirmed"} />}
 
           {selected.status === "confirmed" && (
-            <div className="rounded-xl border border-border bg-surface p-5">
+            <div className="rounded-[10px] border border-border bg-surface p-5">
               <h3 className="font-semibold">Compare with live analytics</h3>
               {!api ? (
                 <p className="mt-1 text-sm text-muted">Comparison needs a reporting period stated in the document.</p>

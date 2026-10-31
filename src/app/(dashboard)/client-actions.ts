@@ -1,7 +1,7 @@
 "use server";
 
 import { cookies } from "next/headers";
-import { revalidatePath } from "next/cache";
+import { revalidatePath } from "@/lib/revalidate";
 import { z } from "zod";
 import { ACTIVE_CLIENT_COOKIE, getSession } from "@/lib/analytics/client-context";
 import { createClient } from "@/lib/supabase/server";

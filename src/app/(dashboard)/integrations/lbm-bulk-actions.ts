@@ -1,7 +1,7 @@
 "use server";
 
 import { after } from "next/server";
-import { revalidatePath } from "next/cache";
+import { revalidatePath } from "@/lib/revalidate";
 import { z } from "zod";
 import { getSession } from "@/lib/analytics/client-context";
 import { BingError, userSites } from "@/lib/bing/api";
