@@ -1,6 +1,7 @@
 import "server-only";
 import type { SupabaseClient } from "@supabase/supabase-js";
 import { toNum } from "@/lib/analytics/format";
+import { blogReport, loadBlog, loadBlogPerformance, type BlogReport } from "@/lib/blog/load";
 import type { TrendData } from "@/lib/analytics/trend";
 import { loadCompetitors, type Threat } from "@/lib/dataforseo/competitors";
 import { detectLinkSpike, loadCache, type LinkSpike } from "@/lib/dataforseo/research";
@@ -73,6 +74,8 @@ export interface ReportData {
     /** ranked lists from Clarity's site-wide response: popular pages, referrers, countries, devices, browsers */
     lists: { title: string; items: { label: string; value: number }[] }[];
   } | null;
+  /** blog posts on the client's website (released in the period, coverage); null when none are stored */
+  blog: BlogReport | null;
   errors: string[];
 }
 
@@ -98,7 +101,7 @@ export async function loadReportData(
   const prev = { p_client_id: clientId, p_start: shift(range.start, -len), p_end: shift(range.start, -1) };
 
   // everything in one parallel batch: each read is a round trip to the database
-  const [overview, ga4Trend, gscTrend, ga4Summary, chCur, chPrev, landing, queries, pages, opps, gbpTrend, gbpSummary, gbpExtras, bing, research, competitors, ai, clarity] = await Promise.all([
+  const [overview, ga4Trend, gscTrend, ga4Summary, chCur, chPrev, landing, queries, pages, opps, gbpTrend, gbpSummary, gbpExtras, bing, research, competitors, ai, clarity, blog] = await Promise.all([
     supabase.rpc("get_seo_overview", args),
     supabase.rpc("get_analytics_trends", { ...args, p_provider: "ga4", p_granularity: "day", p_compare: compare }),
     supabase.rpc("get_analytics_trends", { ...args, p_provider: "gsc", p_granularity: "day", p_compare: compare, p_search_type: "web" }),
@@ -117,6 +120,7 @@ export async function loadReportData(
     loadCompetitorsForReport(supabase, clientId),
     loadAi(supabase, clientId),
     loadClarity(supabase, clientId, range),
+    loadBlogForReport(supabase, clientId, range),
   ]);
 
   const errors = [overview, ga4Trend, gscTrend].filter((r) => r.error).map((r) => r.error!.message);
@@ -152,9 +156,19 @@ export async function loadReportData(
     // a missing RPC (migration not yet applied) must not break the report
     opportunities: opps.error ? null : (opps.data as Opportunities),
     ...gbpExtras,
-    bing, research, competitors, ai, clarity,
+    bing, research, competitors, ai, clarity, blog,
     errors: opps.error ? ["opportunities"] : [],
   };
+}
+
+/** Posts released in the period and how the blog is set up; never fails the report (null when unavailable). */
+async function loadBlogForReport(supabase: SupabaseClient, clientId: string, range: { start: string; end: string }): Promise<BlogReport | null> {
+  try {
+    const [b, perf] = await Promise.all([loadBlog(supabase, clientId), loadBlogPerformance(supabase, clientId, range)]);
+    return b.ok ? blogReport(b.posts, perf, range) : null;
+  } catch {
+    return null;
+  }
 }
 
 async function loadCompetitorsForReport(supabase: SupabaseClient, clientId: string): Promise<ReportData["competitors"]> {

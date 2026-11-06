@@ -5,7 +5,7 @@ import { ArrowDown, ArrowUp, Download, SlidersHorizontal } from "lucide-react";
 import { toCsv } from "@/lib/analytics/csv";
 import { cn } from "@/lib/utils";
 
-export type ColType = "text" | "int" | "dec" | "usd" | "date" | "url" | "bool" | "badge" | "spark" | "change" | "spam" | "delta";
+export type ColType = "text" | "int" | "dec" | "usd" | "date" | "url" | "link" | "open" | "bool" | "badge" | "spark" | "change" | "spam" | "delta";
 export interface Col { key: string; label: string; type?: ColType; hint?: string }
 export interface Preset { label: string; where: { key: string; op: "lte" | "gte" | "eq" | "true"; value?: number | string | boolean }[] }
 type Row = Record<string, unknown>;
@@ -46,6 +46,16 @@ function Cell({ col, row }: { col: Col; row: Row }) {
       const d = v - cur;
       return <span className={d > 0 ? "text-positive" : "text-negative"}>{d > 0 ? "▲" : "▼"} {Math.abs(d)}</span>;
     }
+    // text that opens a page inside the app; the address is in the row's "<key>_href"
+    case "link": {
+      const href = row[`${col.key}_href`];
+      const text = v == null || v === "" ? "—" : String(v);
+      return typeof href === "string" && href ? <a href={href} className="inline-block min-w-[16rem] max-w-[24rem] break-words font-medium underline-offset-2 hover:underline">{text}</a> : <span className="inline-block min-w-[16rem] break-words">{text}</span>;
+    }
+    // a short "Open" link to the address (the CSV still has the full address)
+    case "open":
+      return typeof v === "string" && /^https?:\/\//.test(v)
+        ? <a href={v} target="_blank" rel="noopener noreferrer" title={v} className="whitespace-nowrap underline-offset-2 hover:underline">Open ↗</a> : <>—</>;
     case "url": {
       if (typeof v !== "string" || !v) return <>—</>;
       let label = v;

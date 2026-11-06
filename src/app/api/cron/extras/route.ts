@@ -3,6 +3,8 @@ import { NextResponse, type NextRequest } from "next/server";
 import { activeClientIds } from "@/lib/activity";
 import { BRAND_EST, brandNamesFor, LLM_EST, llmTopics, refreshBrandLookup, refreshLlmMentions } from "@/lib/ai/llm-mentions";
 import { runAiChecks, suggestPrompts } from "@/lib/ai/visibility";
+import { POST_KW_EST, refreshPostKeywords } from "@/lib/blog/keywords";
+import { syncBlog } from "@/lib/blog/sync";
 import { AUTO_SHARE, BudgetError, getSettings, spend } from "@/lib/dataforseo/budget";
 import { dfsConfigured } from "@/lib/dataforseo/client";
 import { runLighthouse, LH_EST } from "@/lib/dataforseo/lighthouse";
@@ -38,6 +40,8 @@ const SEED_KEYWORDS = 10, SEED_PROMPTS = 5, MAX_GRID_KEYWORDS = 3;
  *   5. the backlink / top-pages deep dive, every two weeks
  *   6. link gap (sites linking to each tracked competitor but not to the client), every two weeks
  *   7. AI brand lookup (brand vs competitor brands in real AI answers) and competitor link history / top pages, weekly
+ *   8. blog content (the client's own WordPress / sitemap, free; Claude reads places and keywords of new
+ *      posts for a fraction of a cent each), daily; it runs even when DataForSEO isn't configured
  * Every step skips what is still fresh, so a re-run the same day spends nothing. Manual buttons still work.
  */
 async function handle(request: NextRequest) {
@@ -118,8 +122,31 @@ async function handle(request: NextRequest) {
         out.aiVisibility = { questionsChecked: checked, cost: Number(cost.toFixed(3)), errors: [...new Set(errors)].slice(0, 3) };
       }
 
-      if (!settings) { out.skipped = "DataForSEO not configured"; return out; }
-      if (!settings.autoRefresh) { out.skipped = "Automatic refresh is turned off on the Integrations page"; return out; }
+      // 8. blog content: runs last so it never takes time from the steps above (the first full read
+      // of a big blog continues over a few runs); also on the early exits below
+      const blogStep = async () => {
+        const blogDeadline = Math.min(deadline - 5_000, Date.now() + 75_000);
+        let read = 0, geo = 0, cost = 0, kwMatched = 0, kwPaid = 0, kwCost = 0;
+        const errors: string[] = [];
+        for (const id of active) {
+          if (Date.now() > blogDeadline - 10_000) break;
+          try {
+            const r = await syncBlog(admin, id, { deadline: blogDeadline, maxCost: 0.25 });
+            read += r.fetched; geo += r.geoRead; cost += r.cost;
+            if (r.errors.length && r.stopped !== "setup" && r.stopped !== "source") errors.push(r.errors[0]);
+            if (r.stopped === "setup") continue;
+            // DataForSEO keywords: matched free from stored data every day; new posts' own lists (paid,
+            // refreshed weekly) only inside the automatic budget share
+            const paid = settings?.autoRefresh && (await room(POST_KW_EST * 20)) ? "new" : "none";
+            const k = await refreshPostKeywords(admin, id, { paid, source: "auto", deadline: blogDeadline, maxPaid: 20 });
+            kwMatched += k.matched; kwPaid += k.paid; kwCost += k.cost;
+          } catch (e) { errors.push(e instanceof Error ? e.message : "failed"); }
+        }
+        out.blog = { postsRead: read, placesRead: geo, cost: Number(cost.toFixed(4)), keywordsMatched: kwMatched, keywordsFetched: kwPaid, keywordCost: Number(kwCost.toFixed(4)), errors: [...new Set(errors)].slice(0, 3) };
+      };
+
+      if (!settings) { out.skipped = "DataForSEO not configured"; await blogStep(); return out; }
+      if (!settings.autoRefresh) { out.skipped = "Automatic refresh is turned off on the Integrations page"; await blogStep(); return out; }
 
       // 1b. AI market data (LLM Mentions) for the client's topics
       let llm = 0;
@@ -266,6 +293,7 @@ async function handle(request: NextRequest) {
         }
       }
       out.market = { brandLookups, competitorExtras: compExtras };
+      await blogStep();
       out.spentToday = Number((await spentNow()).toFixed(3));
       return out;
     });

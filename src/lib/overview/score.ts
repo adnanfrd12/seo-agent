@@ -78,6 +78,12 @@ export function computeHealth(d: ReportData, opts: { staleSources: string[] }): 
     const pct = (crawl.errors / crawl.crawled) * 100;
     out.push({ key: "crawl", label: "Bing crawl errors", status: pct === 0 ? "pass" : pct < 5 ? "watch" : "fix", detail: `${crawl.errors} errors in ${crawl.crawled.toLocaleString("en-US")} pages crawled (${pct.toFixed(1)}%)`, rule: "Pass at 0%, watch below 5%, fix 5% or more", href: "/bing" });
   }
+  if (d.blog) {
+    const b = d.blog;
+    out.push({ key: "blog", label: "Blog content", status: b.withService >= 70 && b.inRange > 0 ? "pass" : b.inRange > 0 || b.withService >= 40 ? "watch" : "fix",
+      detail: `${b.inRange} posts this period · ${b.withService}% link a service page · ${b.mapToProfile}% map to your profile`,
+      rule: "Pass with a post this period and 70%+ linking a service page; watch when one of those holds; fix otherwise", href: "/blog" });
+  }
   out.push({ key: "fresh", label: "Data freshness", status: opts.staleSources.length === 0 ? "pass" : "watch", detail: opts.staleSources.length ? `Not synced in 48h: ${opts.staleSources.join(", ")}` : "All connected sources synced in the last 48 hours", rule: "Watch when a connected source hasn't synced for 48 hours", href: "/integrations" });
   return out;
 }

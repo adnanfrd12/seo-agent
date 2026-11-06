@@ -1,7 +1,7 @@
 import Link from "next/link";
 import {
   Activity, BarChart3, Swords, Link2, CalendarCheck, Eye, Flag, Gauge, Globe, MapPin, MousePointerClick, Navigation, Phone, Search, Sparkles, Target,
-  TrendingDown, TrendingUp, Trophy, Users,
+  Newspaper, TrendingDown, TrendingUp, Trophy, Users,
 } from "lucide-react";
 import { MetricTrend } from "@/components/charts/metric-trend";
 import { AiInsightsBlock, ClarityBlock, StrategyBlock } from "./ai-sections";
@@ -35,7 +35,7 @@ function changeText(label: string, cur: Num, base: Num, opts: { lowerIsBetter?: 
 const CH = {
   overall: "Overall Performance & Monthly Wins", traffic: "Website Traffic & Sources", gbp: "Google Business Profile Performance",
   gsc: "Search Console & Keyword Performance", bing: "Bing Search Performance", research: "Backlinks & Organic Keywords", competitors: "Competitor Analysis", behavior: "User Behavior & Conversion Analysis",
-  ai: "AI SEO Insights", strategy: "30-Day SEO Strategy",
+  ai: "AI SEO Insights", strategy: "30-Day SEO Strategy", blog: "Blog Content",
 } as const;
 
 /** Chapter titles in order for this report (used for numbering and the PDF contents page). */
@@ -47,6 +47,8 @@ export function reportChapters(d: ReportData, executive: boolean): string[] {
     ...(d.competitors ? [CH.competitors] : []),
     ...(!executive || d.clarity ? [CH.behavior] : []),
     CH.ai, CH.strategy,
+    // added last so the numbers of the chapters above never change
+    ...(d.blog ? [CH.blog] : []),
   ];
 }
 
@@ -597,6 +599,33 @@ export function ReportBody({ d, opts }: { d: ReportData; opts: ReportOptions }) 
         </>} />
         <p className="text-xs text-muted">No ranking or revenue outcome is guaranteed; each action lists the metric that will show whether it worked.</p>
       </Chapter>
+
+      {/* ---------------------------------------------------------------- Blog content */}
+      {d.blog && (
+        <Chapter n={no(CH.blog)} id="ch-blog" icon={Newspaper} title={CH.blog}
+          subtitle="Posts released this period and how the blog supports local search" sources={["Website", ...(gscOk ? ["GSC"] : [])]}>
+          <TileGrid>
+            <StatTile label="Posts released" icon={Newspaper} source="Website" format={fmtInt} value={d.blog.inRange} previous={d.blog.previous} />
+            <StatTile label="Posts on the blog" icon={Newspaper} source="Website" format={fmtInt} value={d.blog.total} />
+            <StatTile label="Average words" icon={Activity} source="Website" format={fmtInt} value={d.blog.avgWords} />
+            <StatTile label="Map to your profile" icon={MapPin} source="Website" format={(v) => (v == null ? "—" : `${v}%`)} value={d.blog.mapToProfile} />
+            <StatTile label="Link a service page" icon={Link2} source="Website" format={(v) => (v == null ? "—" : `${v}%`)} value={d.blog.withService} />
+          </TileGrid>
+          {d.blog.posts.length > 0 ? (
+            <ReportTable<(typeof d.blog.posts)[number]> title="Posts released this period" source="Website" empty="" rows={d.blog.posts}
+              columns={[
+                { label: "Date", render: (x) => x.date ?? "—" },
+                { label: "Post", render: (x) => <span className="break-words">{x.title}</span> },
+                { label: "Words", align: "right", render: (x) => fmtInt(x.words) },
+                { label: "Neighbourhood", render: (x) => x.area ?? "—" },
+                { label: "Service page", render: (x) => x.service ?? "—" },
+                ...(gscOk ? [{ label: "Clicks", align: "right" as const, render: (x: (typeof d.blog.posts)[number]) => fmtInt(x.clicks) }, { label: "Impressions", align: "right" as const, render: (x: (typeof d.blog.posts)[number]) => fmtInt(x.impressions) }] : []),
+              ]} />
+          ) : <p className="text-sm text-muted">No posts were released in this period ({d.blog.previous} in the period before).</p>}
+          {d.blog.withService < 70 && <Findings tone="bad" items={[`${100 - d.blog.withService}% of posts don't link to a service page. Linking each post to the page that sells the service passes its relevance to that page.`]} />}
+          {detail("/blog", "All blog posts")}
+        </Chapter>
+      )}
 
       <footer className="border-t border-border pt-6 text-xs text-muted">
         <p className="flex items-center gap-1.5"><Trophy className="size-3.5" aria-hidden /> Figures come directly from connected Google APIs and are never estimated. Unavailable data is labelled, never shown as zero.</p>
