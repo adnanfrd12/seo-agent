@@ -1,0 +1,289 @@
+[
+ {
+  "slug": "content-planning-for-topical-relevance-prompt",
+  "stage": "find",
+  "title": "Content planning for Topical Relevance Prompt",
+  "use": "Use this prompt when you need a structured find deliverable and want the model to separate observations, assumptions, recommended actions, and claims that need verification.",
+  "prompt": "Act as a senior SEO strategist using the FLOW model.\n\nTask: create a find deliverable for: [BUSINESS OR ASSET].\n\nUse only the supplied inputs and clearly label any assumption. Do not invent statistics. Do not reuse private examples. Build the answer around:\n1. Searcher or buyer intent.\n2. Evidence available now.\n3. Gaps that block trust, extraction, or conversion.\n4. Recommended changes in priority order.\n5. Measurement events and review cadence.\n6. Claims that require source verification before publication.\n\nReturn a concise working document the team can execute."
+ },
+ {
+  "slug": "content-prioritization-prompt",
+  "stage": "find",
+  "title": "Content Prioritization Prompt",
+  "use": "Use this prompt when you need a structured find deliverable and want the model to separate observations, assumptions, recommended actions, and claims that need verification.",
+  "prompt": "Act as a senior SEO strategist using the FLOW model.\n\nTask: create a find deliverable for: [BUSINESS OR ASSET].\n\nUse only the supplied inputs and clearly label any assumption. Do not invent statistics. Do not reuse private examples. Build the answer around:\n1. Searcher or buyer intent.\n2. Evidence available now.\n3. Gaps that block trust, extraction, or conversion.\n4. Recommended changes in priority order.\n5. Measurement events and review cadence.\n6. Claims that require source verification before publication.\n\nReturn a concise working document the team can execute."
+ },
+ {
+  "slug": "keyword-research-prompt",
+  "stage": "find",
+  "title": "Keyword research prompt",
+  "use": "Use this prompt when you need a structured find deliverable and want the model to separate observations, assumptions, recommended actions, and claims that need verification.",
+  "prompt": "Act as a senior SEO strategist using the FLOW model.\n\nTask: create a find deliverable for: [BUSINESS OR ASSET].\n\nUse only the supplied inputs and clearly label any assumption. Do not invent statistics. Do not reuse private examples. Build the answer around:\n1. Searcher or buyer intent.\n2. Evidence available now.\n3. Gaps that block trust, extraction, or conversion.\n4. Recommended changes in priority order.\n5. Measurement events and review cadence.\n6. Claims that require source verification before publication.\n\nReturn a concise working document the team can execute."
+ },
+ {
+  "slug": "keyword-variations-for-topical-relevance-prompt",
+  "stage": "find",
+  "title": "Keyword variations for topical relevance prompt",
+  "use": "Use this prompt when you need a structured find deliverable and want the model to separate observations, assumptions, recommended actions, and claims that need verification.",
+  "prompt": "Act as a senior SEO strategist using the FLOW model.\n\nTask: create a find deliverable for: [BUSINESS OR ASSET].\n\nUse only the supplied inputs and clearly label any assumption. Do not invent statistics. Do not reuse private examples. Build the answer around:\n1. Searcher or buyer intent.\n2. Evidence available now.\n3. Gaps that block trust, extraction, or conversion.\n4. Recommended changes in priority order.\n5. Measurement events and review cadence.\n6. Claims that require source verification before publication.\n\nReturn a concise working document the team can execute."
+ },
+ {
+  "slug": "prompt-audience-avatar",
+  "stage": "find",
+  "title": "Prompt: Audience Avatar",
+  "use": "Use this prompt when you need a structured find deliverable and want the model to separate observations, assumptions, recommended actions, and claims that need verification.",
+  "prompt": "Act as a senior SEO strategist using the FLOW model.\n\nTask: create a find deliverable for: [BUSINESS OR ASSET].\n\nUse only the supplied inputs and clearly label any assumption. Do not invent statistics. Do not reuse private examples. Build the answer around:\n1. Searcher or buyer intent.\n2. Evidence available now.\n3. Gaps that block trust, extraction, or conversion.\n4. Recommended changes in priority order.\n5. Measurement events and review cadence.\n6. Claims that require source verification before publication.\n\nReturn a concise working document the team can execute."
+ },
+ {
+  "slug": "backlink-competition-prompt",
+  "stage": "leverage",
+  "title": "Backlink competition prompt",
+  "use": "Use this prompt when you need a structured leverage deliverable and want the model to separate observations, assumptions, recommended actions, and claims that need verification.",
+  "prompt": "Act as a senior SEO strategist using the FLOW model.\n\nTask: create a leverage deliverable for: [BUSINESS OR ASSET].\n\nUse only the supplied inputs and clearly label any assumption. Do not invent statistics. Do not reuse private examples. Build the answer around:\n1. Searcher or buyer intent.\n2. Evidence available now.\n3. Gaps that block trust, extraction, or conversion.\n4. Recommended changes in priority order.\n5. Measurement events and review cadence.\n6. Claims that require source verification before publication.\n\nReturn a concise working document the team can execute."
+ },
+ {
+  "slug": "ai-homepage-rewrite-prompt",
+  "stage": "local",
+  "title": "AI Homepage Rewrite Prompt",
+  "use": "Use this prompt when you need a structured local deliverable and want the model to separate observations, assumptions, recommended actions, and claims that need verification.",
+  "prompt": "Act as a senior SEO strategist using the FLOW model.\n\nTask: create a local deliverable for: [BUSINESS OR ASSET].\n\nUse only the supplied inputs and clearly label any assumption. Do not invent statistics. Do not reuse private examples. Build the answer around:\n1. Searcher or buyer intent.\n2. Evidence available now.\n3. Gaps that block trust, extraction, or conversion.\n4. Recommended changes in priority order.\n5. Measurement events and review cadence.\n6. Claims that require source verification before publication.\n\nReturn a concise working document the team can execute."
+ },
+ {
+  "slug": "claude-deep-research-prompt",
+  "stage": "local",
+  "title": "Claude 'Deep Research' Prompt",
+  "use": "Use this prompt when you need a structured local deliverable and want the model to separate observations, assumptions, recommended actions, and claims that need verification.",
+  "prompt": "Act as a senior SEO strategist using the FLOW model.\n\nTask: create a local deliverable for: [BUSINESS OR ASSET].\n\nUse only the supplied inputs and clearly label any assumption. Do not invent statistics. Do not reuse private examples. Build the answer around:\n1. Searcher or buyer intent.\n2. Evidence available now.\n3. Gaps that block trust, extraction, or conversion.\n4. Recommended changes in priority order.\n5. Measurement events and review cadence.\n6. Claims that require source verification before publication.\n\nReturn a concise working document the team can execute."
+ },
+ {
+  "slug": "gbp-categories-prompt",
+  "stage": "local",
+  "title": "GBP Categories Prompt",
+  "use": "Use this prompt when you need a structured local deliverable and want the model to separate observations, assumptions, recommended actions, and claims that need verification.",
+  "prompt": "Act as a senior SEO strategist using the FLOW model.\n\nTask: create a local deliverable for: [BUSINESS OR ASSET].\n\nUse only the supplied inputs and clearly label any assumption. Do not invent statistics. Do not reuse private examples. Build the answer around:\n1. Searcher or buyer intent.\n2. Evidence available now.\n3. Gaps that block trust, extraction, or conversion.\n4. Recommended changes in priority order.\n5. Measurement events and review cadence.\n6. Claims that require source verification before publication.\n\nReturn a concise working document the team can execute."
+ },
+ {
+  "slug": "gbp-description-claude-prompt-1",
+  "stage": "local",
+  "title": "GBP Description Claude Prompt 1",
+  "use": "Use this prompt when you need a structured local deliverable and want the model to separate observations, assumptions, recommended actions, and claims that need verification.",
+  "prompt": "Act as a senior SEO strategist using the FLOW model.\n\nTask: create a local deliverable for: [BUSINESS OR ASSET].\n\nUse only the supplied inputs and clearly label any assumption. Do not invent statistics. Do not reuse private examples. Build the answer around:\n1. Searcher or buyer intent.\n2. Evidence available now.\n3. Gaps that block trust, extraction, or conversion.\n4. Recommended changes in priority order.\n5. Measurement events and review cadence.\n6. Claims that require source verification before publication.\n\nReturn a concise working document the team can execute."
+ },
+ {
+  "slug": "gbp-description-claude-prompt-2",
+  "stage": "local",
+  "title": "GBP Description Claude Prompt 2",
+  "use": "Use this prompt when you need a structured local deliverable and want the model to separate observations, assumptions, recommended actions, and claims that need verification.",
+  "prompt": "Act as a senior SEO strategist using the FLOW model.\n\nTask: create a local deliverable for: [BUSINESS OR ASSET].\n\nUse only the supplied inputs and clearly label any assumption. Do not invent statistics. Do not reuse private examples. Build the answer around:\n1. Searcher or buyer intent.\n2. Evidence available now.\n3. Gaps that block trust, extraction, or conversion.\n4. Recommended changes in priority order.\n5. Measurement events and review cadence.\n6. Claims that require source verification before publication.\n\nReturn a concise working document the team can execute."
+ },
+ {
+  "slug": "gbp-description-claude-prompt-3",
+  "stage": "local",
+  "title": "GBP Description Claude Prompt 3",
+  "use": "Use this prompt when you need a structured local deliverable and want the model to separate observations, assumptions, recommended actions, and claims that need verification.",
+  "prompt": "Act as a senior SEO strategist using the FLOW model.\n\nTask: create a local deliverable for: [BUSINESS OR ASSET].\n\nUse only the supplied inputs and clearly label any assumption. Do not invent statistics. Do not reuse private examples. Build the answer around:\n1. Searcher or buyer intent.\n2. Evidence available now.\n3. Gaps that block trust, extraction, or conversion.\n4. Recommended changes in priority order.\n5. Measurement events and review cadence.\n6. Claims that require source verification before publication.\n\nReturn a concise working document the team can execute."
+ },
+ {
+  "slug": "gbp-services-prompt",
+  "stage": "local",
+  "title": "GBP Services Prompt",
+  "use": "Use this prompt when you need a structured local deliverable and want the model to separate observations, assumptions, recommended actions, and claims that need verification.",
+  "prompt": "Act as a senior SEO strategist using the FLOW model.\n\nTask: create a local deliverable for: [BUSINESS OR ASSET].\n\nUse only the supplied inputs and clearly label any assumption. Do not invent statistics. Do not reuse private examples. Build the answer around:\n1. Searcher or buyer intent.\n2. Evidence available now.\n3. Gaps that block trust, extraction, or conversion.\n4. Recommended changes in priority order.\n5. Measurement events and review cadence.\n6. Claims that require source verification before publication.\n\nReturn a concise working document the team can execute."
+ },
+ {
+  "slug": "prompt-generating-a-meta-description",
+  "stage": "local",
+  "title": "Prompt: Generating a Meta Description",
+  "use": "Use this prompt when you need a structured local deliverable and want the model to separate observations, assumptions, recommended actions, and claims that need verification.",
+  "prompt": "Act as a senior SEO strategist using the FLOW model.\n\nTask: create a local deliverable for: [BUSINESS OR ASSET].\n\nUse only the supplied inputs and clearly label any assumption. Do not invent statistics. Do not reuse private examples. Build the answer around:\n1. Searcher or buyer intent.\n2. Evidence available now.\n3. Gaps that block trust, extraction, or conversion.\n4. Recommended changes in priority order.\n5. Measurement events and review cadence.\n6. Claims that require source verification before publication.\n\nReturn a concise working document the team can execute."
+ },
+ {
+  "slug": "prompt-generating-a-title-tag",
+  "stage": "local",
+  "title": "Prompt: Generating a Title Tag",
+  "use": "Use this prompt when you need a structured local deliverable and want the model to separate observations, assumptions, recommended actions, and claims that need verification.",
+  "prompt": "Act as a senior SEO strategist using the FLOW model.\n\nTask: create a local deliverable for: [BUSINESS OR ASSET].\n\nUse only the supplied inputs and clearly label any assumption. Do not invent statistics. Do not reuse private examples. Build the answer around:\n1. Searcher or buyer intent.\n2. Evidence available now.\n3. Gaps that block trust, extraction, or conversion.\n4. Recommended changes in priority order.\n5. Measurement events and review cadence.\n6. Claims that require source verification before publication.\n\nReturn a concise working document the team can execute."
+ },
+ {
+  "slug": "prompt-rewriting-existing-homepage",
+  "stage": "local",
+  "title": "Prompt: Rewriting Existing Homepage",
+  "use": "Use this prompt when you need a structured local deliverable and want the model to separate observations, assumptions, recommended actions, and claims that need verification.",
+  "prompt": "Act as a senior SEO strategist using the FLOW model.\n\nTask: create a local deliverable for: [BUSINESS OR ASSET].\n\nUse only the supplied inputs and clearly label any assumption. Do not invent statistics. Do not reuse private examples. Build the answer around:\n1. Searcher or buyer intent.\n2. Evidence available now.\n3. Gaps that block trust, extraction, or conversion.\n4. Recommended changes in priority order.\n5. Measurement events and review cadence.\n6. Claims that require source verification before publication.\n\nReturn a concise working document the team can execute."
+ },
+ {
+  "slug": "prompt-rewriting-existing-service-page",
+  "stage": "local",
+  "title": "Prompt : Rewriting Existing Service Page",
+  "use": "Use this prompt when you need a structured local deliverable and want the model to separate observations, assumptions, recommended actions, and claims that need verification.",
+  "prompt": "Act as a senior SEO strategist using the FLOW model.\n\nTask: create a local deliverable for: [BUSINESS OR ASSET].\n\nUse only the supplied inputs and clearly label any assumption. Do not invent statistics. Do not reuse private examples. Build the answer around:\n1. Searcher or buyer intent.\n2. Evidence available now.\n3. Gaps that block trust, extraction, or conversion.\n4. Recommended changes in priority order.\n5. Measurement events and review cadence.\n6. Claims that require source verification before publication.\n\nReturn a concise working document the team can execute."
+ },
+ {
+  "slug": "ai-detector-test-follow-up-prompt",
+  "stage": "optimize",
+  "title": "AI detector test follow-up Prompt",
+  "use": "Use this prompt when you need a structured optimize deliverable and want the model to separate observations, assumptions, recommended actions, and claims that need verification.",
+  "prompt": "Act as a senior SEO strategist using the FLOW model.\n\nTask: create a optimize deliverable for: [BUSINESS OR ASSET].\n\nUse only the supplied inputs and clearly label any assumption. Do not invent statistics. Do not reuse private examples. Build the answer around:\n1. Searcher or buyer intent.\n2. Evidence available now.\n3. Gaps that block trust, extraction, or conversion.\n4. Recommended changes in priority order.\n5. Measurement events and review cadence.\n6. Claims that require source verification before publication.\n\nReturn a concise working document the team can execute."
+ },
+ {
+  "slug": "ai-supporting-pages-rewrite-prompt",
+  "stage": "optimize",
+  "title": "AI Supporting Pages Rewrite Prompt",
+  "use": "Use this prompt when you need a structured optimize deliverable and want the model to separate observations, assumptions, recommended actions, and claims that need verification.",
+  "prompt": "Act as a senior SEO strategist using the FLOW model.\n\nTask: create a optimize deliverable for: [BUSINESS OR ASSET].\n\nUse only the supplied inputs and clearly label any assumption. Do not invent statistics. Do not reuse private examples. Build the answer around:\n1. Searcher or buyer intent.\n2. Evidence available now.\n3. Gaps that block trust, extraction, or conversion.\n4. Recommended changes in priority order.\n5. Measurement events and review cadence.\n6. Claims that require source verification before publication.\n\nReturn a concise working document the team can execute."
+ },
+ {
+  "slug": "basic-prompt",
+  "stage": "optimize",
+  "title": "Basic Prompt",
+  "use": "Use this prompt when you need a structured optimize deliverable and want the model to separate observations, assumptions, recommended actions, and claims that need verification.",
+  "prompt": "Act as a senior SEO strategist using the FLOW model.\n\nTask: create a optimize deliverable for: [BUSINESS OR ASSET].\n\nUse only the supplied inputs and clearly label any assumption. Do not invent statistics. Do not reuse private examples. Build the answer around:\n1. Searcher or buyer intent.\n2. Evidence available now.\n3. Gaps that block trust, extraction, or conversion.\n4. Recommended changes in priority order.\n5. Measurement events and review cadence.\n6. Claims that require source verification before publication.\n\nReturn a concise working document the team can execute."
+ },
+ {
+  "slug": "blog-post-outline-prompt",
+  "stage": "optimize",
+  "title": "Blog Post Outline Prompt",
+  "use": "Use this prompt when you need a structured optimize deliverable and want the model to separate observations, assumptions, recommended actions, and claims that need verification.",
+  "prompt": "Act as a senior SEO strategist using the FLOW model.\n\nTask: create a optimize deliverable for: [BUSINESS OR ASSET].\n\nUse only the supplied inputs and clearly label any assumption. Do not invent statistics. Do not reuse private examples. Build the answer around:\n1. Searcher or buyer intent.\n2. Evidence available now.\n3. Gaps that block trust, extraction, or conversion.\n4. Recommended changes in priority order.\n5. Measurement events and review cadence.\n6. Claims that require source verification before publication.\n\nReturn a concise working document the team can execute."
+ },
+ {
+  "slug": "blog-post-writing-prompt",
+  "stage": "optimize",
+  "title": "Blog Post Writing Prompt",
+  "use": "Use this prompt when you need a structured optimize deliverable and want the model to separate observations, assumptions, recommended actions, and claims that need verification.",
+  "prompt": "Act as a senior SEO strategist using the FLOW model.\n\nTask: create a optimize deliverable for: [BUSINESS OR ASSET].\n\nUse only the supplied inputs and clearly label any assumption. Do not invent statistics. Do not reuse private examples. Build the answer around:\n1. Searcher or buyer intent.\n2. Evidence available now.\n3. Gaps that block trust, extraction, or conversion.\n4. Recommended changes in priority order.\n5. Measurement events and review cadence.\n6. Claims that require source verification before publication.\n\nReturn a concise working document the team can execute."
+ },
+ {
+  "slug": "claude-prompt-1",
+  "stage": "optimize",
+  "title": "Claude Prompt 1",
+  "use": "Use this prompt when you need a structured optimize deliverable and want the model to separate observations, assumptions, recommended actions, and claims that need verification.",
+  "prompt": "Act as a senior SEO strategist using the FLOW model.\n\nTask: create a optimize deliverable for: [BUSINESS OR ASSET].\n\nUse only the supplied inputs and clearly label any assumption. Do not invent statistics. Do not reuse private examples. Build the answer around:\n1. Searcher or buyer intent.\n2. Evidence available now.\n3. Gaps that block trust, extraction, or conversion.\n4. Recommended changes in priority order.\n5. Measurement events and review cadence.\n6. Claims that require source verification before publication.\n\nReturn a concise working document the team can execute."
+ },
+ {
+  "slug": "claude-prompt-2",
+  "stage": "optimize",
+  "title": "Claude Prompt 2",
+  "use": "Use this prompt when you need a structured optimize deliverable and want the model to separate observations, assumptions, recommended actions, and claims that need verification.",
+  "prompt": "Act as a senior SEO strategist using the FLOW model.\n\nTask: create a optimize deliverable for: [BUSINESS OR ASSET].\n\nUse only the supplied inputs and clearly label any assumption. Do not invent statistics. Do not reuse private examples. Build the answer around:\n1. Searcher or buyer intent.\n2. Evidence available now.\n3. Gaps that block trust, extraction, or conversion.\n4. Recommended changes in priority order.\n5. Measurement events and review cadence.\n6. Claims that require source verification before publication.\n\nReturn a concise working document the team can execute."
+ },
+ {
+  "slug": "ctr-audit-prompt",
+  "stage": "optimize",
+  "title": "CTR AUDIT PROMPT",
+  "use": "Use this prompt when you need a structured optimize deliverable and want the model to separate observations, assumptions, recommended actions, and claims that need verification.",
+  "prompt": "Act as a senior SEO strategist using the FLOW model.\n\nTask: create a optimize deliverable for: [BUSINESS OR ASSET].\n\nUse only the supplied inputs and clearly label any assumption. Do not invent statistics. Do not reuse private examples. Build the answer around:\n1. Searcher or buyer intent.\n2. Evidence available now.\n3. Gaps that block trust, extraction, or conversion.\n4. Recommended changes in priority order.\n5. Measurement events and review cadence.\n6. Claims that require source verification before publication.\n\nReturn a concise working document the team can execute."
+ },
+ {
+  "slug": "follow-up-prompt-1",
+  "stage": "optimize",
+  "title": "Follow-up Prompt 1",
+  "use": "Use this prompt when you need a structured optimize deliverable and want the model to separate observations, assumptions, recommended actions, and claims that need verification.",
+  "prompt": "Act as a senior SEO strategist using the FLOW model.\n\nTask: create a optimize deliverable for: [BUSINESS OR ASSET].\n\nUse only the supplied inputs and clearly label any assumption. Do not invent statistics. Do not reuse private examples. Build the answer around:\n1. Searcher or buyer intent.\n2. Evidence available now.\n3. Gaps that block trust, extraction, or conversion.\n4. Recommended changes in priority order.\n5. Measurement events and review cadence.\n6. Claims that require source verification before publication.\n\nReturn a concise working document the team can execute."
+ },
+ {
+  "slug": "follow-up-prompt-2",
+  "stage": "optimize",
+  "title": "Follow-up Prompt 2",
+  "use": "Use this prompt when you need a structured optimize deliverable and want the model to separate observations, assumptions, recommended actions, and claims that need verification.",
+  "prompt": "Act as a senior SEO strategist using the FLOW model.\n\nTask: create a optimize deliverable for: [BUSINESS OR ASSET].\n\nUse only the supplied inputs and clearly label any assumption. Do not invent statistics. Do not reuse private examples. Build the answer around:\n1. Searcher or buyer intent.\n2. Evidence available now.\n3. Gaps that block trust, extraction, or conversion.\n4. Recommended changes in priority order.\n5. Measurement events and review cadence.\n6. Claims that require source verification before publication.\n\nReturn a concise working document the team can execute."
+ },
+ {
+  "slug": "follow-up-prompt",
+  "stage": "optimize",
+  "title": "Follow-up Prompt",
+  "use": "Use this prompt when you need a structured optimize deliverable and want the model to separate observations, assumptions, recommended actions, and claims that need verification.",
+  "prompt": "Act as a senior SEO strategist using the FLOW model.\n\nTask: create a optimize deliverable for: [BUSINESS OR ASSET].\n\nUse only the supplied inputs and clearly label any assumption. Do not invent statistics. Do not reuse private examples. Build the answer around:\n1. Searcher or buyer intent.\n2. Evidence available now.\n3. Gaps that block trust, extraction, or conversion.\n4. Recommended changes in priority order.\n5. Measurement events and review cadence.\n6. Claims that require source verification before publication.\n\nReturn a concise working document the team can execute."
+ },
+ {
+  "slug": "paa-question-rewording-prompt",
+  "stage": "optimize",
+  "title": "PAA Question Rewording Prompt",
+  "use": "Use this prompt when you need a structured optimize deliverable and want the model to separate observations, assumptions, recommended actions, and claims that need verification.",
+  "prompt": "Act as a senior SEO strategist using the FLOW model.\n\nTask: create a optimize deliverable for: [BUSINESS OR ASSET].\n\nUse only the supplied inputs and clearly label any assumption. Do not invent statistics. Do not reuse private examples. Build the answer around:\n1. Searcher or buyer intent.\n2. Evidence available now.\n3. Gaps that block trust, extraction, or conversion.\n4. Recommended changes in priority order.\n5. Measurement events and review cadence.\n6. Claims that require source verification before publication.\n\nReturn a concise working document the team can execute."
+ },
+ {
+  "slug": "prompt-core-30-content-audit",
+  "stage": "optimize",
+  "title": "Prompt: Core 30 Content Audit",
+  "use": "Use this prompt when you need a structured optimize deliverable and want the model to separate observations, assumptions, recommended actions, and claims that need verification.",
+  "prompt": "Act as a senior SEO strategist using the FLOW model.\n\nTask: create a optimize deliverable for: [BUSINESS OR ASSET].\n\nUse only the supplied inputs and clearly label any assumption. Do not invent statistics. Do not reuse private examples. Build the answer around:\n1. Searcher or buyer intent.\n2. Evidence available now.\n3. Gaps that block trust, extraction, or conversion.\n4. Recommended changes in priority order.\n5. Measurement events and review cadence.\n6. Claims that require source verification before publication.\n\nReturn a concise working document the team can execute."
+ },
+ {
+  "slug": "property-content-with-authority-audit-prompt",
+  "stage": "optimize",
+  "title": "Property content with authority audit prompt",
+  "use": "Use this prompt when you need a structured optimize deliverable and want the model to separate observations, assumptions, recommended actions, and claims that need verification.",
+  "prompt": "Act as a senior SEO strategist using the FLOW model.\n\nTask: create a optimize deliverable for: [BUSINESS OR ASSET].\n\nUse only the supplied inputs and clearly label any assumption. Do not invent statistics. Do not reuse private examples. Build the answer around:\n1. Searcher or buyer intent.\n2. Evidence available now.\n3. Gaps that block trust, extraction, or conversion.\n4. Recommended changes in priority order.\n5. Measurement events and review cadence.\n6. Claims that require source verification before publication.\n\nReturn a concise working document the team can execute."
+ },
+ {
+  "slug": "reddit-claude-prompt",
+  "stage": "optimize",
+  "title": "Reddit Claude Prompt",
+  "use": "Use this prompt when you need a structured optimize deliverable and want the model to separate observations, assumptions, recommended actions, and claims that need verification.",
+  "prompt": "Act as a senior SEO strategist using the FLOW model.\n\nTask: create a optimize deliverable for: [BUSINESS OR ASSET].\n\nUse only the supplied inputs and clearly label any assumption. Do not invent statistics. Do not reuse private examples. Build the answer around:\n1. Searcher or buyer intent.\n2. Evidence available now.\n3. Gaps that block trust, extraction, or conversion.\n4. Recommended changes in priority order.\n5. Measurement events and review cadence.\n6. Claims that require source verification before publication.\n\nReturn a concise working document the team can execute."
+ },
+ {
+  "slug": "schema-prompt-1",
+  "stage": "optimize",
+  "title": "Schema Prompt 1",
+  "use": "Use this prompt when you need a structured optimize deliverable and want the model to separate observations, assumptions, recommended actions, and claims that need verification.",
+  "prompt": "Act as a senior SEO strategist using the FLOW model.\n\nTask: create a optimize deliverable for: [BUSINESS OR ASSET].\n\nUse only the supplied inputs and clearly label any assumption. Do not invent statistics. Do not reuse private examples. Build the answer around:\n1. Searcher or buyer intent.\n2. Evidence available now.\n3. Gaps that block trust, extraction, or conversion.\n4. Recommended changes in priority order.\n5. Measurement events and review cadence.\n6. Claims that require source verification before publication.\n\nReturn a concise working document the team can execute."
+ },
+ {
+  "slug": "step-1-the-chatgpt-discovery-prompt",
+  "stage": "optimize",
+  "title": "Step 1: The ChatGPT Discovery Prompt",
+  "use": "Use this prompt when you need a structured optimize deliverable and want the model to separate observations, assumptions, recommended actions, and claims that need verification.",
+  "prompt": "Act as a senior SEO strategist using the FLOW model.\n\nTask: create a optimize deliverable for: [BUSINESS OR ASSET].\n\nUse only the supplied inputs and clearly label any assumption. Do not invent statistics. Do not reuse private examples. Build the answer around:\n1. Searcher or buyer intent.\n2. Evidence available now.\n3. Gaps that block trust, extraction, or conversion.\n4. Recommended changes in priority order.\n5. Measurement events and review cadence.\n6. Claims that require source verification before publication.\n\nReturn a concise working document the team can execute."
+ },
+ {
+  "slug": "step-2-the-follow-up-qualifying-prompt",
+  "stage": "optimize",
+  "title": "Step 2: The Follow-Up Qualifying Prompt",
+  "use": "Use this prompt when you need a structured optimize deliverable and want the model to separate observations, assumptions, recommended actions, and claims that need verification.",
+  "prompt": "Act as a senior SEO strategist using the FLOW model.\n\nTask: create a optimize deliverable for: [BUSINESS OR ASSET].\n\nUse only the supplied inputs and clearly label any assumption. Do not invent statistics. Do not reuse private examples. Build the answer around:\n1. Searcher or buyer intent.\n2. Evidence available now.\n3. Gaps that block trust, extraction, or conversion.\n4. Recommended changes in priority order.\n5. Measurement events and review cadence.\n6. Claims that require source verification before publication.\n\nReturn a concise working document the team can execute."
+ },
+ {
+  "slug": "technical-audit-prompt",
+  "stage": "optimize",
+  "title": "Technical Audit Prompt",
+  "use": "Use this prompt when you need a structured optimize deliverable and want the model to separate observations, assumptions, recommended actions, and claims that need verification.",
+  "prompt": "Act as a senior SEO strategist using the FLOW model.\n\nTask: create a optimize deliverable for: [BUSINESS OR ASSET].\n\nUse only the supplied inputs and clearly label any assumption. Do not invent statistics. Do not reuse private examples. Build the answer around:\n1. Searcher or buyer intent.\n2. Evidence available now.\n3. Gaps that block trust, extraction, or conversion.\n4. Recommended changes in priority order.\n5. Measurement events and review cadence.\n6. Claims that require source verification before publication.\n\nReturn a concise working document the team can execute."
+ },
+ {
+  "slug": "visibility-follow-up-prompt",
+  "stage": "optimize",
+  "title": "Visibility Follow Up Prompt",
+  "use": "Use this prompt when you need a structured optimize deliverable and want the model to separate observations, assumptions, recommended actions, and claims that need verification.",
+  "prompt": "Act as a senior SEO strategist using the FLOW model.\n\nTask: create a optimize deliverable for: [BUSINESS OR ASSET].\n\nUse only the supplied inputs and clearly label any assumption. Do not invent statistics. Do not reuse private examples. Build the answer around:\n1. Searcher or buyer intent.\n2. Evidence available now.\n3. Gaps that block trust, extraction, or conversion.\n4. Recommended changes in priority order.\n5. Measurement events and review cadence.\n6. Claims that require source verification before publication.\n\nReturn a concise working document the team can execute."
+ },
+ {
+  "slug": "visiblity-prompt",
+  "stage": "optimize",
+  "title": "Visiblity Prompt",
+  "use": "Use this prompt when you need a structured optimize deliverable and want the model to separate observations, assumptions, recommended actions, and claims that need verification.",
+  "prompt": "Act as a senior SEO strategist using the FLOW model.\n\nTask: create a optimize deliverable for: [BUSINESS OR ASSET].\n\nUse only the supplied inputs and clearly label any assumption. Do not invent statistics. Do not reuse private examples. Build the answer around:\n1. Searcher or buyer intent.\n2. Evidence available now.\n3. Gaps that block trust, extraction, or conversion.\n4. Recommended changes in priority order.\n5. Measurement events and review cadence.\n6. Claims that require source verification before publication.\n\nReturn a concise working document the team can execute."
+ },
+ {
+  "slug": "bofu-page-brief-generator",
+  "stage": "win",
+  "title": "BOFU Page Brief Generator",
+  "use": "Use this when you need a bottom-funnel page brief for a service, product, location, comparison, pricing, demo, or lead-capture page.",
+  "prompt": "Create a bottom-funnel page brief for [offer] targeting [audience].\n\nUse only the inputs provided. Build the brief around what this audience needs to decide.\n\nAnalyze:\n1. The immediate problem the visitor is trying to solve.\n2. The decision factors they likely need before converting.\n3. Objections, hesitation points, and missing clarity.\n4. Customer-language phrases that should appear naturally.\n5. Proof needed to support trust.\n6. CTA angle and page sections needed to reduce friction.\n\nReturn: page goal, search/conversion intent, primary audience, buyer questions, objections, recommended H1, section outline, proof points, CTA strategy, FAQ topics, and tracking notes for form, call, chat, and qualified-lead measurement. Flag missing inputs."
+ },
+ {
+  "slug": "conversion-audit-prompt",
+  "stage": "win",
+  "title": "Conversion Audit Prompt",
+  "use": "Use this when a page, campaign, or funnel gets traffic but produces weak leads, low conversion rate, unclear attribution, or poor sales follow-up quality.",
+  "prompt": "Audit this conversion path for lead quality, friction, and measurement gaps.\n\nUse the supplied page, campaign, and first-party conversation data. Identify:\n1. Where visitor expectations may not match the page or offer.\n2. Common objections and hesitation points.\n3. Missing decision-making information.\n4. Language mismatches between customers and the page.\n5. CTA friction.\n6. Tracking gaps across form, phone, chat, and offline outcomes.\n7. Whether reporting connects to qualified leads or sales, not only traffic.\n\nReturn an executive summary, top blockers, lead-quality risks, messaging fixes, page/content fixes, tracking fixes, first-party data to collect next, and a ranked test backlog. Do not recommend more spend until content, offer clarity, and measurement gaps are assessed."
+ },
+ {
+  "slug": "dual-surface-content-scorecard",
+  "stage": "win",
+  "title": "Dual-Surface Content Scorecard",
+  "use": "Use this when you need to judge whether a page can perform in traditional search and AI-assisted discovery while still supporting conversion.",
+  "prompt": "Score this content for two discovery surfaces: traditional search and AI-assisted answer environments.\n\nEvaluate:\n1. Original usefulness and specificity.\n2. Alignment with audience needs and decision stage.\n3. Evidence, examples, data, or firsthand insight.\n4. Clear answers to buyer questions.\n5. Conversion support: CTA, proof, objection handling, and next step.\n6. Refresh or update need.\n7. Measurement readiness: traffic, engagement, qualified leads, sales conversions, and ROI indicators.\n\nReturn traditional search score, AI-assisted discovery score, conversion-readiness score, evidence strengths, gaps, risks, recommended updates, and the highest-impact next three actions. Use business-impact language, not traffic-only language."
+ }
+]

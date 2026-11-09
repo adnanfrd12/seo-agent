@@ -1,3 +1,4 @@
+import { KeywordLink } from "@/components/research/keyword-link";
 import Link from "next/link";
 import { notFound } from "next/navigation";
 import { ArrowLeft, ExternalLink } from "lucide-react";
@@ -104,7 +105,7 @@ export default async function BlogPostPage({ params }: { params: Promise<{ id: s
       <div className="mt-4 grid gap-4 lg:grid-cols-2">
         <Panel title="Keywords" sub="Target from the text; queries from Search Console (last 90 days)">
           <div className="space-y-3 text-[13px]">
-            <p><span className="text-muted">Target keyword: </span><span className="font-medium">{post.keywords?.target ?? "—"}</span></p>
+            <p><span className="text-muted">Target keyword: </span><span className="font-medium"><KeywordLink q={post.keywords?.target} /></span></p>
             {post.keywords?.dfs_source === "page" && dfsKw.length === 0 && <p className="text-muted">DataForSEO: no Google rankings for this address yet (checked {day(post.keywords.dfs_at ?? null)}).</p>}
             {post.keywords?.secondary?.length ? <p className="flex flex-wrap gap-1.5">{post.keywords.secondary.map((k) => <span key={k} className={chip}>{k}</span>)}</p> : null}
             {f?.top.length ? (
@@ -112,7 +113,7 @@ export default async function BlogPostPage({ params }: { params: Promise<{ id: s
                 <table className="w-full min-w-[22rem] text-[13px]">
                   <thead><tr className="text-left text-xs text-muted"><th className="py-1 font-medium">Google query</th><th className="py-1 text-right font-medium">Clicks</th><th className="py-1 text-right font-medium">Impressions</th><th className="py-1 text-right font-medium">Position</th></tr></thead>
                   <tbody>{f.top.map((q) => (
-                    <tr key={q.query} className="border-t border-hairline"><td className="py-1.5 pr-3">{q.query}</td><td className="py-1.5 text-right tabular-nums">{fmtInt(q.clicks)}</td><td className="py-1.5 text-right tabular-nums">{fmtInt(q.impressions)}</td><td className="py-1.5 text-right tabular-nums">{q.position?.toFixed(1) ?? "—"}</td></tr>
+                    <tr key={q.query} className="border-t border-hairline"><td className="py-1.5 pr-3"><KeywordLink q={q.query} /></td><td className="py-1.5 text-right tabular-nums">{fmtInt(q.clicks)}</td><td className="py-1.5 text-right tabular-nums">{fmtInt(q.impressions)}</td><td className="py-1.5 text-right tabular-nums">{q.position?.toFixed(1) ?? "—"}</td></tr>
                   ))}</tbody>
                 </table>
               </div>
@@ -148,7 +149,7 @@ export default async function BlogPostPage({ params }: { params: Promise<{ id: s
                 <thead><tr className="text-left text-xs text-muted">{["Keyword", "Rank", "Monthly searches", "Difficulty", "CPC", "Intent"].map((h, i) => <th key={h} className={cn("py-1 font-medium", i > 0 && i < 5 && "text-right")}>{h}</th>)}</tr></thead>
                 <tbody>{dfsKw.map((k) => (
                   <tr key={k.keyword} className="border-t border-hairline">
-                    <td className="py-1.5 pr-3">{k.keyword}</td><td className="py-1.5 text-right tabular-nums">{k.position ?? "—"}</td>
+                    <td className="py-1.5 pr-3"><KeywordLink q={k.keyword} /></td><td className="py-1.5 text-right tabular-nums">{k.position ?? "—"}</td>
                     <td className="py-1.5 text-right tabular-nums">{fmtInt(k.volume)}</td><td className="py-1.5 text-right tabular-nums">{k.difficulty ?? "—"}</td>
                     <td className="py-1.5 text-right tabular-nums">{k.cpc != null ? `$${k.cpc.toFixed(2)}` : "—"}</td><td className="py-1.5 pl-3 capitalize text-secondary">{k.intent ?? "—"}</td>
                   </tr>

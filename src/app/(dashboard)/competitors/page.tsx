@@ -5,6 +5,7 @@ import { EmptyState } from "@/components/dashboard/page-header";
 import { TabHeader } from "@/components/dashboard/tab-header";
 import { CompareTrend } from "@/components/research/compare-trend";
 import { CompetitorManager, DiscoveredActions, KeywordGapForm, ReanalyzeButton } from "@/components/research/competitor-controls";
+import { TrackedCompetitors } from "@/components/research/competitor-remove";
 import { SpendLine } from "@/components/research/chrome";
 import { ResearchTable, type Col } from "@/components/research/research-table";
 import { Tabs } from "@/components/research/tabs";
@@ -277,6 +278,8 @@ export default async function CompetitorsPage() {
           )}
         </section>
       )}
+
+      <TrackedCompetitors canEdit={canEdit} tracked={comp.tracked} removed={target.competitors_excluded} />
 
       <div className="mt-6"><CompareTrend snapshots={comp.snapshots} /></div>
 

@@ -1,6 +1,8 @@
 import "server-only";
 import type { SupabaseClient } from "@supabase/supabase-js";
 import { toNum } from "@/lib/analytics/format";
+import { loadTechnical } from "@/lib/technical/load";
+import type { TechScore } from "@/lib/technical/score";
 import { blogReport, loadBlog, loadBlogPerformance, type BlogReport } from "@/lib/blog/load";
 import type { TrendData } from "@/lib/analytics/trend";
 import { loadCompetitors, type Threat } from "@/lib/dataforseo/competitors";
@@ -76,6 +78,8 @@ export interface ReportData {
   } | null;
   /** blog posts on the client's website (released in the period, coverage); null when none are stored */
   blog: BlogReport | null;
+  /** technical SEO score and recommendations from stored crawl / Lighthouse / site checks; null when nothing is measured */
+  technical: TechScore | null;
   errors: string[];
 }
 
@@ -101,7 +105,7 @@ export async function loadReportData(
   const prev = { p_client_id: clientId, p_start: shift(range.start, -len), p_end: shift(range.start, -1) };
 
   // everything in one parallel batch: each read is a round trip to the database
-  const [overview, ga4Trend, gscTrend, ga4Summary, chCur, chPrev, landing, queries, pages, opps, gbpTrend, gbpSummary, gbpExtras, bing, research, competitors, ai, clarity, blog] = await Promise.all([
+  const [overview, ga4Trend, gscTrend, ga4Summary, chCur, chPrev, landing, queries, pages, opps, gbpTrend, gbpSummary, gbpExtras, bing, research, competitors, ai, clarity, blog, technical] = await Promise.all([
     supabase.rpc("get_seo_overview", args),
     supabase.rpc("get_analytics_trends", { ...args, p_provider: "ga4", p_granularity: "day", p_compare: compare }),
     supabase.rpc("get_analytics_trends", { ...args, p_provider: "gsc", p_granularity: "day", p_compare: compare, p_search_type: "web" }),
@@ -121,6 +125,7 @@ export async function loadReportData(
     loadAi(supabase, clientId),
     loadClarity(supabase, clientId, range),
     loadBlogForReport(supabase, clientId, range),
+    loadTechnical(supabase, clientId).then((t) => (t.score.overall == null ? null : t.score)).catch(() => null),
   ]);
 
   const errors = [overview, ga4Trend, gscTrend].filter((r) => r.error).map((r) => r.error!.message);
@@ -156,7 +161,7 @@ export async function loadReportData(
     // a missing RPC (migration not yet applied) must not break the report
     opportunities: opps.error ? null : (opps.data as Opportunities),
     ...gbpExtras,
-    bing, research, competitors, ai, clarity, blog,
+    bing, research, competitors, ai, clarity, blog, technical,
     errors: opps.error ? ["opportunities"] : [],
   };
 }

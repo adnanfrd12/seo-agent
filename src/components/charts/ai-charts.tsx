@@ -1,7 +1,8 @@
 "use client";
 
 import { useId, useMemo, useState } from "react";
-import { CartesianGrid, Line, LineChart, ResponsiveContainer, Tooltip, XAxis, YAxis } from "recharts";
+import { Bar, BarChart, CartesianGrid, Line, LineChart, ResponsiveContainer, Tooltip, XAxis, YAxis } from "recharts";
+import { ChartTypeToggle, type ChartKind } from "./chart-type-toggle";
 import { cn } from "@/lib/utils";
 
 /**
@@ -218,8 +219,34 @@ export function Heatmap({ title, sub, rows, cols, cells, scale = "seq", unit = "
 /* ------------------------------------------------------------------ columns (distribution) */
 export function Columns({ title, sub, bins, valueLabel }: { title: string; sub?: string; bins: { label: string; value: number; highlight?: boolean }[]; valueLabel: string }) {
   const max = Math.max(1, ...bins.map((b) => b.value));
+  const [kind, setKind] = useState<ChartKind>("bar");
+  const right = (
+    <span className="inline-flex items-center gap-2 text-xs text-muted">
+      {bins.length > 1 && <ChartTypeToggle value={kind} onChange={setKind} />}
+      {valueLabel}
+    </span>
+  );
+  if (kind !== "bar") {
+    return (
+      <Panel title={title} sub={sub} right={right}>
+        <div className="h-[12.5rem]" role="img" aria-label={`${title}: ${bins.map((b) => `${b.label} ${b.value}`).join(", ")}`}>
+          <ResponsiveContainer width="100%" height="100%">
+            <LineChart data={bins} margin={{ top: 12, right: 12, bottom: 0, left: -8 }}>
+              <CartesianGrid vertical={false} stroke="var(--hairline)" />
+              <XAxis dataKey="label" tick={{ fontSize: 11, fill: "var(--muted)" }} tickLine={false} axisLine={{ stroke: "var(--border)" }} interval={0} />
+              <YAxis tick={{ fontSize: 11, fill: "var(--muted)" }} tickLine={false} axisLine={false} width={44} allowDecimals={false} />
+              <Tooltip formatter={(v) => [nf.format(Number(v)), valueLabel]}
+                contentStyle={{ background: "var(--surface)", border: "1px solid var(--border)", borderRadius: 8, fontSize: 12 }} cursor={{ stroke: "var(--border-strong)" }} />
+              <Line dataKey="value" stroke="var(--series)" strokeWidth={2} dot={{ r: 3, strokeWidth: 0, fill: "var(--series)" }} isAnimationActive={false}
+                label={{ position: "top", fontSize: 11, fill: "var(--secondary)" }} />
+            </LineChart>
+          </ResponsiveContainer>
+        </div>
+      </Panel>
+    );
+  }
   return (
-    <Panel title={title} sub={sub} right={<span className="text-xs text-muted">{valueLabel}</span>}>
+    <Panel title={title} sub={sub} right={right}>
       <div className="flex h-40 items-end gap-2" role="img" aria-label={`${title}: ${bins.map((b) => `${b.label} ${b.value}`).join(", ")}`}>
         {bins.map((b) => (
           <div key={b.label} className="flex h-full min-w-0 flex-1 flex-col items-center justify-end gap-1" title={`${b.label}: ${b.value}`}>
@@ -247,6 +274,7 @@ export function MultiLine({ title, sub, metrics, initialHidden = [] }: { title: 
   const id = useId();
   const [mk, setMk] = useState(metrics[0]?.key);
   const [hidden, setHidden] = useState<Set<string>>(() => new Set(initialHidden));
+  const [kind, setKind] = useState<ChartKind>("line");
   const m = metrics.find((x) => x.key === mk) ?? metrics[0];
   const data = useMemo(() => {
     if (!m) return [];
@@ -257,17 +285,34 @@ export function MultiLine({ title, sub, metrics, initialHidden = [] }: { title: 
   const fmt = (v: unknown) => (typeof v === "number" ? `${m.reverse ? "#" : ""}${nf.format(v)}${m.unit ?? ""}` : "—");
   const points = data.length;
   return (
-    <Panel title={title} sub={sub} right={metrics.length > 1 ? (
-      <label className="inline-flex items-center gap-2 text-xs text-muted" htmlFor={`${id}-m`}>Metric
-        <select id={`${id}-m`} value={m.key} onChange={(e) => setMk(e.target.value)} className="h-8 rounded-md border border-border-strong bg-surface px-2 text-[13px] text-foreground">
-          {metrics.map((x) => <option key={x.key} value={x.key}>{x.label}</option>)}
-        </select>
-      </label>
-    ) : undefined}>
+    <Panel title={title} sub={sub} right={(
+      <div className="flex flex-wrap items-center gap-2">
+        {points >= 2 && <ChartTypeToggle value={kind} onChange={setKind} />}
+        {metrics.length > 1 && (
+          <label className="inline-flex items-center gap-2 text-xs text-muted" htmlFor={`${id}-m`}>Metric
+            <select id={`${id}-m`} value={m.key} onChange={(e) => setMk(e.target.value)} className="h-8 rounded-md border border-border-strong bg-surface px-2 text-[13px] text-foreground">
+              {metrics.map((x) => <option key={x.key} value={x.key}>{x.label}</option>)}
+            </select>
+          </label>
+        )}
+      </div>
+    )}>
       <div className="grid gap-4 lg:grid-cols-[minmax(0,1fr)_13rem]">
         <div className="h-72 min-w-0">
           {points < 2 ? <p className="grid h-full place-items-center rounded-lg border border-dashed border-border text-sm text-muted">The trend appears after the second check.</p> : (
             <ResponsiveContainer width="100%" height="100%">
+              {kind === "bar" ? (
+                <BarChart data={data} margin={{ top: 8, right: 12, bottom: 0, left: -8 }} barCategoryGap="18%">
+                  <CartesianGrid vertical={false} stroke="var(--hairline)" />
+                  <XAxis dataKey="date" tickFormatter={shortDate} tick={{ fontSize: 11, fill: "var(--muted)" }} tickLine={false} axisLine={{ stroke: "var(--border)" }} minTickGap={24} />
+                  <YAxis reversed={m.reverse} tick={{ fontSize: 11, fill: "var(--muted)" }} tickLine={false} axisLine={false} width={44} allowDecimals={false} tickFormatter={(v) => fmt(v)} />
+                  <Tooltip labelFormatter={(d) => shortDate(String(d))} formatter={(v, name) => [fmt(v), m.series.find((s) => s.key === name)?.label ?? String(name)]}
+                    contentStyle={{ background: "var(--surface)", border: "1px solid var(--border)", borderRadius: 8, fontSize: 12 }} cursor={{ fill: "var(--surface-muted)" }} />
+                  {m.series.filter((s) => !hidden.has(s.key)).map((s) => (
+                    <Bar key={s.key} dataKey={s.key} name={s.key} fill={s.color} radius={[2, 2, 0, 0]} maxBarSize={14} isAnimationActive={false} />
+                  ))}
+                </BarChart>
+              ) : (
               <LineChart data={data} margin={{ top: 8, right: 12, bottom: 0, left: -8 }}>
                 <CartesianGrid vertical={false} stroke="var(--hairline)" />
                 <XAxis dataKey="date" tickFormatter={shortDate} tick={{ fontSize: 11, fill: "var(--muted)" }} tickLine={false} axisLine={{ stroke: "var(--border)" }} minTickGap={24} />
@@ -278,6 +323,7 @@ export function MultiLine({ title, sub, metrics, initialHidden = [] }: { title: 
                   <Line key={s.key} dataKey={s.key} name={s.key} stroke={s.color} strokeWidth={2} dot={{ r: 3, strokeWidth: 0, fill: s.color }} activeDot={{ r: 5, stroke: "var(--surface)", strokeWidth: 2 }} connectNulls isAnimationActive={false} />
                 ))}
               </LineChart>
+              )}
             </ResponsiveContainer>
           )}
         </div>

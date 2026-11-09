@@ -1,6 +1,7 @@
 import Link from "next/link";
 import { Columns, Panel } from "@/components/charts/ai-charts";
 import { BarList } from "@/components/charts/bar-list";
+import { keywordHref } from "@/lib/keyword-href";
 import { GeoSpread } from "@/components/charts/blog-charts";
 import { Highlights } from "@/components/dashboard/highlights";
 import { StatCard } from "@/components/dashboard/kpi-card";
@@ -142,7 +143,7 @@ export default async function BlogPage({ searchParams }: { searchParams: Promise
     const x = kwBest.get(k.keyword);
     if (!x || (k.position ?? 999) < (x.position ?? 999)) kwBest.set(k.keyword, { volume: k.volume ?? 0, position: k.position, post: p.title });
   }
-  const topKw = [...kwBest.entries()].sort((x, y) => y[1].volume - x[1].volume).slice(0, 10);
+  const topKw = [...kwBest.entries()].sort((x, y) => y[1].volume - x[1].volume).slice(0, 50);
   const kwPosts = posts.filter((p) => p.keywords?.dfs?.length).length;
 
   const rows = posts.map((p) => {
@@ -235,7 +236,7 @@ export default async function BlogPage({ searchParams }: { searchParams: Promise
       <div className="mt-4 grid gap-4 lg:grid-cols-3">
         <BarList title="Biggest keywords the blog ranks for" valueLabel="Monthly searches (DataForSEO)"
           emptyText={kwPosts ? "No search volume yet." : "Matched daily from the DataForSEO keyword data, or fetch it per post from the DataForSEO menu."}
-          items={topKw.map(([k, x]) => ({ label: `${k} · #${x.position ?? "—"}`, value: x.volume }))} />
+          limit={10} items={topKw.map(([k, x]) => ({ label: `${k} · #${x.position ?? "—"}`, value: x.volume, href: keywordHref(k) }))} />
         <BarList title="Posts with the most clicks" valueLabel="Clicks · selected period" emptyText={gscOn ? "No post had clicks or impressions in this period." : "Connect Search Console to see clicks per post."}
           items={unique(topClicks.map(({ p, f }) => ({ label: p.title, url: p.url, value: f!.clicks, detail: `${fmtInt(f!.impressions)} impr` })))} />
         <Columns title="Post length" sub="Words per post (600+ recommended)" valueLabel="Posts"
@@ -255,13 +256,13 @@ export default async function BlogPage({ searchParams }: { searchParams: Promise
           ]}
           columns={[
             { key: "published", label: "Published", type: "date" }, { key: "title", label: "Post", type: "link" }, { key: "words", label: "Words", type: "int" },
-            { key: "keyword", label: "Target keyword" }, { key: "area", label: "Neighbourhood" }, { key: "zip", label: "ZIP" },
+            { key: "keyword", label: "Target keyword", type: "keyword" }, { key: "area", label: "Neighbourhood" }, { key: "zip", label: "ZIP" },
             { key: "crossings", label: "Road crossings", type: "int" }, { key: "landmarks", label: "Landmarks", type: "int" }, { key: "map", label: "Map", type: "badge" },
             { key: "service", label: "Service page" }, { key: "suggested", label: "Suggested service page" },
             { key: "links_out", label: "Internal links", type: "int" }, { key: "links_in", label: "Links in", type: "int", hint: "Other posts that link to this one" },
             { key: "clicks", label: "Clicks", type: "int" }, { key: "impressions", label: "Impressions", type: "int" }, { key: "position", label: "Position", type: "dec" },
-            { key: "top_query", label: "Top query" },
-            { key: "dfs_kw", label: "Top keyword (DataForSEO)" }, { key: "dfs_volume", label: "Volume", type: "int" }, { key: "dfs_pos", label: "Rank", type: "int" }, { key: "dfs_count", label: "Ranking keywords", type: "int" },
+            { key: "top_query", label: "Top query", type: "keyword" },
+            { key: "dfs_kw", label: "Top keyword (DataForSEO)", type: "keyword" }, { key: "dfs_volume", label: "Volume", type: "int" }, { key: "dfs_pos", label: "Rank", type: "int" }, { key: "dfs_count", label: "Ranking keywords", type: "int" },
             { key: "issues", label: "Issues", type: "int" }, { key: "read", label: "Read", type: "open" },
           ]} />
       </div>

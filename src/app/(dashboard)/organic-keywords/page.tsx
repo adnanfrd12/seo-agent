@@ -145,7 +145,7 @@ export default async function OrganicKeywordsPage() {
         <ResearchTable title="Ranking keywords" rows={rows} searchKeys={["keyword", "url"]} initialSort={{ key: "traffic", dir: "desc" }} csvName={`organic-keywords-${target.domain}`}
           ranges={[{ key: "position", label: "Position" }, { key: "volume", label: "Volume / mo" }, { key: "difficulty", label: "Difficulty" }, { key: "traffic", label: "Est. traffic" }]} facets={[{ key: "intent", label: "Intent" }]}
           columns={[
-            { key: "keyword", label: "Keyword" }, { key: "position", label: "Position", type: "int", hint: "Absolute Google position" },
+            { key: "keyword", label: "Keyword", type: "keyword" }, { key: "position", label: "Position", type: "int", hint: "Absolute Google position" },
             { key: "previous", label: "Change", type: "change", hint: "Movement since the previous update" }, { key: "volume", label: "Volume / mo", type: "int" },
             { key: "traffic", label: "Est. traffic", type: "dec" }, { key: "difficulty", label: "Difficulty", type: "int" }, { key: "cpc", label: "CPC", type: "usd" },
             { key: "intent", label: "Intent", type: "badge" }, { key: "url", label: "Ranking page", type: "url" },

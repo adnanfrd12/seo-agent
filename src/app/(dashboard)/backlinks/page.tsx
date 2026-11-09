@@ -10,6 +10,7 @@ import { LinkChangeCheck, LinkGapForm, RefreshControls } from "@/components/rese
 import { ResearchTable, type Col } from "@/components/research/research-table";
 import { Tabs } from "@/components/research/tabs";
 import { BarList } from "@/components/charts/bar-list";
+import { DivergingBars } from "@/components/charts/diverging-bars";
 import { fmtInt } from "@/lib/analytics/format";
 import { BrokenLinksCheck } from "./broken-links-check";
 import { detectLinkSpike, estimate, TIER1, TIER2, type LinkChanges } from "@/lib/dataforseo/research";
@@ -213,6 +214,16 @@ export default async function BacklinksPage() {
           { key: "lost_domains", label: "Lost domains", data: nlPts("lost_domains") },
         ]} />
       </div>
+
+      <section className="mt-6" aria-label="Links gained and lost each month">
+        <h2 className="mb-3 text-base font-semibold">Links gained and lost each month</h2>
+        <div className="grid gap-4 lg:grid-cols-2">
+          <DivergingBars title="New and lost backlinks" sub="New links above the line, lost links below" upLabel="New backlinks" downLabel="Lost backlinks" upColor="var(--positive)"
+            data={nl.map((m) => ({ date: m.date!, up: m.new_backlinks, down: m.lost_backlinks }))} />
+          <DivergingBars title="New and lost referring domains" sub="Sites that started linking above the line, sites that stopped below" upLabel="New referring domains" downLabel="Lost referring domains" upColor="var(--series)"
+            data={nl.map((m) => ({ date: m.date!, up: m.new_domains, down: m.lost_domains }))} />
+        </div>
+      </section>
 
       {deep && (
         <div className="mt-6 grid gap-4 lg:grid-cols-3">

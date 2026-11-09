@@ -4,6 +4,7 @@ import { useId, useState } from "react";
 import {
   Area, Bar, CartesianGrid, ComposedChart, Line, ResponsiveContainer, Tooltip, XAxis, YAxis,
 } from "recharts";
+import { ChartTypeToggle, type ChartKind } from "./chart-type-toggle";
 
 export interface TrendPoint {
   date: string;
@@ -53,7 +54,9 @@ export function TrendChart({
   const [table, setTable] = useState(false);
   const id = useId();
   const hasPrev = data.some((d) => d.previous != null);
-  const kind: TrendVariant = variant ?? (format === "int" ? "bar" : "line");
+  const [userKind, setUserKind] = useState<ChartKind | null>(null);
+  const baseKind: TrendVariant = variant ?? (format === "int" ? "bar" : "line");
+  const kind: TrendVariant = userKind ?? baseKind;
   const gradient = `${id.replace(/[^a-zA-Z0-9]/g, "")}-fill`;
 
   return (
@@ -65,6 +68,9 @@ export function TrendChart({
         </div>
         <div className="flex flex-wrap items-center gap-2 text-xs text-muted">
           {toolbar}
+          {!compact && !table && data.length > 0 && (
+            <ChartTypeToggle value={kind === "step" ? "line" : kind} onChange={setUserKind} options={["bar", "line", "area"]} />
+          )}
           {!compact && <button
             onClick={() => setTable((v) => !v)}
             aria-pressed={table}

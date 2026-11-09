@@ -295,7 +295,7 @@ export default async function AiVisibilityPage() {
                       <h3 className="text-sm font-semibold">Google AI Overviews on your tracked keywords</h3>
                       {aio.length ? (
                         <ResearchTable title="AI Overviews (from Rank Tracking)" rows={aio} pageSize={10} facets={[{ key: "shown", label: "AI Overview shown" }, { key: "you", label: "You" }]}
-                          columns={[{ key: "keyword", label: "Keyword" }, { key: "device", label: "Device", type: "badge" }, { key: "shown", label: "AI Overview", type: "badge" }, { key: "you", label: "Your site", type: "badge" }, { key: "sources", label: "Sources it cites" }, { key: "checked", label: "Checked", type: "date" }]}
+                          columns={[{ key: "keyword", label: "Keyword", type: "keyword" }, { key: "device", label: "Device", type: "badge" }, { key: "shown", label: "AI Overview", type: "badge" }, { key: "you", label: "Your site", type: "badge" }, { key: "sources", label: "Sources it cites" }, { key: "checked", label: "Checked", type: "date" }]}
  />
                       ) : <p className="text-sm text-muted">Appears after the next Rank Tracking check.</p>}
                     </section>

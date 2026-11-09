@@ -228,7 +228,7 @@ export default async function RankTrackingPage() {
               note={`Pinned keywords are listed first. “Live Google page” opens the same search on Google${rows.some((r) => !r.checkUrl) ? " (for checks made before the link was recorded, it is rebuilt from the keyword and the search location)" : ""}.`}
               columns={[
                 { key: "pinned", label: "Pin", type: "badge" },
-                { key: "keyword", label: "Keyword" }, { key: "position", label: "Position", type: "int", hint: `Place in Google's organic results; empty = not in the top ${RANK_DEPTH}` },
+                { key: "keyword", label: "Keyword", type: "keyword" }, { key: "position", label: "Position", type: "int", hint: `Place in Google's organic results; empty = not in the top ${RANK_DEPTH}` },
                 { key: "previous", label: "Change", type: "change", hint: "Movement since the previous check" }, { key: "best", label: "Best", type: "int" },
                 { key: "url", label: "Ranking page", type: "url" }, { key: "device", label: "Device", type: "badge" },
                 { key: "volume", label: "Volume", type: "int", hint: "Monthly Google searches (DataForSEO estimate)" }, { key: "difficulty", label: "KD", type: "int", hint: "Keyword difficulty, 0-100" },
@@ -245,7 +245,7 @@ export default async function RankTrackingPage() {
           {serpRows.length > 0 && (
             <div className="mt-6 space-y-3">
               <ResearchTable title="Who owns the rest of the results page" rows={serpRows} searchKeys={["keyword", "local_pack", "ai_overview", "ads"]} pageSize={10}
-                columns={[{ key: "keyword", label: "Keyword" }, { key: "device", label: "Device", type: "badge" }, { key: "local_pack", label: "Map pack (★ = you)" },
+                columns={[{ key: "keyword", label: "Keyword", type: "keyword" }, { key: "device", label: "Device", type: "badge" }, { key: "local_pack", label: "Map pack (★ = you)" },
                   { key: "ai_overview", label: "AI Overview cites" }, { key: "featured_snippet", label: "Featured snippet" }, { key: "ads", label: "Ads shown by" }]} />
               {advertisers.length > 0 && (
                 <BarList title="Who buys ads on your keywords" valueLabel="Keywords with their ad" items={advertisers.map(([d, n]) => ({ label: d, value: n }))} />

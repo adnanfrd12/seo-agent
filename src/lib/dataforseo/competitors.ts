@@ -236,7 +236,10 @@ export async function loadCompetitors(supabase: SupabaseClient, clientId: string
       return [{ competitor: d, total: data.total, rows: data.rows, fetchedAt: r.fetched_at as string }];
     });
   };
-  const snapshots = (snaps ?? []) as SnapshotRow[];
+  // removed competitors (competitors_excluded) stay hidden everywhere: their stored history isn't shown
+  const gone = new Set((target?.competitors_excluded ?? []).map((d) => d.toLowerCase().replace(/^www\./, "")));
+  const isGone = (d: string) => gone.has(d.toLowerCase().replace(/^www\./, ""));
+  const snapshots = ((snaps ?? []) as SnapshotRow[]).filter((s) => s.is_self || !isGone(s.domain));
   const latestAt = snapshots.length ? snapshots.reduce((a, s) => (s.snapshot_date > a ? s.snapshot_date : a), "") : null;
   const tracked = target ? pickTracked(target, auto?.data ?? []) : [];
   const byCompetitor = (endpoint: string) => {
@@ -249,7 +252,7 @@ export async function loadCompetitors(supabase: SupabaseClient, clientId: string
     });
   };
   return {
-    target, auto, tracked, snapshots, gaps: list("kw_gap"), shared: list("kw_shared"), latestAt, threats: detectThreats(snapshots),
+    target, auto, tracked, snapshots, gaps: list("kw_gap").filter((g) => !isGone(g.competitor)), shared: list("kw_shared").filter((g) => !isGone(g.competitor)), latestAt, threats: detectThreats(snapshots),
     pages: byCompetitor("comp_pages").map((x) => ({ competitor: x.competitor, rows: x.data as Row[], fetchedAt: x.fetchedAt })),
     links: byCompetitor("comp_links") as CompetitorData["links"],
   };

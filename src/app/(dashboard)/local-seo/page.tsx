@@ -12,6 +12,8 @@ import { ResearchTable } from "@/components/research/research-table";
 import { Tabs } from "@/components/research/tabs";
 import { fmtInt, fmtPercent } from "@/lib/analytics/format";
 import { gridRivals, loadLocal, reviewStats, type Grid, type Review } from "@/lib/dataforseo/local";
+import { loadPosts } from "@/lib/dataforseo/gbp-posts";
+import { PostsSection } from "./posts-section";
 import { researchPage } from "@/lib/dataforseo/view";
 import type { Highlight } from "@/lib/overview/highlights";
 import { createAdminClient } from "@/lib/supabase/admin";
@@ -56,6 +58,7 @@ export default async function LocalSeoPage() {
   if (!configured) return <>{header}<EmptyState title="DataForSEO isn't configured" body="Add DATAFORSEO_LOGIN and DATAFORSEO_PASSWORD to the environment, then redeploy." action={{ href: "/integrations", label: "Open Integrations" }} /></>;
 
   const local = await loadLocal(await createClient(), createAdminClient(), client.id);
+  const postRows = await loadPosts(await createClient(), client.id);
   if (!local.identity) return <>{header}<EmptyState title="No Business Profile connected" body="Connect Google Business Profile (or Local Brand Manager) for this client so the business can be found on Google Maps." action={{ href: "/integrations", label: "Open Integrations" }} /></>;
 
   const p = local.profile?.data ?? null;
@@ -238,6 +241,7 @@ export default async function LocalSeoPage() {
                   </div>
                 ),
               }] : []),
+              { key: "posts", label: "Posts", badge: postRows.reduce((a, r) => a + r.posts.length, 0), content: <PostsSection rows={postRows} canEdit={canEdit} /> },
             ]} />
           </div>
           <div className="mt-6"><SpendLine budget={budget} /></div>

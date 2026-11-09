@@ -1,5 +1,6 @@
 import { FillColumns } from "@/components/charts/research-charts";
 import { BarList } from "@/components/charts/bar-list";
+import { KeywordLink } from "@/components/research/keyword-link";
 import { DivergingBars, Fill } from "@/components/charts/ops-charts";
 import { TabHeader } from "@/components/dashboard/tab-header";
 import { Highlights } from "@/components/dashboard/highlights";
@@ -88,7 +89,7 @@ export default async function OpportunitiesPage({ searchParams }: { searchParams
           </section>
           <ReportTable<Row> title="Quick wins: visible but under-clicked" source="GSC" empty="No queries in positions 4–20 with enough impressions."
             rows={o.quick_wins} columns={[
-              { label: "Query", render: (x) => s(x.query) },
+              { label: "Query", render: (x) => <KeywordLink q={x.query} /> },
               { label: "Ranking page", render: (x) => <span className="break-all text-xs">{x.page ? url(x.page) : "—"}</span> },
               { label: "Impr.", align: "right", render: (x) => fmtInt(n(x.impressions)) },
               { label: "Clicks", align: "right", render: (x) => fmtInt(n(x.clicks)) },
@@ -98,13 +99,13 @@ export default async function OpportunitiesPage({ searchParams }: { searchParams
             ]} />
           <div className="grid items-start gap-6 lg:grid-cols-2 [&>*]:min-w-0">
             <ReportTable<Row> title="Keywords losing positions" source="GSC" empty="None above the thresholds." rows={o.declining_keywords} columns={[
-              { label: "Keyword", render: (x) => s(x.query) },
+              { label: "Keyword", render: (x) => <KeywordLink q={x.query} /> },
               { label: "Page", render: (x) => <span className="break-all text-xs">{x.page ? url(x.page) : "—"}</span> },
               { label: "Prior → now", align: "right", render: (x) => `${fmtDecimal(n(x.previous_position))} → ${fmtDecimal(n(x.current_position))}` },
               { label: "Clicks Δ", align: "right", render: (x) => fmtInt(n(x.clicks_change)) },
             ]} />
             <ReportTable<Row> title="Keywords moving up" source="GSC" empty="None above the thresholds." rows={o.improving_keywords} columns={[
-              { label: "Keyword", render: (x) => s(x.query) },
+              { label: "Keyword", render: (x) => <KeywordLink q={x.query} /> },
               { label: "Prior → now", align: "right", render: (x) => `${fmtDecimal(n(x.previous_position))} → ${fmtDecimal(n(x.current_position))}` },
               { label: "Clicks", align: "right", render: (x) => fmtInt(n(x.clicks)) },
             ]} />
@@ -118,7 +119,7 @@ export default async function OpportunitiesPage({ searchParams }: { searchParams
             { label: "Same period last year", align: "right", render: (x) => (x.same_period_last_year_clicks == null ? "no data" : `${fmtInt(n(x.same_period_last_year_clicks))} clicks`) },
           ]} />
           <ReportTable<Row> title={`New queries (${o.newly_clicked_queries} newly clicked)`} source="GSC" empty="No queries without impressions in the previous period." rows={o.new_queries} columns={[
-            { label: "Query", render: (x) => s(x.query) },
+            { label: "Query", render: (x) => <KeywordLink q={x.query} /> },
             { label: "Type", render: (x) => (x.kind === "newly_clicked" ? "Newly clicked" : "Newly observed") },
             { label: "Best page", render: (x) => <span className="break-all text-xs">{x.page ? url(x.page) : "—"}</span> },
             { label: "Impr.", align: "right", render: (x) => fmtInt(n(x.impressions)) },
@@ -127,7 +128,7 @@ export default async function OpportunitiesPage({ searchParams }: { searchParams
           <ReportTable<Row> title="Possible keyword cannibalization" source="GSC"
             empty={o.has_query_page_data ? "No query split its impressions across two or more pages (≥10% each)." : "Needs query × page data from the next Search Console sync."}
             rows={o.cannibalization} columns={[
-              { label: "Query", render: (x) => s(x.query) },
+              { label: "Query", render: (x) => <KeywordLink q={x.query} /> },
               { label: "Competing pages", render: (x) => (
                 <ul className="space-y-0.5 text-xs">{(x.detail as Row[]).map((p, i) => <li key={i} className="break-all">{url(p.page)} · {fmtInt(n(p.impressions))} impr · pos {fmtDecimal(n(p.position))} · {fmtPercent(n(p.share), 0)}</li>)}</ul>) },
               { label: "Impr.", align: "right", render: (x) => fmtInt(n(x.impressions)) },

@@ -1,4 +1,6 @@
+import Link from "next/link";
 import { ArrowDown, ArrowUp, Info } from "lucide-react";
+import { keywordHref } from "@/lib/keyword-href";
 import { Columns } from "@/components/charts/ai-charts";
 import { PositionScatter, ShareDonut, StackedTimeBars } from "@/components/charts/analytics-charts";
 import { MetricTrend } from "@/components/charts/metric-trend";
@@ -345,7 +347,7 @@ export default async function SearchConsolePage({ searchParams }: { searchParams
             <ResearchTable title="By country · web search" rows={bdRows(bd.countries)} columns={bdCols("Country")} initialSort={{ key: "clicks", dir: "desc" }} pageSize={8} csvName={`gsc-countries-${range.start}-${range.end}`} empty="No country data in this period." />
           </div>
           <ResearchTable title={`New search queries since ${bd.recent_start}`} rows={bd.new_queries.map((x) => ({ ...x, clicks: Number(x.clicks), impressions: Number(x.impressions), position: x.position == null ? null : Number(Number(x.position).toFixed(1)) }))}
-            columns={[{ key: "query", label: "Query" }, { key: "clicks", label: "Clicks", type: "int" }, { key: "impressions", label: "Impressions", type: "int" }, { key: "position", label: "Avg position", type: "dec" }]}
+            columns={[{ key: "query", label: "Query", type: "keyword" }, { key: "clicks", label: "Clicks", type: "int" }, { key: "impressions", label: "Impressions", type: "int" }, { key: "position", label: "Avg position", type: "dec" }]}
             searchKeys={["query"]} initialSort={{ key: "impressions", dir: "desc" }} pageSize={10} csvName={`gsc-new-queries-${range.end}`}
             empty="No new queries in the last 7 days of this range." />
         </div>
@@ -404,7 +406,7 @@ export default async function SearchConsolePage({ searchParams }: { searchParams
             emptyText={kwSearch ? `No queries containing “${kwSearch}” in this period.` : "No queries for this period."}
             csvHref={`${exportBase}&kind=keywords&sort=${kwSort}&dir=${kwDir}${kwSearch ? `&search=${encodeURIComponent(kwSearch)}` : ""}`}
             columns={[
-              { key: "query", label: "Search query", sort: "query", render: (r) => <span className="break-words">{r.query}</span> },
+              { key: "query", label: "Search query", sort: "query", render: (r) => <Link href={keywordHref(r.query)} className="break-words underline decoration-border-strong underline-offset-2 hover:decoration-foreground">{r.query}</Link> },
               { key: "clicks", label: "Clicks", sort: "clicks", align: "right", render: (r) => fmtInt(r.clicks) },
               { key: "impr", label: "Impressions", sort: "impressions", align: "right", render: (r) => fmtInt(r.impressions) },
               { key: "ctr", label: "CTR", sort: "ctr", align: "right", render: (r) => fmtPercent(toNum(r.ctr), 2) },

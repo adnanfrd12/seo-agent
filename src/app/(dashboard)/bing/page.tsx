@@ -1,4 +1,5 @@
 import { Columns } from "@/components/charts/ai-charts";
+import { KeywordLink } from "@/components/research/keyword-link";
 import { PositionScatter, ShareDonut } from "@/components/charts/analytics-charts";
 import { MetricTrend } from "@/components/charts/metric-trend";
 import { FilterSelect } from "@/components/dashboard/filter-select";
@@ -195,7 +196,7 @@ export default async function BingPage({ searchParams }: { searchParams: Promise
       <div className="mt-6 space-y-6">
         <Table title="Search queries" rows={s.queries} empty="No query data for this period."
           cols={[
-            { label: "Query", render: (r) => <span className="break-words">{r.query}</span> },
+            { label: "Query", render: (r) => <KeywordLink q={r.query} /> },
             { label: "Clicks", right: true, render: (r) => fmtInt(r.clicks) },
             { label: "Impressions", right: true, render: (r) => fmtInt(r.impressions) },
             { label: "CTR", right: true, render: (r) => fmtPercent(toNum(r.ctr), 2) },

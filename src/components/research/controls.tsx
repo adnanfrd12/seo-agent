@@ -130,7 +130,7 @@ export function LinkChangeCheck({ canEdit }: { canEdit: boolean }) {
 }
 
 const KW_COLS: Col[] = [
-  { key: "keyword", label: "Keyword" }, { key: "volume", label: "Volume / mo", type: "int", hint: "Average monthly Google searches" },
+  { key: "keyword", label: "Keyword", type: "keyword" }, { key: "volume", label: "Volume / mo", type: "int", hint: "Average monthly Google searches" },
   { key: "difficulty", label: "Difficulty", type: "int", hint: "0-100: how hard it is to rank in the top 10" },
   { key: "cpc", label: "CPC", type: "usd", hint: "Average cost per click in Google Ads" }, { key: "competition", label: "Ad competition", type: "badge" },
   { key: "intent", label: "Intent", type: "badge" }, { key: "trend", label: "12-mo trend", type: "spark" },

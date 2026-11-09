@@ -1,6 +1,6 @@
 import {
   BarChart3, CalendarCheck, Globe, Link2, ListOrdered, SearchCheck, Swords, CalendarRange, FileUp, History, LayoutDashboard, Lightbulb, MapPin, MousePointerClick, Plug,
-  Bot, GraduationCap, Newspaper, ScanSearch, Search, Settings, Sparkles, Star, TrendingUp, type LucideIcon,
+  Bot, GraduationCap, MessagesSquare, Newspaper, ScanSearch, Search, Settings, Share2, ShieldCheck, Sparkles, Star, TrendingUp, Wrench, type LucideIcon,
 } from "lucide-react";
 
 export interface NavItem { href: string; label: string; icon: LucideIcon }
@@ -16,6 +16,7 @@ export const NAV: NavGroup[] = [
       { href: "/business-profile", label: "Google Business Profile", icon: MapPin },
       { href: "/bing", label: "Bing Webmaster", icon: Globe },
       { href: "/clarity", label: "Microsoft Clarity", icon: MousePointerClick },
+      { href: "/social", label: "Social Media", icon: Share2 },
     ],
   },
   {
@@ -27,8 +28,10 @@ export const NAV: NavGroup[] = [
       { href: "/keyword-research", label: "Keyword Research", icon: SearchCheck },
       { href: "/rank-tracking", label: "Rank Tracking", icon: TrendingUp },
       { href: "/local-seo", label: "Local SEO & Reviews", icon: Star },
+      { href: "/reviews", label: "Reviews (all platforms)", icon: MessagesSquare },
       { href: "/ai-visibility", label: "AI Visibility", icon: Bot },
       { href: "/site-audit", label: "Site Audit", icon: ScanSearch },
+      { href: "/technical-seo", label: "Technical SEO", icon: ShieldCheck },
       { href: "/blog", label: "Blog Content", icon: Newspaper },
     ],
   },
@@ -39,6 +42,7 @@ export const NAV: NavGroup[] = [
       { href: "/insights", label: "AI SEO Insights", icon: Sparkles },
       { href: "/opportunities", label: "SEO Opportunities", icon: Lightbulb },
       { href: "/strategy", label: "30-Day Strategy", icon: CalendarCheck },
+      { href: "/toolkit", label: "SEO Toolkit", icon: Wrench },
     ],
   },
   {

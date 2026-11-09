@@ -11,7 +11,9 @@ import { fetchProfile, localIdentity, pollReviews, PROFILE_EST, REVIEWS_EST, sta
 import { runRankChecks } from "@/lib/dataforseo/rank";
 import { ensure, refreshCore, resolveTarget, SPECS, trackLinkChanges } from "@/lib/dataforseo/research";
 import { serverEnv } from "@/lib/env";
+import { runTechnicalChecks, TECH_ENDPOINT, TECH_EVERY_DAYS } from "@/lib/technical/checks";
 import { loggedRun } from "@/lib/jobs/log";
+import { runSiteScan, SCAN_EVERY_DAYS, TK } from "@/lib/toolkit/site-scan";
 import { createAdminClient } from "@/lib/supabase/admin";
 
 export const maxDuration = 300;
@@ -155,6 +157,20 @@ async function handle(request: NextRequest) {
             }
             out.audits = { started, stopped: auditStopped };
 
+            // 1c2. weekly free technical checks (robots.txt, sitemaps, ~25 pages of HTML) for active clients; skipped while fresh
+            const { data: techRows } = await admin.from("dfs_cache").select("client_id, fetched_at").eq("endpoint", TECH_ENDPOINT);
+            const lastTech = new Map((techRows ?? []).map((r) => [r.client_id as string, Date.parse(r.fetched_at as string)]));
+            let tech = 0;
+            for (const id of ids.filter((x) => active.has(x))) {
+              if (Date.now() - (lastTech.get(id) ?? 0) < TECH_EVERY_DAYS * 86_400_000) continue;
+              if (Date.now() > deadline - 60_000) break;
+              const target = await resolveTarget(admin, id);
+              if (!target || !target.auto_refresh) continue;
+              try { await runTechnicalChecks(admin, id, target.domain); tech++; } catch { /* retried tomorrow */ }
+              break; // one client per run: a slow site can take 1-2 minutes and the steps below need the time
+            }
+            out.technicalChecks = { refreshed: tech };
+
             // 1d. weekly rank checks for the keywords each active client tracks (a few cents per client)
             let ranked = 0, rankedCost = 0;
             let rankStopped: string | null = null;
@@ -229,6 +245,26 @@ async function handle(request: NextRequest) {
           try { if ((await refreshCrux(admin, id, await lighthouseUrls(admin, id))).source) crux++; } catch { /* retried tomorrow */ }
         }
         out.realUserData = { refreshed: crux };
+      } catch { /* never blocks the alerts */ }
+
+      // 2d. weekly Toolkit site scan (free, own website): SEO drift re-check, AI readiness, images, hreflang, planner.
+      // One active client per run (a scan takes 1-3 minutes); the oldest scan goes first.
+      try {
+        if (Date.now() < deadline - 170_000) { // a slow site takes up to ~2.5 minutes
+          const active = await activeClientIds(admin);
+          const { data: scanRows } = await admin.from("dfs_cache").select("client_id, fetched_at").eq("endpoint", TK.drift);
+          const lastScan = new Map((scanRows ?? []).map((r) => [r.client_id as string, Date.parse(r.fetched_at as string)]));
+          const due = ids.filter((id) => active.has(id) && Date.now() - (lastScan.get(id) ?? 0) >= SCAN_EVERY_DAYS * 86_400_000)
+            .sort((a, b) => (lastScan.get(a) ?? 0) - (lastScan.get(b) ?? 0));
+          let scanned = 0;
+          for (const id of due) {
+            const target = await resolveTarget(admin, id);
+            if (!target || !target.auto_refresh) continue;
+            try { await runSiteScan(admin, id, target.domain); scanned++; } catch { /* retried tomorrow */ }
+            break;
+          }
+          out.siteScan = { scanned, due: due.length };
+        }
       } catch { /* never blocks the alerts */ }
 
       // 3. alerts for every client (reads stored data only)

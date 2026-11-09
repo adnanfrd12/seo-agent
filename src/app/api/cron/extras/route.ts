@@ -9,9 +9,12 @@ import { AUTO_SHARE, BudgetError, getSettings, spend } from "@/lib/dataforseo/bu
 import { dfsConfigured } from "@/lib/dataforseo/client";
 import { runLighthouse, LH_EST } from "@/lib/dataforseo/lighthouse";
 import { fetchProfile, GRID_POINT_EST, gridRivals, localIdentity, PROFILE_EST, REVIEWS_EST, runGrid, startReviews, type Grid, type Profile } from "@/lib/dataforseo/local";
+import { pollPosts, POSTS_ENDPOINT, POSTS_EST, postTargets, startPosts } from "@/lib/dataforseo/gbp-posts";
 import { EXTRAS_MAX, extrasEstimate, loadCompetitors, refreshCompetitorExtras } from "@/lib/dataforseo/competitors";
 import { ensure, refreshDeep, resolveTarget, SPECS, type Row } from "@/lib/dataforseo/research";
 import { serverEnv } from "@/lib/env";
+import { pollPlatforms, refreshAll as refreshPlatformReviews, refreshEstimate as platformReviewsEstimate } from "@/lib/reviews/platforms";
+import { refreshSocial, SOCIAL_ENDPOINT, SOCIAL_EST } from "@/lib/social/fetch";
 import { loggedRun } from "@/lib/jobs/log";
 import { createAdminClient } from "@/lib/supabase/admin";
 
@@ -40,6 +43,7 @@ const SEED_KEYWORDS = 10, SEED_PROMPTS = 5, MAX_GRID_KEYWORDS = 3;
  *   5. the backlink / top-pages deep dive, every two weeks
  *   6. link gap (sites linking to each tracked competitor but not to the client), every two weeks
  *   7. AI brand lookup (brand vs competitor brands in real AI answers) and competitor link history / top pages, weekly
+ *   9. Business Profile posts of the client and up to 3 competitors (≈0.3¢ each), weekly
  *   8. blog content (the client's own WordPress / sitemap, free; Claude reads places and keywords of new
  *      posts for a fraction of a cent each), daily; it runs even when DataForSEO isn't configured
  * Every step skips what is still fresh, so a re-run the same day spends nothing. Manual buttons still work.
@@ -293,6 +297,48 @@ async function handle(request: NextRequest) {
         }
       }
       out.market = { brandLookups, competitorExtras: compExtras };
+
+      // 9. Google Business Profile posts of the client and up to 3 compared competitors, weekly: collects
+      //    finished tasks first (free), then starts a new collection for businesses older than a week
+      let postsStarted = 0, postsCollected = 0;
+      for (const id of active) {
+        if (Date.now() > deadline - 8_000) break;
+        try { postsCollected += (await pollPosts(admin, id)).done; } catch { /* next run */ }
+        const have = new Map((await latest(id, POSTS_ENDPOINT)).map((r) => [r.params_hash as string, r]));
+        for (const t of await postTargets(admin, id)) {
+          const row = have.get(t.key);
+          if ((row?.data as { status?: string } | undefined)?.status === "pending" || age(row?.fetched_at as string | undefined) < 6.5 * DAY) continue;
+          if (!(await room(POSTS_EST))) break;
+          try { await startPosts({ admin, clientId: id, source: "auto" }, t.who, t.key, t.own); postsStarted++; } catch (e) { if (e instanceof BudgetError) break; }
+        }
+      }
+      out.gbpPosts = { started: postsStarted, collected: postsCollected };
+
+      // 10. social media stats (YouTube via DataForSEO inside the automatic budget; the official APIs are free), weekly
+      let socialRefreshed = 0, socialCost = 0;
+      for (const id of active) {
+        if (Date.now() > deadline - 8_000) break;
+        const last = await latest(id, SOCIAL_ENDPOINT);
+        if (last.length && last.every((r) => age(r.fetched_at as string) < 6.5 * DAY)) continue;
+        if (!(await room(SOCIAL_EST))) break;
+        try { const r = await refreshSocial({ admin, clientId: id, source: "auto" }); socialRefreshed++; socialCost += r.cost; if (r.stoppedByBudget) break; } catch { /* next run */ }
+      }
+      out.social = { refreshed: socialRefreshed, cost: Number(socialCost.toFixed(4)) };
+
+      // 11. reviews on every readable platform (Google, Trustpilot, Tripadvisor, Yelp), weekly: collects finished
+      //     tasks first (free), then starts what is older than a week (refreshAll skips fresh / pending ones)
+      let reviewPlatformsStarted = 0, reviewPlatformsCollected = 0;
+      const reviewErrors: string[] = [];
+      for (const id of active) {
+        if (Date.now() > deadline - 6_000) break;
+        try { reviewPlatformsCollected += (await pollPlatforms(admin, id)).done; } catch { /* next run */ }
+        if (!(await room(platformReviewsEstimate(3)))) break;
+        try {
+          const r = await refreshPlatformReviews({ admin, clientId: id, source: "auto" }, { maxAgeDays: 6.5 });
+          reviewPlatformsStarted += r.started.length; reviewErrors.push(...r.errors.slice(0, 2));
+        } catch (e) { if (e instanceof BudgetError) break; }
+      }
+      out.reviewPlatforms = { started: reviewPlatformsStarted, collected: reviewPlatformsCollected, errors: [...new Set(reviewErrors)].slice(0, 3) };
       await blogStep();
       out.spentToday = Number((await spentNow()).toFixed(3));
       return out;

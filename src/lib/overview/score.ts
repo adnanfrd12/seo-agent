@@ -84,6 +84,10 @@ export function computeHealth(d: ReportData, opts: { staleSources: string[] }): 
       detail: `${b.inRange} posts this period · ${b.withService}% link a service page · ${b.mapToProfile}% map to your profile`,
       rule: "Pass with a post this period and 70%+ linking a service page; watch when one of those holds; fix otherwise", href: "/blog" });
   }
+  if (d.technical?.overall != null) {
+    const t = d.technical, o = t.overall ?? 0, high = t.recs.filter((x) => x.priority === "Critical" || x.priority === "High").length;
+    out.push({ key: "technical", label: "Technical SEO", status: o >= 80 ? "pass" : o >= 60 ? "watch" : "fix", detail: `Score ${t.overall}/100 · ${high} critical/high fix${high === 1 ? "" : "es"}`, rule: "Pass at 80 or more, watch 60-79, fix below 60 (weighted technical checks)", href: "/technical-seo" });
+  }
   out.push({ key: "fresh", label: "Data freshness", status: opts.staleSources.length === 0 ? "pass" : "watch", detail: opts.staleSources.length ? `Not synced in 48h: ${opts.staleSources.join(", ")}` : "All connected sources synced in the last 48 hours", rule: "Watch when a connected source hasn't synced for 48 hours", href: "/integrations" });
   return out;
 }

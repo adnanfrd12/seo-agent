@@ -1,7 +1,7 @@
 import Link from "next/link";
 import {
   Activity, BarChart3, Swords, Link2, CalendarCheck, Eye, Flag, Gauge, Globe, MapPin, MousePointerClick, Navigation, Phone, Search, Sparkles, Target,
-  Newspaper, TrendingDown, TrendingUp, Trophy, Users,
+  Newspaper, ShieldCheck, TrendingDown, TrendingUp, Trophy, Users,
 } from "lucide-react";
 import { MetricTrend } from "@/components/charts/metric-trend";
 import { AiInsightsBlock, ClarityBlock, StrategyBlock } from "./ai-sections";
@@ -35,7 +35,7 @@ function changeText(label: string, cur: Num, base: Num, opts: { lowerIsBetter?: 
 const CH = {
   overall: "Overall Performance & Monthly Wins", traffic: "Website Traffic & Sources", gbp: "Google Business Profile Performance",
   gsc: "Search Console & Keyword Performance", bing: "Bing Search Performance", research: "Backlinks & Organic Keywords", competitors: "Competitor Analysis", behavior: "User Behavior & Conversion Analysis",
-  ai: "AI SEO Insights", strategy: "30-Day SEO Strategy", blog: "Blog Content",
+  ai: "AI SEO Insights", strategy: "30-Day SEO Strategy", blog: "Blog Content", technical: "Technical SEO",
 } as const;
 
 /** Chapter titles in order for this report (used for numbering and the PDF contents page). */
@@ -49,6 +49,7 @@ export function reportChapters(d: ReportData, executive: boolean): string[] {
     CH.ai, CH.strategy,
     // added last so the numbers of the chapters above never change
     ...(d.blog ? [CH.blog] : []),
+    ...(d.technical ? [CH.technical] : []),
   ];
 }
 
@@ -624,6 +625,35 @@ export function ReportBody({ d, opts }: { d: ReportData; opts: ReportOptions }) 
           ) : <p className="text-sm text-muted">No posts were released in this period ({d.blog.previous} in the period before).</p>}
           {d.blog.withService < 70 && <Findings tone="bad" items={[`${100 - d.blog.withService}% of posts don't link to a service page. Linking each post to the page that sells the service passes its relevance to that page.`]} />}
           {detail("/blog", "All blog posts")}
+        </Chapter>
+      )}
+
+      {/* ---------------------------------------------------------------- Technical SEO (appended last so earlier chapter numbers never change) */}
+      {d.technical && (
+        <Chapter n={no(CH.technical)} id="ch-technical" icon={ShieldCheck} title={CH.technical}
+          subtitle="Overall technical health, score per area and the changes that matter most" sources={["Crawl", "Lighthouse", "Website"]}>
+          <TileGrid>
+            <StatTile label="Technical SEO score" icon={ShieldCheck} source="Weighted" format={(v) => (v == null ? "—" : `${v}/100`)} value={d.technical.overall} />
+            {d.technical.categories.filter((c) => c.score != null).slice(0, 3).map((c) => (
+              <StatTile key={c.key} label={c.label} icon={Gauge} source={`${c.weight}%`} format={(v) => (v == null ? "—" : `${v}/100`)} value={c.score} />
+            ))}
+          </TileGrid>
+          <ReportTable<(typeof d.technical.categories)[number]> title="Category scores" source="Weighted checks" empty="" rows={d.technical.categories}
+            columns={[
+              { label: "Category", render: (c) => c.label },
+              { label: "Weight", align: "right", render: (c) => `${c.weight}%` },
+              { label: "Score", align: "right", render: (c) => (c.score == null ? "Not measured" : `${c.score}/100`) },
+              { label: "Checks needing work", align: "right", render: (c) => fmtInt(c.checks.filter((x) => x.status === "fail" || x.status === "warn").length) },
+            ]} />
+          <ReportTable<(typeof d.technical.recs)[number]> title="Top recommended changes" source="Technical SEO" empty="Every measured check passes." rows={d.technical.recs.slice(0, 8)}
+            columns={[
+              { label: "Priority", render: (x) => x.priority },
+              { label: "Problem", render: (x) => x.problem },
+              { label: "Change to make", render: (x) => x.change },
+              { label: "Pages", align: "right", render: (x) => (x.pageCount ? fmtInt(x.pageCount) : "Site-wide") },
+            ]} />
+          {d.technical.summary.length > 0 && <Findings items={d.technical.summary} />}
+          {detail("/technical-seo", "Full technical SEO breakdown")}
         </Chapter>
       )}
 

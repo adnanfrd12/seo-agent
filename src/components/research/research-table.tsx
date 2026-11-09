@@ -4,8 +4,9 @@ import { useMemo, useState } from "react";
 import { ArrowDown, ArrowUp, Download, SlidersHorizontal } from "lucide-react";
 import { toCsv } from "@/lib/analytics/csv";
 import { cn } from "@/lib/utils";
+import { keywordHref } from "@/lib/keyword-href";
 
-export type ColType = "text" | "int" | "dec" | "usd" | "date" | "url" | "link" | "open" | "bool" | "badge" | "spark" | "change" | "spam" | "delta";
+export type ColType = "text" | "int" | "dec" | "usd" | "date" | "url" | "link" | "open" | "bool" | "badge" | "spark" | "change" | "spam" | "delta" | "keyword";
 export interface Col { key: string; label: string; type?: ColType; hint?: string }
 export interface Preset { label: string; where: { key: string; op: "lte" | "gte" | "eq" | "true"; value?: number | string | boolean }[] }
 type Row = Record<string, unknown>;
@@ -45,6 +46,11 @@ function Cell({ col, row }: { col: Col; row: Row }) {
       if (!isNum(v) || !isNum(cur) || v === cur) return <span className="text-muted">—</span>;
       const d = v - cur;
       return <span className={d > 0 ? "text-positive" : "text-negative"}>{d > 0 ? "▲" : "▼"} {Math.abs(d)}</span>;
+    }
+    // a search keyword that opens the keyword detail page (/keyword?q=...)
+    case "keyword": {
+      const text = v == null || v === "" ? "" : String(v);
+      return text ? <a href={keywordHref(text)} className="break-words font-medium underline-offset-2 hover:underline">{text}</a> : <>—</>;
     }
     // text that opens a page inside the app; the address is in the row's "<key>_href"
     case "link": {
