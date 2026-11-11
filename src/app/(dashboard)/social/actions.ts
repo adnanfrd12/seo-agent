@@ -76,3 +76,29 @@ export async function refreshSocialNow(): Promise<Result> {
     return { ok: false, error: e instanceof BudgetError ? e.message : "The social stats couldn't be refreshed. Try again in a few minutes." };
   }
 }
+
+/** Composio login link for one platform. The callback reads the stats as soon as the login finishes. */
+export async function socialConnectLink(p: Platform): Promise<{ ok: true; url: string } | { ok: false; error: string }> {
+  const o = await owner();
+  if ("error" in o) return { ok: false, error: o.error! };
+  if (!(PLATFORMS as readonly string[]).includes(p)) return { ok: false, error: "Unknown platform." };
+  const { SetupNeeded, startSocialConnect } = await import("@/lib/social/composio");
+  try {
+    const { serverEnv } = await import("@/lib/env");
+    const url = await startSocialConnect(o.client.id, p, `${serverEnv().NEXT_PUBLIC_APP_URL}/api/social/callback?platform=${p}`);
+    return { ok: true, url };
+  } catch (e) {
+    return { ok: false, error: e instanceof SetupNeeded ? e.message : `Couldn't start the ${p} login: ${(e instanceof Error ? e.message : "unknown error").slice(0, 200)}` };
+  }
+}
+
+/** Removes the client's Composio connection for one platform (stats already stored are kept). */
+export async function disconnectSocial(p: Platform): Promise<Result> {
+  const o = await owner();
+  if ("error" in o) return { ok: false, error: o.error! };
+  if (!(PLATFORMS as readonly string[]).includes(p)) return { ok: false, error: "Unknown platform." };
+  const { disconnectSocialAccount } = await import("@/lib/social/composio");
+  try { await disconnectSocialAccount(o.client.id, p); } catch { return { ok: false, error: "Couldn't disconnect. Try again." }; }
+  revalidatePath("/social");
+  return { ok: true, message: "Disconnected. The stats already read are kept." };
+}

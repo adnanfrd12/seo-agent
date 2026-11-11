@@ -5,6 +5,9 @@ import { decryptSecret } from "@/lib/crypto";
 import { assertBudget, BudgetError, recordSpend, type SpendSource } from "@/lib/dataforseo/budget";
 import { dfsConfigured, dfsPost } from "@/lib/dataforseo/client";
 import { arr, num, obj, str } from "@/lib/dataforseo/research";
+import { ProviderAuthError } from "@/lib/composio/client";
+import { readComposioStats, socialConnections, type SocialConnection } from "./composio";
+import { tregConfigured, tregProfile, tregSupports } from "./treg";
 import { handleOf, PLATFORM_INFO, PLATFORMS, platformOf, type Platform, type SocialProfiles } from "./platforms";
 
 /**
@@ -34,7 +37,9 @@ export interface SocialPoint { date: string; followers: number | null; posts: nu
 export interface SocialRow {
   platform: Platform; status: "ok" | "needs" | "no_profile" | "error"; source: string | null;
   url: string | null; needs?: string; error?: string; fetchedAt: string;
-  profile: { name: string | null; followers: number | null; posts: number | null; views: number | null; likes: number | null; following?: number | null };
+  profile: { name: string | null; followers: number | null; posts: number | null; views: number | null; likes: number | null; following?: number | null; impressions?: number | null; reach?: number | null; comments?: number | null };
+  /** "connected" = the client's own account through Composio (private analytics); "public" = public numbers only */
+  mode?: "connected" | "token" | "public";
   posts: SocialPost[]; rankings?: SocialRanking[]; history: SocialPoint[]; cost: number;
 }
 
@@ -330,21 +335,54 @@ async function save(admin: SupabaseClient, clientId: string, row: SocialRow) {
   );
 }
 
+/** The client's social accounts connected through Composio (empty when none or Composio is unreachable). */
+export async function connectedAccounts(clientId: string): Promise<SocialConnection[]> {
+  try { return (await socialConnections(clientId)).filter((c) => c.status === "ACTIVE"); } catch { return []; }
+}
+
+async function viaComposio(ctx: Ctx, p: Platform, acc: SocialConnection, url: string | null, linkedinOrgId: string | null): Promise<Fetched> {
+  let st;
+  try { st = await readComposioStats(ctx.clientId, p, acc.id, { url, linkedinOrgId }); }
+  catch (e) { if (e instanceof ProviderAuthError) throw new NeedsError(`The ${PLATFORM_INFO[p].label} connection expired or was revoked. Press Connect to log in again.`); throw e; }
+  return {
+    source: "Composio (connected)",
+    profile: { name: st.name, followers: st.followers, following: st.following, posts: st.posts, views: st.views ?? st.impressions, likes: st.likes, impressions: st.impressions, reach: st.reach, comments: st.comments },
+    posts: st.recent,
+  };
+}
+
+async function viaTreg(ctx: Ctx, p: Platform, url: string): Promise<Fetched> {
+  const t = await tregProfile(p, url);
+  await recordSpend(ctx.admin, ctx.clientId, `treg_${p}`, t.cost, ctx.source);
+  return { source: "Public profile (treg.to)", profile: { name: t.name, followers: t.followers, following: t.following, posts: t.posts, views: null, likes: t.likes }, posts: t.recent, cost: t.cost };
+}
+
 /** Refreshes one platform and stores it (with the day's point appended to its history). */
-export async function refreshPlatform(ctx: Ctx, p: Platform, social?: Awaited<ReturnType<typeof clientSocial>>): Promise<SocialRow> {
+export async function refreshPlatform(ctx: Ctx, p: Platform, social?: Awaited<ReturnType<typeof clientSocial>>, accounts?: SocialConnection[]): Promise<SocialRow> {
   const s = social ?? (await clientSocial(ctx.admin, ctx.clientId));
+  const acc = (accounts ?? (await connectedAccounts(ctx.clientId))).find((a) => a.platform === p);
   const prev = await previous(ctx.admin, ctx.clientId, p);
   const url = s.profiles[p] ?? null;
   const now = new Date().toISOString();
   const base: SocialRow = { platform: p, status: "ok", source: null, url, fetchedAt: now, profile: prev?.profile ?? { name: null, followers: null, posts: null, views: null, likes: null }, posts: prev?.posts ?? [], rankings: prev?.rankings, history: prev?.history ?? [], cost: 0 };
   let row: SocialRow;
-  if (!url && p !== "instagram") row = { ...base, status: "no_profile" };
+  if (!url && p !== "instagram" && !acc) row = { ...base, status: "no_profile" };
   else {
     const token = secretFor(p, s.tokens);
+    let mode: SocialRow["mode"] = "token";
     try {
       let f: Fetched;
-      if (p === "youtube") f = token ? await youtubeDataApi(token, url!, await trackedKeywords(ctx.admin, ctx.clientId)) : await dfsYoutube(ctx, url!, await trackedKeywords(ctx.admin, ctx.clientId));
-      else if (!token) throw new NeedsError(PLATFORM_INFO[p].needs);
+      // 1. the client's own account connected through Composio: private analytics
+      if (acc) {
+        mode = "connected";
+        try { f = await viaComposio(ctx, p, acc, url, typeof s.settings.linkedin_org_id === "string" ? s.settings.linkedin_org_id : null); }
+        catch (e) { if (url && tregConfigured() && tregSupports(p) && !token) { mode = "public"; f = await viaTreg(ctx, p, url); f.source = `${f.source}; connected analytics pending`; } else throw e; }
+      }
+      // 2. a pasted token (old setup) or YouTube's own path
+      else if (p === "youtube") f = token ? await youtubeDataApi(token, url!, await trackedKeywords(ctx.admin, ctx.clientId)) : await dfsYoutube(ctx, url!, await trackedKeywords(ctx.admin, ctx.clientId));
+      // 3. nothing connected: public numbers through treg.to
+      else if (!token && url && tregConfigured() && tregSupports(p)) { mode = "public"; f = await viaTreg(ctx, p, url); }
+      else if (!token) throw new NeedsError(`Press Connect and log in to ${PLATFORM_INFO[p].label} to read its analytics.`);
       else if (p === "facebook") f = await facebook(token);
       else if (p === "instagram") f = await instagram(token);
       else if (p === "threads") f = await threads(token);
@@ -360,7 +398,7 @@ export async function refreshPlatform(ctx: Ctx, p: Platform, social?: Awaited<Re
       const day = now.slice(0, 10);
       const point: SocialPoint = { date: day, followers: f.profile.followers, posts: f.profile.posts, views: f.profile.views, engagement: engagementOf(f.posts) };
       const history = [...base.history.filter((h) => h.date !== day), point].sort((a, b) => a.date.localeCompare(b.date)).slice(-HISTORY_MAX);
-      row = { ...base, status: "ok", source: f.source, profile: f.profile, posts: f.posts, rankings: f.rankings ?? base.rankings, history, cost: Number((f.cost ?? 0).toFixed(4)) };
+      row = { ...base, status: "ok", mode, source: f.source, profile: f.profile, posts: f.posts.length || mode !== "connected" ? f.posts : base.posts, rankings: f.rankings ?? base.rankings, history, cost: Number((f.cost ?? 0).toFixed(4)) };
     } catch (e) {
       if (e instanceof BudgetError) throw e;
       row = e instanceof NeedsError ? { ...base, status: "needs", needs: e.message } : { ...base, status: "error", error: (e instanceof Error ? e.message : "failed").slice(0, 300) };
@@ -375,10 +413,11 @@ export async function refreshPlatform(ctx: Ctx, p: Platform, social?: Awaited<Re
 /** Every platform in turn. A budget stop leaves the rest for the next run. */
 export async function refreshSocial(ctx: Ctx, only?: Platform[]): Promise<{ rows: SocialRow[]; cost: number; stoppedByBudget: boolean }> {
   const social = await clientSocial(ctx.admin, ctx.clientId);
+  const accounts = await connectedAccounts(ctx.clientId);
   const rows: SocialRow[] = [];
   let stoppedByBudget = false;
   for (const p of only ?? PLATFORMS) {
-    try { rows.push(await refreshPlatform(ctx, p, social)); }
+    try { rows.push(await refreshPlatform(ctx, p, social, accounts)); }
     catch (e) { if (e instanceof BudgetError) { stoppedByBudget = true; break; } throw e; }
   }
   return { rows, cost: rows.reduce((a, r) => a + r.cost, 0), stoppedByBudget };
