@@ -3,7 +3,7 @@ import { NextResponse, type NextRequest } from "next/server";
 
 const PUBLIC_PREFIXES = ["/login", "/auth", "/api/cron"];
 // date-driven pages: opened without a range they get the one the user last picked (cookie written by RangeMemory)
-const RANGE_PATHS = new Set(["/overview", "/analytics", "/search-console", "/business-profile", "/bing", "/opportunities", "/insights", "/strategy", "/blog"]);
+const RANGE_PATHS = new Set(["/overview", "/analytics", "/search-console", "/business-profile", "/bing", "/opportunities", "/insights", "/strategy", "/blog", "/social"]);
 const RANGE_COOKIE = "seo_range";
 const ISO_DATE = /^\d{4}-\d{2}-\d{2}$/;
 

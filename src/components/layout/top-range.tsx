@@ -8,7 +8,7 @@ import { resolveRange } from "@/lib/analytics/range";
 import { cn } from "@/lib/utils";
 
 /** Pages whose data follows the date range (the same list the proxy remembers a range for). */
-const RANGE_PATHS = new Set(["/overview", "/analytics", "/search-console", "/business-profile", "/bing", "/opportunities", "/insights", "/strategy", "/blog"]);
+const RANGE_PATHS = new Set(["/overview", "/analytics", "/search-console", "/business-profile", "/bing", "/opportunities", "/insights", "/strategy", "/blog", "/social"]);
 const PRESETS = [
   { id: "7", label: "Last 7 days" },
   { id: "30", label: "Last 30 days" },

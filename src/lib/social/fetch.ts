@@ -5,8 +5,10 @@ import { decryptSecret } from "@/lib/crypto";
 import { assertBudget, BudgetError, recordSpend, type SpendSource } from "@/lib/dataforseo/budget";
 import { dfsConfigured, dfsPost } from "@/lib/dataforseo/client";
 import { arr, num, obj, str } from "@/lib/dataforseo/research";
-import { ProviderAuthError } from "@/lib/composio/client";
-import { readComposioStats, socialConnections, type SocialConnection } from "./composio";
+import { ProviderAuthError, ProviderRateLimitError } from "@/lib/composio/client";
+import { socialConnections, type SocialConnection } from "./composio";
+import { readComposio } from "./composio-read";
+import type { MetricKey, SocialDemo, SocialPost, SocialSeries } from "./metrics";
 import { tregConfigured, tregProfile, tregSupports } from "./treg";
 import { handleOf, PLATFORM_INFO, PLATFORMS, platformOf, type Platform, type SocialProfiles } from "./platforms";
 
@@ -26,14 +28,12 @@ export const YT_INFO_MAX = 8;
 export const YT_RANK_KEYWORDS = 5;
 /** worst case of one YouTube refresh through DataForSEO */
 export const SOCIAL_EST = YT_SEARCH_EST * (1 + YT_RANK_KEYWORDS) + YT_INFO_EST * YT_INFO_MAX;
-const HISTORY_MAX = 120;
+const HISTORY_MAX = 400;
+const SERIES_MAX = 400;
 
-export interface SocialPost {
-  id: string; title: string; url: string | null; date: string | null; type?: string | null;
-  views: number | null; likes: number | null; comments: number | null; shares: number | null;
-}
+export type { SocialPost } from "./metrics";
 export interface SocialRanking { keyword: string; position: number | null; title: string | null; url: string | null; total: number }
-export interface SocialPoint { date: string; followers: number | null; posts: number | null; views: number | null; engagement: number | null }
+export interface SocialPoint { date: string; followers: number | null; posts: number | null; views: number | null; engagement: number | null; reach?: number | null; impressions?: number | null }
 export interface SocialRow {
   platform: Platform; status: "ok" | "needs" | "no_profile" | "error"; source: string | null;
   url: string | null; needs?: string; error?: string; fetchedAt: string;
@@ -41,10 +41,17 @@ export interface SocialRow {
   /** "connected" = the client's own account through Composio (private analytics); "public" = public numbers only */
   mode?: "connected" | "token" | "public";
   posts: SocialPost[]; rankings?: SocialRanking[]; history: SocialPoint[]; cost: number;
+  /** connected accounts: daily metrics straight from the platform (merged across refreshes, so history grows) */
+  series?: SocialSeries;
+  /** connected accounts: last-28-day totals as the platform reports them */
+  totals?: Partial<Record<MetricKey, number>>;
+  demographics?: SocialDemo[];
+  /** metrics the account or its permissions couldn't provide */
+  notes?: string[];
 }
 
 type Ctx = { admin: SupabaseClient; clientId: string; source: SpendSource };
-type Fetched = Pick<SocialRow, "profile" | "posts" | "source"> & { rankings?: SocialRanking[]; cost?: number; newSecret?: string };
+type Fetched = Pick<SocialRow, "profile" | "posts" | "source"> & Pick<SocialRow, "series" | "totals" | "demographics" | "notes"> & { rankings?: SocialRanking[]; cost?: number; newSecret?: string };
 
 const sum = (xs: (number | null)[]) => xs.reduce<number>((a, b) => a + (b ?? 0), 0);
 const n = (v: unknown) => (typeof v === "number" && Number.isFinite(v) ? v : typeof v === "string" && v.trim() !== "" && Number.isFinite(Number(v)) ? Number(v) : null);
@@ -340,15 +347,40 @@ export async function connectedAccounts(clientId: string): Promise<SocialConnect
   try { return (await socialConnections(clientId)).filter((c) => c.status === "ACTIVE"); } catch { return []; }
 }
 
-async function viaComposio(ctx: Ctx, p: Platform, acc: SocialConnection, url: string | null, linkedinOrgId: string | null): Promise<Fetched> {
+async function viaComposio(ctx: Ctx, p: Platform, acc: SocialConnection, url: string | null, linkedinOrgId: string | null, knownPosts: SocialPost[]): Promise<Fetched> {
   let st;
-  try { st = await readComposioStats(ctx.clientId, p, acc.id, { url, linkedinOrgId }); }
-  catch (e) { if (e instanceof ProviderAuthError) throw new NeedsError(`The ${PLATFORM_INFO[p].label} connection expired or was revoked. Press Connect to log in again.`); throw e; }
+  try { st = await readComposio(ctx.clientId, p, acc.id, { url, linkedinOrgId, knownPosts }); }
+  catch (e) {
+    if (e instanceof ProviderAuthError) throw new NeedsError(`The ${PLATFORM_INFO[p].label} connection expired or was revoked. Press Connect to log in again.`);
+    if (e instanceof ProviderRateLimitError) throw new Error(`${PLATFORM_INFO[p].label} is rate limiting requests right now; the last data is kept and it is read again on the next run.`);
+    throw e;
+  }
+  const t = st.totals;
+  const views = t.views ?? t.impressions ?? sumLast(st.series.views ?? st.series.impressions ?? st.series.video_views, 28);
   return {
     source: "Composio (connected)",
-    profile: { name: st.name, followers: st.followers, following: st.following, posts: st.posts, views: st.views ?? st.impressions, likes: st.likes, impressions: st.impressions, reach: st.reach, comments: st.comments },
-    posts: st.recent,
+    profile: { name: st.name, followers: st.followers, following: st.following, posts: st.posts, views, likes: t.likes ?? null, impressions: t.impressions ?? sumLast(st.series.impressions, 28), reach: t.reach ?? null, comments: t.comments ?? null },
+    posts: st.recent, series: st.series, totals: st.totals, demographics: st.demographics, notes: st.notes,
   };
+}
+
+const sumLast = (s: { date: string; value: number }[] | undefined, days: number) => {
+  if (!s?.length) return null;
+  const from = new Date(Date.now() - days * 86_400_000).toISOString().slice(0, 10);
+  const xs = s.filter((p) => p.date >= from);
+  return xs.length ? xs.reduce((a, p) => a + p.value, 0) : null;
+};
+
+/** Keeps every day already stored and lets the new read overwrite the days it covers (platforms revise recent days). */
+function mergeSeries(prev: SocialSeries | undefined, next: SocialSeries | undefined): SocialSeries | undefined {
+  if (!next) return prev;
+  const out: SocialSeries = {};
+  for (const k of new Set([...Object.keys(prev ?? {}), ...Object.keys(next)]) as Set<MetricKey>) {
+    const m = new Map((prev?.[k] ?? []).map((x) => [x.date, x.value]));
+    for (const x of next[k] ?? []) m.set(x.date, x.value);
+    out[k] = [...m].map(([date, value]) => ({ date, value })).sort((a, b) => a.date.localeCompare(b.date)).slice(-SERIES_MAX);
+  }
+  return out;
 }
 
 async function viaTreg(ctx: Ctx, p: Platform, url: string): Promise<Fetched> {
@@ -364,7 +396,7 @@ export async function refreshPlatform(ctx: Ctx, p: Platform, social?: Awaited<Re
   const prev = await previous(ctx.admin, ctx.clientId, p);
   const url = s.profiles[p] ?? null;
   const now = new Date().toISOString();
-  const base: SocialRow = { platform: p, status: "ok", source: null, url, fetchedAt: now, profile: prev?.profile ?? { name: null, followers: null, posts: null, views: null, likes: null }, posts: prev?.posts ?? [], rankings: prev?.rankings, history: prev?.history ?? [], cost: 0 };
+  const base: SocialRow = { platform: p, status: "ok", source: null, url, fetchedAt: now, profile: prev?.profile ?? { name: null, followers: null, posts: null, views: null, likes: null }, posts: prev?.posts ?? [], rankings: prev?.rankings, history: prev?.history ?? [], cost: 0, series: prev?.series, totals: prev?.totals, demographics: prev?.demographics, notes: prev?.notes };
   let row: SocialRow;
   if (!url && p !== "instagram" && !acc) row = { ...base, status: "no_profile" };
   else {
@@ -375,7 +407,7 @@ export async function refreshPlatform(ctx: Ctx, p: Platform, social?: Awaited<Re
       // 1. the client's own account connected through Composio: private analytics
       if (acc) {
         mode = "connected";
-        try { f = await viaComposio(ctx, p, acc, url, typeof s.settings.linkedin_org_id === "string" ? s.settings.linkedin_org_id : null); }
+        try { f = await viaComposio(ctx, p, acc, url, typeof s.settings.linkedin_org_id === "string" ? s.settings.linkedin_org_id : null, base.posts); }
         catch (e) { if (url && tregConfigured() && tregSupports(p) && !token) { mode = "public"; f = await viaTreg(ctx, p, url); f.source = `${f.source}; connected analytics pending`; } else throw e; }
       }
       // 2. a pasted token (old setup) or YouTube's own path
@@ -396,9 +428,10 @@ export async function refreshPlatform(ctx: Ctx, p: Platform, social?: Awaited<Re
         await ctx.admin.from("clients").update({ settings: { ...settings, social_tokens: { ...((settings.social_tokens ?? {}) as object), [p]: encryptSecret(f.newSecret) } } }).eq("id", ctx.clientId);
       }
       const day = now.slice(0, 10);
-      const point: SocialPoint = { date: day, followers: f.profile.followers, posts: f.profile.posts, views: f.profile.views, engagement: engagementOf(f.posts) };
+      const point: SocialPoint = { date: day, followers: f.profile.followers, posts: f.profile.posts, views: f.profile.views, engagement: engagementOf(f.posts), reach: f.profile.reach ?? null, impressions: f.profile.impressions ?? null };
       const history = [...base.history.filter((h) => h.date !== day), point].sort((a, b) => a.date.localeCompare(b.date)).slice(-HISTORY_MAX);
-      row = { ...base, status: "ok", mode, source: f.source, profile: f.profile, posts: f.posts.length || mode !== "connected" ? f.posts : base.posts, rankings: f.rankings ?? base.rankings, history, cost: Number((f.cost ?? 0).toFixed(4)) };
+      row = { ...base, status: "ok", mode, source: f.source, profile: f.profile, posts: f.posts.length || mode !== "connected" ? f.posts : base.posts, rankings: f.rankings ?? base.rankings, history, cost: Number((f.cost ?? 0).toFixed(4)),
+        series: mode === "connected" ? mergeSeries(prev?.series, f.series) : prev?.series, totals: f.totals ?? (mode === "connected" ? undefined : prev?.totals), demographics: f.demographics?.length ? f.demographics : prev?.demographics, notes: f.notes };
     } catch (e) {
       if (e instanceof BudgetError) throw e;
       row = e instanceof NeedsError ? { ...base, status: "needs", needs: e.message } : { ...base, status: "error", error: (e instanceof Error ? e.message : "failed").slice(0, 300) };

@@ -147,3 +147,18 @@ export function SocialConnect({ rows, canEdit }: { rows: ConnectRow[]; canEdit: 
     </div>
   );
 }
+
+/** Compact Connect button for one platform's section (same Composio login as the panel above). */
+export function ConnectOne({ platform, label = "Connect" }: { platform: Platform; label?: string }) {
+  const [pending, start] = useTransition();
+  const [err, setErr] = useState<string | null>(null);
+  return (
+    <div className="space-y-1">
+      <button className={`${btn} bg-accent text-accent-foreground hover:opacity-90`} disabled={pending}
+        onClick={() => start(async () => { setErr(null); const r = await socialConnectLink(platform); if (r.ok) window.location.href = r.url; else setErr(r.error); })}>
+        {pending ? <Loader2 className="size-4 animate-spin" /> : <Plug className="size-4" />} {label} {PLATFORM_INFO[platform].label}
+      </button>
+      {err && <p role="alert" className="max-w-md text-xs text-negative">{err}</p>}
+    </div>
+  );
+}

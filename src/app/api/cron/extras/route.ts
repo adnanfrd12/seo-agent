@@ -14,7 +14,7 @@ import { EXTRAS_MAX, extrasEstimate, loadCompetitors, refreshCompetitorExtras } 
 import { ensure, refreshDeep, resolveTarget, SPECS, type Row } from "@/lib/dataforseo/research";
 import { serverEnv } from "@/lib/env";
 import { pollPlatforms, refreshAll as refreshPlatformReviews, refreshEstimate as platformReviewsEstimate } from "@/lib/reviews/platforms";
-import { refreshSocial, SOCIAL_ENDPOINT, SOCIAL_EST } from "@/lib/social/fetch";
+import { connectedAccounts, refreshSocial, SOCIAL_ENDPOINT, SOCIAL_EST } from "@/lib/social/fetch";
 import { loggedRun } from "@/lib/jobs/log";
 import { createAdminClient } from "@/lib/supabase/admin";
 
@@ -319,7 +319,15 @@ async function handle(request: NextRequest) {
       for (const id of active) {
         if (Date.now() > deadline - 8_000) break;
         const last = await latest(id, SOCIAL_ENDPOINT);
-        if (last.length && last.every((r) => age(r.fetched_at as string) < 6.5 * DAY)) continue;
+        // accounts connected through Composio are read daily (free); the rest weekly as before
+        const linked = (await connectedAccounts(id)).map((c) => c.platform);
+        const fresh = (p: string) => last.find((r) => r.params_hash === p && age(r.fetched_at as string) < 20 * 60 * 60 * 1000);
+        const weeklyDue = !(last.length && last.every((r) => age(r.fetched_at as string) < 6.5 * DAY));
+        const linkedDue = linked.filter((p) => !fresh(p));
+        if (!weeklyDue) {
+          if (linkedDue.length) { try { await refreshSocial({ admin, clientId: id, source: "auto" }, linkedDue); socialRefreshed++; } catch { /* next run */ } }
+          continue;
+        }
         if (!(await room(SOCIAL_EST))) break;
         try { const r = await refreshSocial({ admin, clientId: id, source: "auto" }); socialRefreshed++; socialCost += r.cost; if (r.stoppedByBudget) break; } catch { /* next run */ }
       }
