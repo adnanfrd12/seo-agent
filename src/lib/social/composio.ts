@@ -1,6 +1,6 @@
 import "server-only";
 import { composio } from "@/lib/composio/client";
-import { PLATFORM_INFO, type Platform } from "./platforms";
+import { PLATFORM_INFO, PLATFORMS, type Platform } from "./platforms";
 
 /**
  * Social analytics through Composio (the same account and per-client entity "client:<id>" used for GA4 and
@@ -26,8 +26,25 @@ export class SetupNeeded extends Error {}
 export function composioReady(p: Platform): boolean {
   return MANAGED.has(p) || Boolean(process.env[envKey(p)]?.trim());
 }
+
+/**
+ * Readiness per platform, also counting auth configs created in the Composio dashboard (e.g. the agency's own
+ * Threads, X or TikTok app), so adding one there switches its Connect button on without a redeploy.
+ */
+export async function composioReadyMap(): Promise<Record<Platform, boolean>> {
+  const out = Object.fromEntries(PLATFORMS.map((p) => [p, composioReady(p)])) as Record<Platform, boolean>;
+  if (PLATFORMS.every((p) => out[p])) return out;
+  try {
+    const list = await composio().authConfigs.list({ limit: 100 });
+    for (const a of list.items) {
+      const p = PLATFORMS.find((x) => TOOLKIT[x] === a.toolkit?.slug);
+      if (p && a.status === "ENABLED") out[p] = true;
+    }
+  } catch { /* Composio unreachable: env/managed answer stands */ }
+  return out;
+}
 export const setupNote = (p: Platform) =>
-  `${PLATFORM_INFO[p].label} has no Composio-managed login. Create a ${PLATFORM_INFO[p].label} developer app, add it as an auth config for the "${TOOLKIT[p]}" toolkit in the Composio dashboard, and set ${envKey(p)} to its id (ac_...).`;
+  `${PLATFORM_INFO[p].label} has no Composio-managed login. Create a ${PLATFORM_INFO[p].label} developer app and add it as an auth config for the "${TOOLKIT[p]}" toolkit in the Composio dashboard; the Connect button appears here automatically.`;
 
 /** The auth config for a platform: env override, else an existing enabled one, else a new Composio-managed one. */
 async function authConfigFor(p: Platform): Promise<string> {

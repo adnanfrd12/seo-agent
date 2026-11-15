@@ -11,7 +11,7 @@ import { ConnectOne, SocialConnect, SocialRefresh, SocialSettings } from "@/comp
 import { resolveRange } from "@/lib/analytics/range";
 import { researchPage } from "@/lib/dataforseo/view";
 import { revalidatePath } from "@/lib/revalidate";
-import { composioReady, setupNote, socialConnections, type SocialConnection } from "@/lib/social/composio";
+import { composioReadyMap, setupNote, socialConnections, type SocialConnection } from "@/lib/social/composio";
 import { clientSocial, loadSocial, refreshSocial, tokenState, type SocialRow } from "@/lib/social/fetch";
 import { METRICS, postEngagement, type MetricKey } from "@/lib/social/metrics";
 import { combine, dailyMetrics, staleConnected, figures, followerSeries, platformColor, previousOf, seriesBy, withPrevious, type Period, type PlatformFigures } from "@/lib/social/overview";
@@ -40,6 +40,7 @@ export default async function SocialPage({ searchParams }: { searchParams: Promi
   let conns: SocialConnection[] = [];
   try { conns = await socialConnections(client.id); } catch { /* Composio unreachable: buttons still shown */ }
   const active = new Set(conns.filter((c) => c.status === "ACTIVE").map((c) => c.platform));
+  const readyMap = await composioReadyMap();
 
   // connected accounts refresh themselves: a stale one is read in the background after this page is sent
   const stale = staleConnected(rows, active, STALE_MS);
@@ -55,7 +56,7 @@ export default async function SocialPage({ searchParams }: { searchParams: Promi
 
   const connectRows = PLATFORMS.map((p) => {
     const c = conns.find((x) => x.platform === p);
-    return { platform: p, state: c?.status === "ACTIVE" ? "connected" as const : c ? "pending" as const : "none" as const, ready: composioReady(p), note: composioReady(p) ? null : setupNote(p) };
+    return { platform: p, state: c?.status === "ACTIVE" ? "connected" as const : c ? "pending" as const : "none" as const, ready: readyMap[p], note: readyMap[p] ? null : setupNote(p) };
   });
 
   // combined figures (only what can be added up)
@@ -155,7 +156,7 @@ export default async function SocialPage({ searchParams }: { searchParams: Promi
         <div className="mt-3 space-y-6">
           {PLATFORMS.map((p) => {
             const f = all.find((x) => x.platform === p);
-            return <PlatformSection key={p} p={p} f={f} row={rows[p]} url={social.profiles[p]} connected={active.has(p)} ready={composioReady(p)} canEdit={canEdit}
+            return <PlatformSection key={p} p={p} f={f} row={rows[p]} url={social.profiles[p]} connected={active.has(p)} ready={readyMap[p]} canEdit={canEdit}
               token={tokens[p]} cur={cur} prev={prev} clientId={client.id} />;
           })}
         </div>
