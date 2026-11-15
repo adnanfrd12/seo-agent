@@ -201,6 +201,10 @@ export default async function LoginPage({ searchParams }: { searchParams: Promis
         <p id="contact" className="border-t border-[#F5F1ED] px-4 py-4 text-center text-xs text-[#8a8a94]">
           Questions about plans or pricing?{" "}
           <a href={contactHref()} className="font-semibold text-[#EA5A22] hover:underline">Contact sales</a>
+          <span aria-hidden className="mx-2">·</span>
+          <a href="/privacy" className="hover:text-[#1f1f25] hover:underline">Privacy Policy</a>
+          <span aria-hidden className="mx-2">·</span>
+          <a href="/terms" className="hover:text-[#1f1f25] hover:underline">Terms and Conditions</a>
         </p>
       </section>
     </main>

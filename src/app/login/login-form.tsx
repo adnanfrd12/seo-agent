@@ -193,6 +193,11 @@ export function LoginForm({ next, initialError }: { next: string; initialError: 
       <p id="access-note" className="mt-2.5 text-center text-xs text-[#8a8a94]">
         Accounts are set up by invitation. This opens an email to request access.
       </p>
+      <p className="mt-4 text-center text-xs text-[#8a8a94]">
+        By signing in, you agree to our{" "}
+        <a href="/terms" className="font-medium text-[#E8552A] hover:underline">Terms and Conditions</a> and{" "}
+        <a href="/privacy" className="font-medium text-[#E8552A] hover:underline">Privacy Policy</a>.
+      </p>
     </div>
   );
 }

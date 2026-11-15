@@ -1,7 +1,7 @@
 import { createServerClient } from "@supabase/ssr";
 import { NextResponse, type NextRequest } from "next/server";
 
-const PUBLIC_PREFIXES = ["/login", "/auth", "/api/cron"];
+const PUBLIC_PREFIXES = ["/login", "/auth", "/api/cron", "/privacy", "/terms"];
 // date-driven pages: opened without a range they get the one the user last picked (cookie written by RangeMemory)
 const RANGE_PATHS = new Set(["/overview", "/analytics", "/search-console", "/business-profile", "/bing", "/opportunities", "/insights", "/strategy", "/blog", "/social"]);
 const RANGE_COOKIE = "seo_range";
