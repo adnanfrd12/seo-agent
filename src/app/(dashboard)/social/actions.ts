@@ -85,7 +85,13 @@ export async function socialConnectLink(p: Platform): Promise<{ ok: true; url: s
   const { SetupNeeded, startSocialConnect } = await import("@/lib/social/composio");
   try {
     const { serverEnv } = await import("@/lib/env");
-    const url = await startSocialConnect(o.client.id, p, `${serverEnv().NEXT_PUBLIC_APP_URL}/api/social/callback?platform=${p}`);
+    // return to the site the user is on (live or local), not a fixed URL that may point at localhost
+    const { headers } = await import("next/headers");
+    const h = await headers();
+    const host = h.get("x-forwarded-host") ?? h.get("host");
+    const proto = h.get("x-forwarded-proto") ?? (host?.startsWith("localhost") ? "http" : "https");
+    const origin = host ? `${proto}://${host}` : serverEnv().NEXT_PUBLIC_APP_URL;
+    const url = await startSocialConnect(o.client.id, p, `${origin}/api/social/callback?platform=${p}`);
     return { ok: true, url };
   } catch (e) {
     return { ok: false, error: e instanceof SetupNeeded ? e.message : `Couldn't start the ${p} login: ${(e instanceof Error ? e.message : "unknown error").slice(0, 200)}` };
