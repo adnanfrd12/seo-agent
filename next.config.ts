@@ -2,6 +2,8 @@ import type { NextConfig } from "next";
 
 const nextConfig: NextConfig = {
   // headless Chromium for server-side PDF export must not be bundled
+  // `next upgrade --agent` defaults to security-only upgrades for this app
+  experimental: { agentUpgrade: "security" },
   serverExternalPackages: ["@sparticuz/chromium", "puppeteer-core"],
   // @sparticuz/chromium loads its compressed browser from bin/ at runtime; file tracing can't see
   // that dynamic path, so include it explicitly for the PDF function.
