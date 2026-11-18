@@ -2,6 +2,7 @@ import "server-only";
 import type { SupabaseClient } from "@supabase/supabase-js";
 import { clarityInsights, ClarityError, flatten, type ClarityDimension } from "@/lib/clarity/api";
 import { decryptSecret } from "@/lib/crypto";
+import { syncRecordings } from "@/lib/clarity/recordings";
 import type { SyncResult } from "./types";
 
 const CALLS: (ClarityDimension | undefined)[] = [undefined, "URL", "Device"]; // 3 of the 10 daily requests
@@ -17,16 +18,20 @@ export async function syncClarity(
   const failures: Record<string, string> = {};
   let authError: unknown | null = null;
 
-  // stay well inside the 10-requests/day quota: at most 3 Clarity syncs per UTC day
-  const today = new Date().toISOString().slice(0, 10);
-  const { count } = await admin.from("analytics_sync_jobs").select("id", { count: "exact", head: true })
-    .eq("resource_id", t.resourceId).in("status", ["succeeded", "partial"]).gte("finished_at", `${today}T00:00:00Z`);
-  if ((count ?? 0) >= 3) return { written, failures: { quota: "Clarity was already synced 3 times today (API limit is 10 requests/day)." }, authError };
-
   const { data: secret } = await admin.from("integration_secrets").select("refresh_token_encrypted").eq("connection_id", t.connectionId).maybeSingle();
   if (!secret?.refresh_token_encrypted) return { written, failures: { token: "No Clarity token stored." }, authError: new Error("no token") };
   const token = decryptSecret(secret.refresh_token_encrypted);
   const day = new Date(Date.now() - 86_400_000).toISOString().slice(0, 10);
+
+  // session recordings per issue (separate endpoint and limit; once per UTC day)
+  try { const n = await syncRecordings(admin, t.clientId, token); if (n) written.recordings = n; }
+  catch (e) { failures.recordings = (e instanceof Error ? e.message : "failed").slice(0, 300); }
+
+  // stay well inside the 10-requests/day export quota: at most 3 Clarity syncs per UTC day
+  const today = new Date().toISOString().slice(0, 10);
+  const { count } = await admin.from("analytics_sync_jobs").select("id", { count: "exact", head: true })
+    .eq("resource_id", t.resourceId).in("status", ["succeeded", "partial"]).gte("finished_at", `${today}T00:00:00Z`);
+  if ((count ?? 0) >= 3) return { written, failures: { ...failures, quota: "Clarity was already synced 3 times today (API limit is 10 requests/day)." }, authError };
 
   for (const dim of CALLS) {
     const name = dim ?? "total";

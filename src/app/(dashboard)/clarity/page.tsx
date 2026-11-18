@@ -1,4 +1,8 @@
 import Link from "next/link";
+import { after } from "next/server";
+import { IssueRecordings, type IssueSummary } from "@/components/clarity/issue-recordings";
+import { ISSUES, RECORDINGS_ENDPOINT, refreshRecordingsFor, type RecordingSet } from "@/lib/clarity/recordings";
+import { createAdminClient } from "@/lib/supabase/admin";
 import { EmptyState } from "@/components/dashboard/page-header";
 import { Highlights } from "@/components/dashboard/highlights";
 import { TabHeader } from "@/components/dashboard/tab-header";
@@ -41,12 +45,19 @@ export default async function ClarityPage() {
   if (!client) return null;
   const supabase = await createClient();
   const since = shiftDays(todayIn("UTC"), -90);
-  const [{ data: conn }, metrics, { data: reviews }] = await Promise.all([
+  const [{ data: conn }, metrics, { data: reviews }, { data: recRow }] = await Promise.all([
     supabase.from("integration_connections").select("status, last_synced_at, last_error").eq("client_id", client.id).eq("provider", "clarity").maybeSingle(),
     supabase.from("clarity_behavior_metrics").select("metric_date, dimension, value, metric, count, sessions_pct, sessions, raw")
       .eq("client_id", client.id).gte("metric_date", since).order("metric_date", { ascending: false }).limit(10000),
     supabase.from("clarity_recording_reviews").select("*").eq("client_id", client.id).order("created_at", { ascending: false }).limit(50),
+    supabase.from("dfs_cache").select("data, fetched_at").eq("client_id", client.id).eq("endpoint", RECORDINGS_ENDPOINT).eq("params_hash", "all").maybeSingle(),
   ]);
+  const recordings = (recRow?.data as RecordingSet | null) ?? null;
+  // recordings are pulled by the daily sync; a connection without today's set gets topped up in the background
+  if (conn?.status === "connected" && recordings?.fetchedAt.slice(0, 10) !== new Date().toISOString().slice(0, 10)) {
+    const clientId = client.id;
+    after(() => refreshRecordingsFor(createAdminClient(), clientId));
+  }
   const header = <TabHeader source="clarity" title="Microsoft Clarity" description="How visitors actually use the site: where they get stuck, what doesn't work and how far they read." guide={[
     { term: "Rage clicks", text: "Visitors clicking the same spot repeatedly: a sign something looks clickable but doesn't work." },
     { term: "Dead clicks", text: "Clicks that did nothing. Often a button or image people expect to be a link." },
@@ -101,6 +112,18 @@ export default async function ClarityPage() {
     scroll != null && scroll < 40 && { tone: "info" as const, title: `Visitors read ${scroll.toFixed(0)}% of the page on average`, detail: "Content below the fold may not be seen.", action: "Move the most important message and call-to-action higher up." },
     scriptPct != null && scriptPct < 10 && (ragePct ?? 0) === 0 && { tone: "good" as const, title: "No rage clicks and few script errors", detail: "Visitors aren't hitting obvious friction in the stored days." },
   ]);
+  const WHY: Record<string, [string, string]> = {
+    ScriptErrorCount: ["Code errors on the page that can silently break forms, menus and buttons.", "Open a recording, note the page, and have the developer check the browser console there."],
+    ErrorClickCount: ["Visitors clicked something and a code error fired.", "Watch where the click happens and fix the element's script."],
+    RageClickCount: ["Visitors clicked the same spot repeatedly because it didn't respond.", "Make the element work, or stop it looking clickable."],
+    DeadClickCount: ["Clicks on things that did nothing, often images or headings people expect to be links.", "Turn them into real links or restyle them."],
+    QuickbackClick: ["Visitors opened a page and went straight back: it wasn't what they expected.", "Check the link text and the top of the page match what people are looking for."],
+    ExcessiveScroll: ["Visitors scrolled up and down hunting for something.", "Move key information and the call-to-action higher, and simplify the layout."],
+  };
+  const issueSummaries: IssueSummary[] = ISSUES.map((i) => ({
+    key: i.key, label: i.label, pct: avg(i.metric, "sessionsWithMetricPercentage"), count: sum(i.metric, (r) => r.count),
+    why: WHY[i.metric][0], fix: WHY[i.metric][1],
+  }));
   const daily = dates.map((d) => {
     const day = totals.filter((r) => r.metric_date === d && !r.value);
     const get = (m: string) => day.find((r) => r.metric === m);
@@ -157,6 +180,7 @@ export default async function ClarityPage() {
       </div>
       {conn?.last_error && <p role="alert" className="rounded-lg bg-accent-soft p-3 text-sm text-negative">{conn.last_error}</p>}
       {rows.length > 0 && <Highlights items={hl} stableNote="Clarity only stores the most recent days; more history builds up daily." />}
+      {rows.length > 0 && <IssueRecordings set={recordings} issues={issueSummaries} site={client.name} />}
 
       {rows.length === 0 ? (
         <Unavailable title="No Clarity data stored yet" body="The first import runs right after connecting (it can take a minute); then one day is added per daily sync. Clarity's API only serves the last 1–3 days, so history builds up over time." />
