@@ -13,7 +13,7 @@ import { pollPosts, POSTS_ENDPOINT, POSTS_EST, postTargets, startPosts } from "@
 import { EXTRAS_MAX, extrasEstimate, loadCompetitors, refreshCompetitorExtras } from "@/lib/dataforseo/competitors";
 import { ensure, refreshDeep, resolveTarget, SPECS, type Row } from "@/lib/dataforseo/research";
 import { serverEnv } from "@/lib/env";
-import { pollPlatforms, refreshAll as refreshPlatformReviews, refreshEstimate as platformReviewsEstimate } from "@/lib/reviews/platforms";
+import { pollPlatforms, refreshAll as refreshPlatformReviews, refreshEstimate as platformReviewsEstimate, WEEKLY_LISTINGS_EST } from "@/lib/reviews/platforms";
 import { connectedAccounts, refreshSocial, SOCIAL_ENDPOINT, SOCIAL_EST } from "@/lib/social/fetch";
 import { loggedRun } from "@/lib/jobs/log";
 import { createAdminClient } from "@/lib/supabase/admin";
@@ -334,15 +334,19 @@ async function handle(request: NextRequest) {
       out.social = { refreshed: socialRefreshed, cost: Number(socialCost.toFixed(4)) };
 
       // 11. reviews on every readable platform (Google, Trustpilot, Tripadvisor, Yelp), weekly: collects finished
-      //     tasks first (free), then starts what is older than a week (refreshAll skips fresh / pending ones)
+      //     tasks first (free), then starts what is older than a week (refreshAll skips fresh / pending ones).
+      //     Sites without a reviews API (YellowPages, Nextdoor, Angi, BBB, Houzz, Thumbtack) are found from the
+      //     business's name/address/phone once a month and their listing pages read weekly; opening pages takes
+      //     up to a couple of minutes, so a client only gets them while that much time is left (else next run).
       let reviewPlatformsStarted = 0, reviewPlatformsCollected = 0;
       const reviewErrors: string[] = [];
       for (const id of active) {
         if (Date.now() > deadline - 6_000) break;
         try { reviewPlatformsCollected += (await pollPlatforms(admin, id)).done; } catch { /* next run */ }
-        if (!(await room(platformReviewsEstimate(3)))) break;
+        const crawl = Date.now() < deadline - 130_000;
+        if (!(await room(platformReviewsEstimate(3) + (crawl ? WEEKLY_LISTINGS_EST : 0)))) break;
         try {
-          const r = await refreshPlatformReviews({ admin, clientId: id, source: "auto" }, { maxAgeDays: 6.5 });
+          const r = await refreshPlatformReviews({ admin, clientId: id, source: "auto" }, { maxAgeDays: 6.5, crawl });
           reviewPlatformsStarted += r.started.length; reviewErrors.push(...r.errors.slice(0, 2));
         } catch (e) { if (e instanceof BudgetError) break; }
       }

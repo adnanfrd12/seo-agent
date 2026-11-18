@@ -2,8 +2,8 @@
 
 import { useEffect, useMemo, useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
-import { Loader2, RefreshCw } from "lucide-react";
-import { checkPlatformReviews, refreshPlatformReviews, saveReviewProfiles } from "@/app/(dashboard)/reviews/actions";
+import { Loader2, RefreshCw, Search } from "lucide-react";
+import { checkPlatformReviews, findReviewListings, refreshPlatformReviews, saveReviewProfiles } from "@/app/(dashboard)/reviews/actions";
 
 const btn = "inline-flex items-center gap-1.5 rounded-lg bg-accent px-3 py-1.5 text-sm font-medium text-accent-foreground hover:opacity-90 disabled:opacity-60";
 const btn2 = "inline-flex items-center gap-1.5 rounded-lg border border-border px-3 py-1.5 text-sm font-medium hover:bg-surface-muted disabled:opacity-60";
@@ -36,6 +36,27 @@ export function ReviewsRefresh({ canEdit, estimate, pending }: { canEdit: boolea
   );
 }
 
+/** Searches the review sites for the business by name, address and phone, then reads what it finds. */
+export function FindListings({ canEdit, estimate, label }: { canEdit: boolean; estimate: string; label: string }) {
+  const router = useRouter();
+  const [busy, start] = useTransition();
+  const [msg, setMsg] = useState<{ ok: boolean; text: string } | null>(null);
+  if (!canEdit) return null;
+  return (
+    <div className="max-w-md space-y-1 sm:text-right">
+      <button className={btn2} disabled={busy} onClick={() => start(async () => {
+        setMsg(null);
+        const r = await findReviewListings();
+        setMsg(r.ok ? { ok: true, text: r.message } : { ok: false, text: r.error });
+        router.refresh();
+      })}>
+        {busy ? <Loader2 className="size-4 animate-spin" /> : <Search className="size-4" />} {busy ? "Searching… (about a minute)" : label} <span className="opacity-70">({estimate})</span>
+      </button>
+      {msg && <p role={msg.ok ? "status" : "alert"} className={`text-sm sm:text-left ${msg.ok ? "text-positive" : "text-negative"}`}>{msg.text}</p>}
+    </div>
+  );
+}
+
 /** Owner editor for the listing link on each platform. */
 export function ProfileLinksEditor({ canEdit, platforms, saved, defaults }: {
   canEdit: boolean; platforms: { key: string; label: string; example: string; access: string }[]; saved: Record<string, string>; defaults: Record<string, string>;
@@ -45,15 +66,16 @@ export function ProfileLinksEditor({ canEdit, platforms, saved, defaults }: {
   const init = useMemo(() => Object.fromEntries(platforms.map((p) => [p.key, saved[p.key] ?? defaults[p.key] ?? ""])), [platforms, saved, defaults]);
   const [v, setV] = useState<Record<string, string>>(init);
   const [msg, setMsg] = useState<{ ok: boolean; text: string } | null>(null);
-  const dirty = platforms.some((p) => (v[p.key] ?? "") !== (saved[p.key] ?? ""));
+  // links found automatically are pre-filled, so only a real edit counts as a change
+  const dirty = platforms.some((p) => (v[p.key] ?? "") !== (init[p.key] ?? ""));
   return (
     <fieldset disabled={!canEdit || busy} className="space-y-3">
       <div className="grid gap-3 md:grid-cols-2">
         {platforms.map((p) => (
           <label key={p.key} className="text-sm">
             <span className="flex items-center gap-2">{p.label}
-              <span className={`rounded px-1.5 py-0.5 text-[10px] font-semibold uppercase ${p.access === "api" ? "bg-positive/10 text-positive" : p.access === "credentials" ? "bg-accent/10 text-accent" : "bg-surface-muted text-muted"}`}>
-                {p.access === "api" ? "auto" : p.access === "credentials" ? "needs key" : "link only"}</span></span>
+              <span className={`rounded px-1.5 py-0.5 text-[10px] font-semibold uppercase ${p.access === "api" || p.access === "crawl" ? "bg-positive/10 text-positive" : p.access === "credentials" ? "bg-accent/10 text-accent" : "bg-surface-muted text-muted"}`}>
+                {p.access === "api" ? "auto" : p.access === "crawl" ? "page" : p.access === "credentials" ? "needs key" : "link only"}</span></span>
             <input className={`${field} mt-1`} value={v[p.key] ?? ""} placeholder={p.example} onChange={(e) => setV({ ...v, [p.key]: e.target.value })} />
           </label>
         ))}
@@ -93,7 +115,9 @@ export function ReviewFeed({ items, platforms }: {
           <li key={i} className="py-3 text-sm">
             <p className="flex flex-wrap items-center gap-x-2 text-xs text-muted">
               <span className="font-medium text-foreground">{r.author ?? "Anonymous"}</span>
-              <span aria-label={`${r.rating ?? "?"} out of 5`} className="text-amber-500">{"★".repeat(Math.round(r.rating ?? 0))}<span className="text-border">{"★".repeat(5 - Math.round(r.rating ?? 0))}</span></span>
+              {r.platform === "nextdoor"
+                ? <span className="text-positive">♥ Recommends</span>
+                : r.rating != null && <span aria-label={`${r.rating} out of 5`} className="text-amber-500">{"★".repeat(Math.round(r.rating))}<span className="text-border">{"★".repeat(5 - Math.round(r.rating))}</span></span>}
               <span>{r.date ?? ""}</span><span className="rounded bg-surface-muted px-1.5">{r.label}</span>
               {r.url && <a href={r.url} target="_blank" rel="noreferrer" className="underline">open</a>}
             </p>

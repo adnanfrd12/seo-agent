@@ -5,7 +5,7 @@ import { getSession } from "@/lib/analytics/client-context";
 import { BudgetError } from "@/lib/dataforseo/budget";
 import { DfsError, dfsConfigured } from "@/lib/dataforseo/client";
 import { pollReviews } from "@/lib/dataforseo/local";
-import { pollPlatforms, refreshAll, saveProfiles } from "@/lib/reviews/platforms";
+import { platformOf, pollPlatforms, refreshAll, refreshListings, saveProfiles, type PlatformKey } from "@/lib/reviews/platforms";
 import { createAdminClient } from "@/lib/supabase/admin";
 
 type Result = { ok: true; message: string } | { ok: false; error: string };
@@ -38,7 +38,32 @@ export async function refreshPlatformReviews(): Promise<Result> {
     const r = await refreshAll({ admin: createAdminClient(), clientId: a.client.id, source: "manual" });
     revalidatePath(PATH);
     if (!r.started.length && r.errors.length) return { ok: false, error: r.errors.join(" · ") };
-    return { ok: true, message: `${r.started.length ? `Collecting reviews from ${r.started.join(", ")}; they appear within a few minutes.` : "Nothing to start (a collection is already running)."}${r.errors.length ? ` Issues: ${r.errors.join(" · ")}` : ""}` };
+    const names = (l: string[]) => l.map((k) => platformOf(k as PlatformKey)?.label ?? k).join(", ");
+    return { ok: true, message: `${r.found.length ? `Found listings on ${names(r.found)}. ` : ""}${r.started.length ? `Updated / collecting ${names(r.started)}; DataForSEO reviews appear within a few minutes.` : "Nothing to start (a collection is already running)."}${r.errors.length ? ` Issues: ${r.errors.join(" · ")}` : ""}` };
+  } catch (e) {
+    return { ok: false, error: e instanceof BudgetError || e instanceof DfsError || e instanceof Error ? e.message : "Something went wrong." };
+  }
+}
+
+/**
+ * Searches the sites without a reviews API (YellowPages, Nextdoor, Yelp, BBB, Angi, Houzz, Thumbtack) for the
+ * business by its name, address and phone, then reads the listings it finds (≈$0.04 + ≈$0.006 a page).
+ */
+export async function findReviewListings(): Promise<Result> {
+  const a = await owner();
+  if (!a.client) return { ok: false, error: a.error };
+  if (!dfsConfigured()) return { ok: false, error: "DataForSEO isn't configured on the server." };
+  try {
+    const r = await refreshListings({ admin: createAdminClient(), clientId: a.client.id, source: "manual" }, { maxAgeMs: 0, discover: "force" });
+    revalidatePath(PATH);
+    if (r.napMissing || !r.discovery) return { ok: false, error: "The business's name, address and phone aren't known: connect its Google Business Profile first." };
+    const label = (k: string) => platformOf(k as PlatformKey)?.label ?? k;
+    const missing = r.discovery.checked.filter((k) => !r.discovery!.links[k]).map(label);
+    return {
+      ok: true,
+      message: `${r.found.length ? `Found ${r.found.map(label).join(", ")}` : "No listings found"}${missing.length ? `; not found on ${missing.join(", ")}` : ""}.`
+        + `${r.read.length ? ` Read ${r.read.map(label).join(", ")}.` : ""}${r.errors.length ? ` Notes: ${r.errors.slice(0, 4).join(" · ")}` : ""}`,
+    };
   } catch (e) {
     return { ok: false, error: e instanceof BudgetError || e instanceof DfsError || e instanceof Error ? e.message : "Something went wrong." };
   }

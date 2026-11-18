@@ -2,17 +2,22 @@ import { KpiCard } from "@/components/dashboard/kpi-card";
 import { EmptyState } from "@/components/dashboard/page-header";
 import { TabHeader } from "@/components/dashboard/tab-header";
 import { SpendLine } from "@/components/research/chrome";
-import { ProfileLinksEditor, ReviewFeed, ReviewsRefresh } from "@/components/research/review-platform-controls";
+import { FindListings, ProfileLinksEditor, ReviewFeed, ReviewsRefresh } from "@/components/research/review-platform-controls";
 import { cat } from "@/lib/charts/colors";
 import { fmtInt } from "@/lib/analytics/format";
 import { shiftDays, todayIn } from "@/lib/analytics/range";
-import { FETCHABLE, loadPlatformReviews, PLATFORMS, refreshEstimate, type PlatformView } from "@/lib/reviews/platforms";
+import { CRAWL_EST, CRAWLED } from "@/lib/reviews/listings";
+import { DISCOVERY_EST, FETCHABLE, loadPlatformReviews, PLATFORMS, refreshEstimate, type PlatformView } from "@/lib/reviews/platforms";
 import { researchPage } from "@/lib/dataforseo/view";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { createClient } from "@/lib/supabase/server";
 
+export const maxDuration = 300; // finding listings and opening their pages through DataForSEO's crawler can take a minute or two
+
 const fmtRating = (n: number | null) => (n == null ? "—" : n.toFixed(2));
 const pct = (n: number | null) => (n == null ? "—" : `${Math.round(n)}%`);
+/** Nextdoor has faves (recommendations), not star reviews: kept out of ratings and review counts. */
+const STARLESS = new Set(["nextdoor"]);
 
 function months(n: number) {
   const now = new Date();
@@ -26,30 +31,44 @@ function statusText(v: PlatformView) {
   if (v.access === "credentials") return v.url ? "Link saved · needs credentials to read reviews" : "Needs credentials";
   if (v.access === "none") return v.url ? "Link saved · no public API" : "No public API";
   if (v.status === "pending") return "Collecting…";
+  if (v.via === "google") return `Rating as shown in Google search (${v.fetchedAt?.slice(0, 10) ?? ""})${v.status === "failed" && v.error ? ` · ${v.error}` : ""}`;
   if (v.status === "failed") return v.error ?? "Last collection failed";
-  if (v.source === "live") return v.total === 0 || (v.total == null && !v.reviews.length) ? "No listing / no reviews found" : `Updated ${v.fetchedAt?.slice(0, 10) ?? ""}`;
-  return v.url ? "Not collected yet" : "No listing link";
+  if (v.source === "live") {
+    const day = v.fetchedAt?.slice(0, 10) ?? "";
+    if (v.platform === "nextdoor") return `Read from the public page · ${day}`;
+    return v.total === 0 || (v.total == null && !v.reviews.length) ? (v.via === "page" ? `Listing found · no reviews yet (${day})` : "No listing / no reviews found") : `Updated ${day}`;
+  }
+  if (v.url) return "Not read yet";
+  return v.searched ? "Not found by name / phone search" : "No listing link";
 }
 
 export default async function ReviewsPage() {
   const page = await researchPage();
   if (!page) return null;
   const { client, canEdit, configured, budget } = page;
-  const header = <TabHeader source="dfs" title="Reviews (all platforms)" description="Ratings and reviews of the business across review sites, refreshed automatically every week. Google, Trustpilot, Tripadvisor (and Yelp when DataForSEO re-enables it) are read without any login; the others need the client's credentials or have no public API." guide={[
+  const header = <TabHeader source="dfs" title="Reviews (all platforms)" description="Ratings and reviews of the business across review sites, refreshed automatically every week. Google, Trustpilot and Tripadvisor are read through DataForSEO; YellowPages, Nextdoor, Angi, Yelp, BBB, Houzz and Thumbtack listings are found automatically from the business's name, address and phone and read from their public pages where the site allows it. No client login is needed." guide={[
     { term: "Combined average", text: "Average star rating weighted by each platform's review count." },
     { term: "Response rate", text: "Share of the collected reviews that have an owner reply." },
+    { term: "Faves", text: "Nextdoor's recommendations: neighbors who recommend the business. Nextdoor has no star ratings, so they're counted separately." },
+    { term: "Blocked", text: "BBB, Houzz and Thumbtack usually refuse automated reading (DataForSEO's crawler too). They're tried every week and the link is kept; Google's rating for the listing is shown when Google has one." },
   ]} />;
   if (!configured) return <>{header}<EmptyState title="DataForSEO isn't configured" body="Add DATAFORSEO_LOGIN and DATAFORSEO_PASSWORD to the environment, then redeploy." action={{ href: "/integrations", label: "Open Integrations" }} /></>;
 
-  const { profiles, saved, views } = await loadPlatformReviews(await createClient(), createAdminClient(), client.id);
-  const live = views.filter((v) => v.source === "live" && ((v.total ?? 0) > 0 || v.reviews.length > 0));
-  const totalCount = live.reduce((a, v) => a + (v.total ?? v.reviews.length), 0);
-  const weighted = live.filter((v) => v.rating != null).reduce((a, v) => ({ s: a.s + v.rating! * (v.total ?? v.reviews.length), n: a.n + (v.total ?? v.reviews.length) }), { s: 0, n: 0 });
+  const { profiles, saved, views, discovery } = await loadPlatformReviews(await createClient(), createAdminClient(), client.id);
+  const live = views.filter((v) => v.source === "live" && ((v.total ?? 0) > 0 || v.reviews.length > 0 || (v.faves ?? 0) > 0));
+  const starred = live.filter((v) => !STARLESS.has(v.platform));
+  const totalCount = starred.reduce((a, v) => a + (v.total ?? v.reviews.length), 0);
+  const weighted = starred.filter((v) => v.rating != null).reduce((a, v) => ({ s: a.s + v.rating! * (v.total ?? v.reviews.length), n: a.n + (v.total ?? v.reviews.length) }), { s: 0, n: 0 });
   const combined = weighted.n ? weighted.s / weighted.n : null;
   const all = live.flatMap((v) => v.reviews.map((r) => ({ ...r, platform: v.platform, label: v.label })));
-  const replied = all.filter((r) => r.reply).length;
-  const responseRate = all.length ? (replied / all.length) * 100 : null;
+  const starReviews = all.filter((r) => !STARLESS.has(r.platform));
+  const replied = starReviews.filter((r) => r.reply).length;
+  const responseRate = starReviews.length ? (replied / starReviews.length) * 100 : null;
   const last90 = all.filter((r) => r.date && r.date >= shiftDays(todayIn("UTC"), -90)).length;
+  const faves = views.find((v) => v.platform === "nextdoor")?.faves ?? null;
+  const label = (k: string) => PLATFORMS.find((p) => p.key === k)?.label ?? k;
+  const foundKeys = Object.keys(discovery?.links ?? {});
+  const notFound = (discovery?.checked ?? []).filter((k) => !discovery?.links[k]);
 
   const m12 = months(12);
   const series = live.map((v, i) => ({ v, color: cat(i), counts: m12.map((m) => v.reviews.filter((r) => r.date?.startsWith(m)).length) }));
@@ -58,6 +77,7 @@ export default async function ReviewsPage() {
   const maxDist = Math.max(1, ...dist.map((d) => d.n));
   const pending = views.some((v) => v.status === "pending");
   const fetchable = views.filter((v) => (v.platform === "google" || FETCHABLE.includes(v.platform)) && v.url).length;
+  const pages = views.filter((v) => CRAWLED.includes(v.platform) && v.url).length;
   const feed = [...all].sort((a, b) => (b.date ?? "").localeCompare(a.date ?? ""));
   const card = "rounded-[10px] border border-border bg-surface p-4";
 
@@ -66,26 +86,61 @@ export default async function ReviewsPage() {
       {header}
       <div className="mb-5 flex flex-wrap items-start justify-between gap-3">
         <SpendLine budget={budget} />
-        <ReviewsRefresh canEdit={canEdit} pending={pending} estimate={`≈$${refreshEstimate(Math.max(0, fetchable - 1)).toFixed(3)}`} />
+        <ReviewsRefresh canEdit={canEdit} pending={pending} estimate={`≈$${refreshEstimate(Math.max(0, fetchable - 1), pages).toFixed(3)}`} />
       </div>
 
+      <section aria-label="Listings found automatically" className={`${card} mb-6`}>
+        <div className="flex flex-wrap items-start justify-between gap-3">
+          <div className="min-w-0">
+            <h2 className="text-sm font-semibold">Listings found from the business&apos;s name, address and phone</h2>
+            {discovery ? (
+              <p className="mt-1 text-xs text-muted">
+                Searched {discovery.at.slice(0, 10)} for <span className="text-foreground">{discovery.nap.name}</span>
+                {discovery.nap.phone ? ` · ${discovery.nap.phone}` : ""}{discovery.nap.city ? ` · ${discovery.nap.city}${discovery.nap.state ? `, ${discovery.nap.state}` : ""}` : ""}.
+                {" "}Repeated automatically every month; a link saved below always wins over a found one.
+              </p>
+            ) : (
+              <p className="mt-1 text-xs text-muted">Not searched yet. The weekly refresh does it automatically; or search now. YellowPages and Nextdoor are searched on the sites themselves, Yelp, BBB, Angi, Houzz and Thumbtack through Google.</p>
+            )}
+          </div>
+          <FindListings canEdit={canEdit} estimate={`≈$${(DISCOVERY_EST + CRAWLED.length * CRAWL_EST).toFixed(2)}`} label={discovery ? "Search again" : "Find listings now"} />
+        </div>
+        {discovery && (
+          <ul className="mt-3 flex flex-wrap gap-1.5 text-xs" aria-label="Search results">
+            {foundKeys.map((k) => (
+              <li key={k}><a href={discovery.links[k as keyof typeof discovery.links]!.url} target="_blank" rel="noreferrer" title={discovery.links[k as keyof typeof discovery.links]!.how}
+                className="inline-flex items-center gap-1 rounded-full border border-positive/40 bg-positive/10 px-2 py-0.5 text-foreground hover:underline">✓ {label(k)}</a></li>
+            ))}
+            {notFound.map((k) => <li key={k} className="rounded-full border border-border px-2 py-0.5 text-muted">{label(k)}: not found</li>)}
+            {discovery.errors.length > 0 && <li className="w-full text-negative">{discovery.errors.slice(0, 3).join(" · ")}</li>}
+          </ul>
+        )}
+      </section>
+
       <section aria-label="Headline" className="grid grid-cols-2 gap-3 lg:grid-cols-4">
-        <KpiCard label="Combined rating" source="Reviews" format={(n) => fmtRating(n ?? null)} value={combined} previous={null} hint="Weighted by each platform's review count." />
-        <KpiCard label="Total reviews" source="Reviews" format={fmtInt} value={totalCount} previous={null} hint="Sum of the review counts each platform shows." />
-        <KpiCard label="New reviews (90 days)" source="Reviews" format={fmtInt} value={last90} previous={null} hint="From the collected (newest) reviews." />
-        <KpiCard label="Response rate" source="Reviews" format={(n) => pct(n ?? null)} value={responseRate} previous={null} hint="Collected reviews with an owner reply." />
+        <KpiCard label="Combined rating" source="Reviews" format={(n) => fmtRating(n ?? null)} value={combined} previous={null} hint="Weighted by each platform's review count (star-rated platforms only)." />
+        <KpiCard label="Total reviews" source="Reviews" format={fmtInt} value={totalCount} previous={null} hint={`Sum of the review counts each platform shows.${faves ? ` Plus ${fmtInt(faves)} Nextdoor faves (recommendations).` : ""}`} />
+        <KpiCard label="New reviews (90 days)" source="Reviews" format={fmtInt} value={last90} previous={null} hint="From the collected (newest) reviews and recommendations." />
+        <KpiCard label="Response rate" source="Reviews" format={(n) => pct(n ?? null)} value={responseRate} previous={null} hint="Collected star reviews with an owner reply." />
       </section>
 
       <section aria-label="Platforms" className="mt-6 grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
-        {views.map((v) => (
-          <div key={v.platform} className={`${card} ${v.source === "live" ? "" : "opacity-80"}`}>
-            <p className="flex items-center justify-between text-sm font-semibold">{v.label}
-              {v.url && <a href={v.url} target="_blank" rel="noreferrer" className="text-xs font-normal text-accent underline">listing</a>}</p>
-            <p className="mt-2 text-2xl font-semibold tabular-nums">{v.source === "live" && v.rating != null ? `${v.rating.toFixed(1)} ★` : "—"}</p>
-            <p className="text-xs text-muted">{v.source === "live" && v.total != null ? `${fmtInt(v.total)} reviews` : " "}</p>
-            <p className={`mt-2 text-xs ${v.status === "failed" ? "text-negative" : "text-muted"}`}>{statusText(v)}</p>
-          </div>
-        ))}
+        {views.map((v) => {
+          const isFaves = STARLESS.has(v.platform);
+          const big = v.source !== "live" ? "—" : isFaves ? (v.faves != null ? `${fmtInt(v.faves)} ♥` : "—") : v.rating != null ? `${v.rating.toFixed(1)} ★` : "—";
+          const small = v.source !== "live" ? " " : isFaves ? (v.faves != null ? `faves (recommendations)${v.reviews.length ? ` · ${v.reviews.length} shown publicly` : ""}` : " ") : v.total != null ? `${fmtInt(v.total)} reviews` : " ";
+          return (
+            <div key={v.platform} className={`${card} ${v.source === "live" ? "" : "opacity-80"}`}>
+              <p className="flex items-center justify-between gap-2 text-sm font-semibold">
+                <span className="flex min-w-0 items-center gap-1.5">{v.label}
+                  {v.found && <span title={v.found.how} className="rounded bg-positive/10 px-1.5 py-0.5 text-[10px] font-semibold uppercase text-positive">found</span>}</span>
+                {v.url && <a href={v.url} target="_blank" rel="noreferrer" className="shrink-0 text-xs font-normal text-accent underline">listing</a>}</p>
+              <p className="mt-2 text-2xl font-semibold tabular-nums">{big}</p>
+              <p className="text-xs text-muted">{small}</p>
+              <p className={`mt-2 text-xs ${v.status === "failed" && v.via !== "google" ? "text-negative" : "text-muted"}`}>{statusText(v)}</p>
+            </div>
+          );
+        })}
       </section>
 
       <div className="mt-6 grid gap-4 lg:grid-cols-2">
@@ -121,7 +176,7 @@ export default async function ReviewsPage() {
           </ul>
           <h3 className="mt-5 text-sm font-semibold">Response rate by platform</h3>
           <ul className="mt-2 space-y-1 text-sm">
-            {live.map((v) => { const n = v.reviews.length, r = v.reviews.filter((x) => x.reply).length; return (
+            {starred.map((v) => { const n = v.reviews.length, r = v.reviews.filter((x) => x.reply).length; return (
               <li key={v.platform} className="flex justify-between"><span>{v.label}</span><span className="tabular-nums text-muted">{n ? `${Math.round((r / n) * 100)}% (${r}/${n})` : "—"}</span></li>
             ); })}
             {live.length === 0 && <li className="text-muted">No reviews collected yet.</li>}
@@ -136,9 +191,9 @@ export default async function ReviewsPage() {
 
       <details className={`${card} mt-6`} open={Object.keys(saved).length === 0 && canEdit}>
         <summary className="cursor-pointer text-sm font-medium">Listing links <span className="ml-2 text-accent">{canEdit ? "Edit" : "View"}</span></summary>
-        <p className="mt-2 text-xs text-muted">Paste the client&apos;s profile page on each site. &quot;auto&quot; platforms are read weekly; &quot;needs key&quot; ones need the client&apos;s credentials; &quot;link only&quot; sites have no public API and forbid scraping, so only the link is kept.</p>
+        <p className="mt-2 text-xs text-muted">Links found automatically are filled in; paste a link only to correct one or to add a listing the search missed (a saved link always wins). &quot;auto&quot; platforms are read through DataForSEO; &quot;page&quot; ones from their public listing page; &quot;needs key&quot; ones need the client&apos;s credentials; &quot;link only&quot; has nothing to read.</p>
         <div className="mt-3">
-          <ProfileLinksEditor canEdit={canEdit} saved={saved as Record<string, string>} defaults={profiles as Record<string, string>}
+          <ProfileLinksEditor key={JSON.stringify(profiles)} canEdit={canEdit} saved={saved as Record<string, string>} defaults={profiles as Record<string, string>}
             platforms={PLATFORMS.map((p) => ({ key: p.key, label: p.label, example: p.example, access: p.access }))} />
         </div>
         <ul className="mt-4 space-y-1 text-xs text-muted">{PLATFORMS.filter((p) => p.access !== "api" || p.key === "yelp").map((p) => <li key={p.key}><strong className="text-foreground">{p.label}:</strong> {p.note}</li>)}</ul>

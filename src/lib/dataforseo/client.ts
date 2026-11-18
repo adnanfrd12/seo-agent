@@ -23,13 +23,13 @@ function authHeader() {
 
 type TaskResponse = {
   status_code: number; status_message: string; cost?: number;
-  tasks?: { status_code: number; status_message: string; cost?: number; result?: Record<string, unknown>[] | null }[];
+  tasks?: { id?: string; status_code: number; status_message: string; cost?: number; result?: Record<string, unknown>[] | null }[];
 };
 
-/** One Live call. Returns the first result object (or null when DataForSEO has no data) and what it cost. */
+/** One Live call. Returns the first result object (or null when DataForSEO has no data), what it cost and the task id. */
 export async function dfsPost(
   path: string, body: Record<string, unknown>, opts: { timeoutMs?: number; attempts?: number } = {},
-): Promise<{ result: Record<string, unknown> | null; cost: number }> {
+): Promise<{ result: Record<string, unknown> | null; cost: number; id?: string }> {
   let lastErr: unknown;
   for (let attempt = 0; attempt < (opts.attempts ?? 3); attempt++) {
     let res: Response;
@@ -58,10 +58,17 @@ export async function dfsPost(
     const task = json?.tasks?.[0];
     if (!json || !task) throw new DfsError("DataForSEO returned an unreadable response.", "other");
     const cost = Number(task.cost ?? json.cost ?? 0) || 0;
-    if (task.status_code === 20000) return { result: task.result?.[0] ?? null, cost };
-    if (task.status_code === 40102) return { result: null, cost }; // "No Search Results": a valid empty answer
+    if (task.status_code === 20000) return { result: task.result?.[0] ?? null, cost, id: task.id };
+    if (task.status_code === 40102) return { result: null, cost, id: task.id }; // "No Search Results": a valid empty answer
     if (task.status_code === 40200 || json.status_code === 40200) throw new DfsError("DataForSEO credit is used up. Top up the balance.", "payment");
-    if (task.status_code === 40101 || task.status_code === 40100) throw new DfsError("DataForSEO rejected the login.", "auth");
+    // 40101 is "Internal SE Server Error": the search engine failed this one request (seen when several run at once).
+    // It is not a login problem and isn't billed, so it is retried like a busy answer.
+    if (task.status_code === 40101) {
+      lastErr = new DfsError("The search engine had a temporary error. Try again.", "other");
+      await new Promise((r) => setTimeout(r, 2000 * (attempt + 1)));
+      continue;
+    }
+    if (task.status_code === 40100) throw new DfsError("DataForSEO rejected the login.", "auth");
     if (task.status_code === 40202 || task.status_code === 50301) throw new DfsError("DataForSEO rate limit reached. Try again shortly.", "rate_limit");
     throw new DfsError(`DataForSEO: ${task.status_message} (${task.status_code})`, task.status_code >= 40000 && task.status_code < 50000 ? "bad_request" : "other");
   }
