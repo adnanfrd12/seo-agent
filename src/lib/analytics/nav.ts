@@ -1,9 +1,10 @@
 import {
   BarChart3, CalendarCheck, Globe, Link2, ListOrdered, SearchCheck, Swords, CalendarRange, FileUp, History, LayoutDashboard, Lightbulb, MapPin, MousePointerClick, Plug,
-  Bot, GraduationCap, MessagesSquare, Newspaper, ScanSearch, Search, Settings, Share2, ShieldCheck, Sparkles, Star, TrendingUp, Wrench, type LucideIcon,
+  Bot, GraduationCap, MessagesSquare, Newspaper, Radar, ScanSearch, Search, Settings, Share2, ShieldCheck, Sparkles, Star, TrendingUp, Wrench, type LucideIcon,
 } from "lucide-react";
 
-export interface NavItem { href: string; label: string; icon: LucideIcon }
+/** `children` are sub-tabs shown under the item; the sidebar lets them be opened and closed. */
+export interface NavItem { href: string; label: string; icon: LucideIcon; children?: { href: string; label: string }[] }
 export interface NavGroup { title: string; items: NavItem[] }
 
 export const NAV: NavGroup[] = [
@@ -33,6 +34,23 @@ export const NAV: NavGroup[] = [
       { href: "/site-audit", label: "Site Audit", icon: ScanSearch },
       { href: "/technical-seo", label: "Technical SEO", icon: ShieldCheck },
       { href: "/blog", label: "Blog Content", icon: Newspaper },
+    ],
+  },
+  {
+    title: "SEOSignalX",
+    items: [
+      {
+        href: "/seosignalx", label: "SEOSignalX", icon: Radar,
+        children: [
+          { href: "/seosignalx", label: "Dashboard" },
+          { href: "/seosignalx/eeat", label: "E-E-A-T Audit" },
+          { href: "/seosignalx/semantic", label: "Semantic Audit" },
+          { href: "/seosignalx/speed", label: "Speed Optimization" },
+          { href: "/seosignalx/robots", label: "Robots.txt Analyzer" },
+          { href: "/seosignalx/crawl-optimization", label: "Crawl Optimization" },
+          { href: "/seosignalx/patches", label: "Patches" },
+        ],
+      },
     ],
   },
   {

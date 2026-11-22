@@ -1,20 +1,41 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useSyncExternalStore } from "react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import { Menu, PanelLeftClose, PanelLeftOpen, X } from "lucide-react";
+import { ChevronDown, Menu, PanelLeftClose, PanelLeftOpen, X } from "lucide-react";
 import { BrandMark, BRAND_NAME } from "@/components/brand/brand-mark";
 import { NAV } from "@/lib/analytics/nav";
 import { cn } from "@/lib/utils";
 
 function activeItem(pathname: string) {
-  for (const g of NAV) for (const i of g.items) if (pathname === i.href || pathname.startsWith(`${i.href}/`)) return { group: g.title, item: i };
+  for (const g of NAV) for (const i of g.items) {
+    const child = i.children?.find((c) => c.href === pathname);
+    if (child) return { group: g.title, item: { ...i, label: child.label } };
+    if (pathname === i.href || pathname.startsWith(`${i.href}/`)) return { group: g.title, item: i };
+  }
   return null;
 }
 
+/* Which sub-tab lists are open, remembered on this device ("1" open / "0" closed; unset = open while on that section). */
+const OPEN_KEY = "seo-insights:nav-open";
+const openListeners = new Set<() => void>();
+function readOpen(): string {
+  try { return window.localStorage.getItem(OPEN_KEY) ?? "{}"; } catch { return "{}"; }
+}
+function setOpen(href: string, open: boolean) {
+  let m: Record<string, string> = {};
+  try { m = JSON.parse(readOpen()) as Record<string, string>; } catch { /* reset */ }
+  m[href] = open ? "1" : "0";
+  try { window.localStorage.setItem(OPEN_KEY, JSON.stringify(m)); } catch { /* storage blocked: only this view */ }
+  openListeners.forEach((f) => f());
+}
+const subscribeOpen = (f: () => void) => { openListeners.add(f); return () => openListeners.delete(f); };
+
 function NavList({ collapsed, onNavigate }: { collapsed: boolean; onNavigate?: () => void }) {
   const pathname = usePathname();
+  const openRaw = useSyncExternalStore(subscribeOpen, readOpen, () => "{}");
+  const openMap = (() => { try { return JSON.parse(openRaw) as Record<string, string>; } catch { return {}; } })();
   return (
     <nav aria-label="Main" className={cn("pb-6", collapsed ? "px-2" : "px-3")}>
       {NAV.map((group, gi) => (
@@ -23,8 +44,44 @@ function NavList({ collapsed, onNavigate }: { collapsed: boolean; onNavigate?: (
             ? gi > 0 && <div className="mx-2 mb-2 border-t border-hairline" aria-hidden />
             : <p className="mb-1 px-2.5 text-[11px] font-medium tracking-[0.02em] text-faint">{group.title}</p>}
           <ul className="space-y-px">
-            {group.items.map(({ href, label, icon: Icon }) => {
+            {group.items.map(({ href, label, icon: Icon, children }) => {
               const active = pathname === href || pathname.startsWith(`${href}/`);
+              if (children?.length && !collapsed) {
+                const open = openMap[href] ? openMap[href] === "1" : active;
+                return (
+                  <li key={href}>
+                    <div className="flex items-center gap-0.5">
+                      <Link href={href} onClick={onNavigate}
+                        className={cn("relative flex h-8 min-w-0 flex-1 items-center gap-2.5 rounded-md px-2.5 text-[13px] outline-none transition-colors focus-visible:ring-2 focus-visible:ring-accent",
+                          active ? "font-medium text-foreground" : "text-secondary hover:bg-surface-muted hover:text-foreground")}>
+                        <Icon className={cn("size-4 shrink-0", active ? "text-foreground" : "text-muted")} aria-hidden />
+                        <span className="truncate">{label}</span>
+                      </Link>
+                      <button type="button" onClick={() => setOpen(href, !open)} aria-expanded={open} aria-label={`${open ? "Hide" : "Show"} ${label} tabs`}
+                        className="grid size-7 shrink-0 place-items-center rounded-md text-muted outline-none hover:bg-surface-muted hover:text-foreground focus-visible:ring-2 focus-visible:ring-accent">
+                        <ChevronDown className={cn("size-3.5 transition-transform", !open && "-rotate-90")} aria-hidden />
+                      </button>
+                    </div>
+                    {open && (
+                      <ul className="ml-[17px] mt-px space-y-px border-l border-hairline pl-2">
+                        {children.map((c) => {
+                          const on = pathname === c.href;
+                          return (
+                            <li key={c.href}>
+                              <Link href={c.href} onClick={onNavigate} aria-current={on ? "page" : undefined}
+                                className={cn("relative flex h-7 items-center rounded-md px-2.5 text-[12.5px] outline-none transition-colors focus-visible:ring-2 focus-visible:ring-accent",
+                                  on ? "bg-surface-muted font-medium text-foreground" : "text-secondary hover:bg-surface-muted hover:text-foreground")}>
+                                {on && <span className="absolute inset-y-1.5 left-0 w-0.5 rounded-full bg-accent" aria-hidden />}
+                                <span className="truncate">{c.label}</span>
+                              </Link>
+                            </li>
+                          );
+                        })}
+                      </ul>
+                    )}
+                  </li>
+                );
+              }
               return (
                 <li key={href}>
                   <Link
