@@ -21,14 +21,18 @@ export const pctOf = (a: number, b: number) => (b > 0 ? Math.round((a / b) * 100
 
 export function ScoreRing({ value, size = 56, tone }: { value: number | null; size?: number; tone?: Tone }) {
   const t = TONE[tone ?? toneFor(value)];
-  const r = size / 2 - 4, c = 2 * Math.PI * r, v = Math.max(0, Math.min(100, value ?? 0));
+  const stroke = size < 48 ? 3 : 4;
+  const r = size / 2 - stroke, c = 2 * Math.PI * r, v = Math.max(0, Math.min(100, value ?? 0));
   return (
     <div className="relative shrink-0" style={{ width: size, height: size }} role="img" aria-label={value == null ? "Not available" : `${value}%`}>
       <svg width={size} height={size} className="-rotate-90">
-        <circle cx={size / 2} cy={size / 2} r={r} fill="none" stroke="currentColor" strokeWidth={4} className="text-border" />
-        {value != null && <circle cx={size / 2} cy={size / 2} r={r} fill="none" stroke={t.ring} strokeWidth={4} strokeLinecap="round" strokeDasharray={`${(v / 100) * c} ${c}`} />}
+        <circle cx={size / 2} cy={size / 2} r={r} fill="none" stroke="currentColor" strokeWidth={stroke} className="text-border" />
+        {value != null && <circle cx={size / 2} cy={size / 2} r={r} fill="none" stroke={t.ring} strokeWidth={stroke} strokeLinecap="round" strokeDasharray={`${(v / 100) * c} ${c}`} />}
       </svg>
-      <span className="absolute inset-0 grid place-items-center text-[13px] font-bold tabular-nums">{value == null ? "- -" : `${value}%`}</span>
+      {/* text scales with the ring so "100%" fits inside even the small (36 px) rings */}
+      <span className="absolute inset-0 grid place-items-center font-bold leading-none tabular-nums tracking-tight" style={{ fontSize: Math.max(9, Math.round(size * 0.22)) }}>
+        {value == null ? "- -" : <span>{value}<span style={{ fontSize: "0.7em" }}>%</span></span>}
+      </span>
     </div>
   );
 }
