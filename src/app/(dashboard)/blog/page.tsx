@@ -3,6 +3,7 @@ import { Columns, Panel } from "@/components/charts/ai-charts";
 import { BarList } from "@/components/charts/bar-list";
 import { keywordHref } from "@/lib/keyword-href";
 import { GeoSpread } from "@/components/charts/blog-charts";
+import { BlogInsightTabs, type KeywordRow, type PostRow, type QueryRow } from "@/components/blog/blog-insight-tabs";
 import { Highlights } from "@/components/dashboard/highlights";
 import { StatCard } from "@/components/dashboard/kpi-card";
 import { EmptyState } from "@/components/dashboard/page-header";
@@ -146,6 +147,26 @@ export default async function BlogPage({ searchParams }: { searchParams: Promise
   const topKw = [...kwBest.entries()].sort((x, y) => y[1].volume - x[1].volume).slice(0, 50);
   const kwPosts = posts.filter((p) => p.keywords?.dfs?.length).length;
 
+  // the same data as tables (tabs below the cards): every keyword with the post that ranks best for it,
+  // every post Google showed, and the queries behind each post, so the numbers are seen before opening a page
+  const kwRank = new Map<string, { volume: number; position: number | null; post: (typeof posts)[number]; posts: number }>();
+  for (const p of posts) for (const k of p.keywords?.dfs ?? []) {
+    const x = kwRank.get(k.keyword);
+    if (!x) kwRank.set(k.keyword, { volume: k.volume ?? 0, position: k.position, post: p, posts: 1 });
+    else {
+      x.posts++;
+      if ((k.position ?? 999) < (x.position ?? 999)) { x.position = k.position; x.post = p; }
+      x.volume = Math.max(x.volume, k.volume ?? 0);
+    }
+  }
+  const keywordRows: KeywordRow[] = [...kwRank.entries()].sort((x, y) => y[1].volume - x[1].volume || (x[1].position ?? 999) - (y[1].position ?? 999))
+    .map(([k, x]) => ({ keyword: k, href: keywordHref(k), volume: x.volume, position: x.position, posts: x.posts, postTitle: x.post.title, postHref: `/blog/${x.post.id}`, postUrl: x.post.url }));
+  const shown = posts.map((p) => ({ p, f: perf.get(pathOf(p.url)) })).filter((x) => x.f && x.f.clicks + x.f.impressions + x.f.views > 0);
+  const postRows: PostRow[] = shown.sort((x, y) => y.f!.clicks - x.f!.clicks || y.f!.impressions - x.f!.impressions || y.f!.views - x.f!.views)
+    .map(({ p, f }) => ({ title: p.title, href: `/blog/${p.id}`, url: p.url, clicks: f!.clicks, impressions: f!.impressions, ctr: f!.ctr, position: f!.position, queries: f!.queries, topQuery: f!.top[0]?.query ?? null, views: f!.views }));
+  const queryRows: QueryRow[] = shown.flatMap(({ p, f }) => f!.top.map((t) => ({ query: t.query, href: keywordHref(t.query), clicks: t.clicks, impressions: t.impressions, position: t.position, postTitle: p.title, postHref: `/blog/${p.id}`, postUrl: p.url })))
+    .sort((x, y) => y.clicks - x.clicks || y.impressions - x.impressions);
+
   const rows = posts.map((p) => {
     const f = perf.get(pathOf(p.url));
     const issues = a.issues.get(p.id) ?? [];
@@ -241,6 +262,10 @@ export default async function BlogPage({ searchParams }: { searchParams: Promise
           items={unique(topClicks.map(({ p, f }) => ({ label: p.title, url: p.url, value: f!.clicks, detail: `${fmtInt(f!.impressions)} impr` })))} />
         <Columns title="Post length" sub="Words per post (600+ recommended)" valueLabel="Posts"
           bins={bins.map(([lo, hi, label]) => ({ label, value: posts.filter((p) => p.word_count >= lo && p.word_count < hi).length, highlight: lo >= 600 }))} />
+      </div>
+
+      <div className="mt-4">
+        <BlogInsightTabs keywords={keywordRows} posts={postRows} queries={queryRows} gscOn={gscOn} />
       </div>
 
       <div className="mt-6">
