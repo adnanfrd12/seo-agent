@@ -135,16 +135,6 @@ export default async function BlogPage({ searchParams }: { searchParams: Promise
   const crossings = count(posts, (p) => p.geo?.road_crossings ?? []);
   const landmarks = count(posts, (p) => p.geo?.landmarks ?? []);
   const bins = [[0, 600, "<600"], [600, 900, "600-899"], [900, 1200, "900-1,199"], [1200, 1500, "1,200-1,499"], [1500, Infinity, "1,500+"]] as const;
-  const topClicks = posts.map((p) => ({ p, f: perf.get(pathOf(p.url)) })).filter((x) => x.f && x.f.clicks + x.f.impressions > 0)
-    .sort((x, y) => y.f!.clicks - x.f!.clicks || y.f!.impressions - x.f!.impressions).slice(0, 10);
-
-  // the biggest DataForSEO keywords the blog ranks for (each keyword once, at its best position)
-  const kwBest = new Map<string, { volume: number; position: number | null; post: string }>();
-  for (const p of posts) for (const k of p.keywords?.dfs ?? []) {
-    const x = kwBest.get(k.keyword);
-    if (!x || (k.position ?? 999) < (x.position ?? 999)) kwBest.set(k.keyword, { volume: k.volume ?? 0, position: k.position, post: p.title });
-  }
-  const topKw = [...kwBest.entries()].sort((x, y) => y[1].volume - x[1].volume).slice(0, 50);
   const kwPosts = posts.filter((p) => p.keywords?.dfs?.length).length;
 
   // the same data as tables (tabs below the cards): every keyword with the post that ranks best for it,
@@ -201,11 +191,13 @@ export default async function BlogPage({ searchParams }: { searchParams: Promise
       </section>
       {picks.length > 0 && <div className="mt-6"><Highlights items={picks} /></div>}
 
-      <div className="mt-6 grid gap-4 lg:grid-cols-3">
-        <div className="lg:col-span-2"><Columns title="Posts released per month" sub="Last 12 months, by publish date" valueLabel="Posts"
-          bins={a.monthly.map((m) => ({ label: monthLabel(m.month), value: m.count, highlight: m.month === month }))} /></div>
+      <div className="mt-6 grid gap-4 md:grid-cols-2 xl:grid-cols-3">
+        <Columns title="Posts released per month" sub="Last 12 months, by publish date" valueLabel="Posts"
+          bins={a.monthly.map((m) => ({ label: monthLabel(m.month), value: m.count, highlight: m.month === month }))} />
+        <Columns title="Post length" sub="Words per post (600+ recommended)" valueLabel="Posts"
+          bins={bins.map(([lo, hi, label]) => ({ label, value: posts.filter((p) => p.word_count >= lo && p.word_count < hi).length, highlight: lo >= 600 }))} />
         {/* this month's posts; before the first one of the month, the latest posts instead */}
-        <Panel title={thisMonth.length ? `Released in ${monthLabel(month, true)}` : "Latest posts"}
+        <Panel className="md:col-span-2 xl:col-span-1" title={thisMonth.length ? `Released in ${monthLabel(month, true)}` : "Latest posts"}
           sub={thisMonth.length ? `${thisMonth.length} post${thisMonth.length === 1 ? "" : "s"}` : `None yet in ${monthLabel(month)}`}>
           {(
             <ul className="space-y-2.5 text-[13px]">
@@ -254,18 +246,10 @@ export default async function BlogPage({ searchParams }: { searchParams: Promise
         </Panel>
       </div>
 
-      <div className="mt-4 grid gap-4 lg:grid-cols-3">
-        <BarList title="Biggest keywords the blog ranks for" valueLabel="Monthly searches (DataForSEO)"
-          emptyText={kwPosts ? "No search volume yet." : "Matched daily from the DataForSEO keyword data, or fetch it per post from the DataForSEO menu."}
-          limit={10} items={topKw.map(([k, x]) => ({ label: `${k} · #${x.position ?? "—"}`, value: x.volume, href: keywordHref(k) }))} />
-        <BarList title="Posts with the most clicks" valueLabel="Clicks · selected period" emptyText={gscOn ? "No post had clicks or impressions in this period." : "Connect Search Console to see clicks per post."}
-          items={unique(topClicks.map(({ p, f }) => ({ label: p.title, url: p.url, value: f!.clicks, detail: `${fmtInt(f!.impressions)} impr` })))} />
-        <Columns title="Post length" sub="Words per post (600+ recommended)" valueLabel="Posts"
-          bins={bins.map(([lo, hi, label]) => ({ label, value: posts.filter((p) => p.word_count >= lo && p.word_count < hi).length, highlight: lo >= 600 }))} />
-      </div>
-
+      {/* ranking keywords and posts by clicks (formerly two bar-list cards) live in these tabs, with their pages */}
       <div className="mt-4">
-        <BlogInsightTabs keywords={keywordRows} posts={postRows} queries={queryRows} gscOn={gscOn} />
+        <BlogInsightTabs keywords={keywordRows} posts={postRows} queries={queryRows} gscOn={gscOn}
+          keywordsEmpty={kwPosts ? "No search volume yet." : "Matched daily from the DataForSEO keyword data, or fetch it per post from the DataForSEO menu."} />
       </div>
 
       <div className="mt-6">

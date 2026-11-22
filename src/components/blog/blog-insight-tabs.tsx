@@ -26,6 +26,16 @@ function PageCell({ title, href, url }: { title: string; href: string; url: stri
   );
 }
 
+/** A number with a thin bar under it, relative to the largest in the list (as the old bar-list cards showed). */
+function Bar({ value, max }: { value: number; max: number }) {
+  return (
+    <div className="ml-auto w-24">
+      <p>{int(value)}</p>
+      <span className="mt-1 block h-1 overflow-hidden rounded-full bg-surface-muted"><span className="block h-full rounded-full bg-blue-600" style={{ width: `${max ? Math.max(2, (value / max) * 100) : 0}%` }} /></span>
+    </div>
+  );
+}
+
 function rankTone(p: number | null) {
   if (p == null) return "text-muted";
   return p <= 3 ? "text-emerald-600 dark:text-emerald-400" : p <= 10 ? "text-blue-600 dark:text-blue-400" : p <= 20 ? "text-orange-600 dark:text-orange-400" : "text-muted";
@@ -59,10 +69,10 @@ const tdR = `${td} text-right tabular-nums`;
  * ranking keywords with the page that ranks, posts with their Search Console stats, and the queries
  * that bring each post its impressions. Every row links to the post's details and to the live page.
  */
-export function BlogInsightTabs({ keywords, posts, queries, gscOn }: { keywords: KeywordRow[]; posts: PostRow[]; queries: QueryRow[]; gscOn: boolean }) {
+export function BlogInsightTabs({ keywords, posts, queries, gscOn, keywordsEmpty }: { keywords: KeywordRow[]; posts: PostRow[]; queries: QueryRow[]; gscOn: boolean; keywordsEmpty?: string }) {
   const tabs = [
-    { id: "keywords", label: "Ranking keywords", count: keywords.length, sub: "Keywords the blog ranks for · monthly searches from DataForSEO · the post that ranks best" },
-    { id: "posts", label: "Posts in Google", count: posts.length, sub: "Search Console · selected period · plus GA4 page views" },
+    { id: "keywords", label: "Ranking keywords", count: keywords.length, sub: "Biggest keywords the blog ranks for · monthly searches from DataForSEO · the post that ranks best" },
+    { id: "posts", label: "Posts in Google", count: posts.length, sub: "Posts with the most clicks · Search Console, selected period · plus GA4 page views" },
     { id: "queries", label: "Top queries", count: queries.length, sub: "Search Console queries that show each post · selected period" },
   ] as const;
   const [tab, setTab] = useState<(typeof tabs)[number]["id"]>("keywords");
@@ -71,6 +81,8 @@ export function BlogInsightTabs({ keywords, posts, queries, gscOn }: { keywords:
   const setPage = (p: number) => setPages({ ...pages, [tab]: p });
   const cur = tabs.find((t) => t.id === tab)!;
   const slice = <T,>(l: T[]) => l.slice(page * PAGE, page * PAGE + PAGE);
+  const maxVolume = Math.max(0, ...keywords.map((k) => k.volume));
+  const maxImpr = Math.max(0, ...posts.map((p) => p.impressions));
 
   return (
     <section aria-label="Blog search data" className="overflow-hidden rounded-[10px] border border-border bg-surface">
@@ -95,13 +107,13 @@ export function BlogInsightTabs({ keywords, posts, queries, gscOn }: { keywords:
                 <tr key={k.keyword}>
                   <td className={td}><Link href={k.href} className="font-medium text-accent hover:underline">{k.keyword}</Link>{k.posts > 1 && <p className="text-xs text-muted">{k.posts} posts rank for it</p>}</td>
                   <td className={cn(tdR, "font-semibold", rankTone(k.position))}>{k.position == null ? "—" : `#${k.position}`}</td>
-                  <td className={tdR}>{int(k.volume)}</td>
+                  <td className={tdR}><Bar value={k.volume} max={maxVolume} /></td>
                   <td className={cn(td, "max-w-[22rem]")}><PageCell title={k.postTitle} href={k.postHref} url={k.postUrl} /></td>
                 </tr>
               ))}
             </tbody>
           </table>
-        ) : <p className="px-4 py-8 text-center text-sm text-muted">No ranking keywords yet: they&apos;re matched daily from the DataForSEO keyword data.</p>)}
+        ) : <p className="px-4 py-8 text-center text-sm text-muted">{keywordsEmpty ?? "No ranking keywords yet: they're matched daily from the DataForSEO keyword data."}</p>)}
 
         {tab === "posts" && (posts.length ? (
           <table className="w-full min-w-[720px] text-sm">
@@ -111,7 +123,7 @@ export function BlogInsightTabs({ keywords, posts, queries, gscOn }: { keywords:
                 <tr key={p.href}>
                   <td className={cn(td, "max-w-[22rem]")}><PageCell title={p.title} href={p.href} url={p.url} /></td>
                   <td className={cn(tdR, "font-semibold")}>{int(p.clicks)}</td>
-                  <td className={tdR}>{int(p.impressions)}</td>
+                  <td className={tdR}><Bar value={p.impressions} max={maxImpr} /></td>
                   <td className={tdR}>{p.ctr == null ? "—" : `${(p.ctr * (p.ctr <= 1 ? 100 : 1)).toFixed(1)}%`}</td>
                   <td className={cn(tdR, rankTone(p.position))}>{pos(p.position)}</td>
                   <td className={cn(td, "max-w-[14rem]")}><span className="line-clamp-1" title={p.topQuery ?? undefined}>{p.topQuery ?? "—"}</span>{p.queries > 1 && <p className="text-xs text-muted">{int(p.queries)} queries</p>}</td>
