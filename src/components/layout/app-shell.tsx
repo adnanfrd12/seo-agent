@@ -10,7 +10,7 @@ import { cn } from "@/lib/utils";
 
 function activeItem(pathname: string) {
   for (const g of NAV) for (const i of g.items) {
-    const child = i.children?.find((c) => c.href === pathname);
+    const child = i.children?.find((c) => c.href === pathname) ?? i.children?.find((c) => c.href !== i.href && pathname.startsWith(`${c.href}/`));
     if (child) return { group: g.title, item: { ...i, label: child.label } };
     if (pathname === i.href || pathname.startsWith(`${i.href}/`)) return { group: g.title, item: i };
   }
@@ -65,7 +65,8 @@ function NavList({ collapsed, onNavigate }: { collapsed: boolean; onNavigate?: (
                     {open && (
                       <ul className="ml-[17px] mt-px space-y-px border-l border-hairline pl-2">
                         {children.map((c) => {
-                          const on = pathname === c.href;
+                          // a sub-tab also stays highlighted on its own sub-pages (e.g. one audit under "All audits")
+                          const on = pathname === c.href || (c.href !== href && pathname.startsWith(`${c.href}/`));
                           return (
                             <li key={c.href}>
                               <Link href={c.href} onClick={onNavigate} aria-current={on ? "page" : undefined}

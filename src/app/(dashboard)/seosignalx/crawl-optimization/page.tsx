@@ -62,8 +62,9 @@ export default async function CrawlPage() {
       <div className="mt-6 space-y-4">
         <Card title="Checks" sub={`Found issues are listed first, highest priority on top · ${all.length} checks`}>
           <ul className="divide-y divide-hairline">
-            {all.map((c) => (
-              <CheckRow key={`${c.area}-${c.id ?? c.name}`} status={c.status} name={c.name} desc={c.desc}
+            {all.map((c, i) => (
+              // some SEOSignalX checks have an empty id: the position keeps keys unique
+              <CheckRow key={`${c.area}-${c.id || c.name}-${i}`} status={c.status} name={c.name} desc={c.desc}
                 badge={c.priority && <Pill tone={PRI[c.priority] ?? "gray"}>{c.priority}</Pill>}
                 extra={
                   <div className="mt-1 space-y-1">

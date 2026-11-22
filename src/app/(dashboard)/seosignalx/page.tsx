@@ -37,6 +37,7 @@ export default async function SeoSignalXDashboard() {
           const sc = s.per[a.key];
           return <ScoreCard key={a.key} href={sc ? a.href : undefined} icon={ICON[a.key]} title={a.label} summary={sc?.summary ?? "Not run in SEOSignalX yet"} score={sc?.score ?? null} status={sc ? "done" : "not run"} />;
         })}
+        {s.extra.map((x) => <ScoreCard key={x.key} href={x.href} icon={<ShieldCheck className="size-4" />} title={x.label} summary={x.summary} score={x.score} status="done" />)}
         <ScoreCard icon={<Activity className="size-4" />} title="Overall" summary={`Average of ${s.done} completed checks`} score={s.overall} status={s.done ? "done" : "not run"} />
       </section>
 
@@ -66,6 +67,16 @@ export default async function SeoSignalXDashboard() {
                 </li>
               );
             })}
+            {s.extra.map((x) => (
+              <li key={x.key} className="flex items-center gap-3 px-4 py-2.5 text-sm">
+                <ScoreRing value={x.score} size={36} />
+                <div className="min-w-0 flex-1">
+                  <Link href={x.href} className="font-medium hover:underline">{x.label}</Link>
+                  <p className="text-xs text-muted">{new Date(x.updatedAt).toLocaleString("en-US", { dateStyle: "medium", timeStyle: "short" })}</p>
+                </div>
+                {x.truncated && <Pill tone="orange">Partial</Pill>}
+              </li>
+            ))}
           </ul>
         </Card>
 

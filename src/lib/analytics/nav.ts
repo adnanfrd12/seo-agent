@@ -49,6 +49,7 @@ export const NAV: NavGroup[] = [
           { href: "/seosignalx/robots", label: "Robots.txt Analyzer" },
           { href: "/seosignalx/crawl-optimization", label: "Crawl Optimization" },
           { href: "/seosignalx/patches", label: "Patches" },
+          { href: "/seosignalx/audits", label: "All audits" },
         ],
       },
     ],

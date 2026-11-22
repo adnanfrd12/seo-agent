@@ -52,7 +52,7 @@ export default async function EeatPage() {
             {(s.checks ?? []).map((c) => {
               const items = c.expandedData?.items ?? c.expandedData?.probes ?? [];
               return (
-                <CheckRow key={c.id ?? c.name} status={c.status} name={c.name} desc={c.badge ?? c.desc ?? c.description}
+                <CheckRow key={`${c.id || c.name}`} status={c.status} name={c.name} desc={c.badge ?? c.desc ?? c.description}
                   href={typeof c.tutorial === "string" ? c.tutorial : null}
                   extra={items.length ? (
                     <details className="mt-1 text-xs">

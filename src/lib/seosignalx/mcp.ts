@@ -24,6 +24,22 @@ export const AUDITS = [
 ] as const;
 export type AuditKey = (typeof AUDITS)[number]["key"];
 
+/** Names for audits without their own page (shown on the generic audit page); unknown keys are spelled out. */
+const OTHER_LABELS: Record<string, string> = {
+  security: "Security Audit", duplicate: "Duplicate Checker", plagiarism: "Plagiarism Checker", linkChecker: "Advanced Link Checker",
+  schemaAuditor: "Schema Auditor", schema: "Schema Auditor", backlinks: "Backlinks Audit", gscAudit: "GSC Audit", bing: "Bing Webmaster",
+  crawlVisualizer: "Crawl Visualizer", onPage: "On-Page Analyzer", pageSeo: "Page SEO Optimization",
+};
+export function auditLabel(key: string): string {
+  const known = AUDITS.find((a) => a.key === key);
+  if (known) return `${known.label} Audit`.replace("Audit Audit", "Audit");
+  return OTHER_LABELS[key] ?? key.replace(/([a-z])([A-Z])/g, "$1 $2").replace(/[-_]+/g, " ").replace(/^./, (c) => c.toUpperCase());
+}
+/** Where an audit is shown: its own page for the five known ones, the generic page for any other. */
+export const auditHref = (key: string) => AUDITS.find((a) => a.key === key)?.href ?? `/seosignalx/audits/${encodeURIComponent(key)}`;
+/** At most this many saved audits are read per sync (each is one MCP call). */
+const MAX_AUDITS = 20;
+
 export const sxConfigured = () => Boolean(process.env.SEOSIGNALX_MCP_TOKEN?.trim());
 
 /** One MCP session: initialize, then call tools. Text results are JSON (truncated ones are repaired). */
@@ -83,7 +99,8 @@ export interface SxPatch { id?: string; title?: string; name?: string; status?: 
 export interface SxAudit<T = Record<string, unknown>> { toolKey: string; projectUrl: string; updatedAt: string; result: T; truncated?: boolean }
 export interface SxBundle {
   fetchedAt: string; project: SxProject | null; projects: SxProject[]; patches: SxPatch[];
-  audits: Partial<Record<AuditKey, SxAudit>>; available: string[]; error?: string;
+  /** every saved audit SEOSignalX has for the project, by its tool key (the five known ones and any other) */
+  audits: Partial<Record<string, SxAudit>>; available: string[]; error?: string;
 }
 
 const host = (d: string | null | undefined) => (d ?? "").toLowerCase().replace(/^https?:\/\//, "").replace(/^www\./, "").replace(/\/.*$/, "");
@@ -102,10 +119,10 @@ export async function fetchBundle(domain: string | null): Promise<SxBundle> {
   ]);
   out.patches = patches?.patches ?? [];
   out.available = (saved?.audits ?? []).map((a) => a.toolKey);
-  for (const a of AUDITS) {
-    if (!out.available.includes(a.key)) continue;
-    const { data, truncated } = await call<SxAudit>("seosignalx_get_saved_audit", { projectId: project.id, toolKey: a.key });
-    if (data?.result) out.audits[a.key] = { ...data, truncated };
+  // every saved audit, not only the five with their own page, so a newly saved one (e.g. Security) shows up by itself
+  for (const key of out.available.slice(0, MAX_AUDITS)) {
+    const { data, truncated } = await call<SxAudit>("seosignalx_get_saved_audit", { projectId: project.id, toolKey: key });
+    if (data?.result) out.audits[key] = { ...data, truncated };
   }
   return out;
 }

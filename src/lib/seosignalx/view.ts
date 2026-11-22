@@ -2,7 +2,7 @@ import "server-only";
 import { after } from "next/server";
 import { getSession } from "@/lib/analytics/client-context";
 import { createAdminClient } from "@/lib/supabase/admin";
-import { isStale, loadBundle, refreshBundle, sxConfigured, type AuditKey, type SxAudit, type SxBundle } from "./mcp";
+import { AUDITS, auditHref, auditLabel, isStale, loadBundle, refreshBundle, sxConfigured, type SxAudit, type SxBundle } from "./mcp";
 
 /**
  * Data for an SEOSignalX page: the stored bundle for the selected client. The first visit reads SEOSignalX
@@ -23,7 +23,7 @@ export async function sxPage(): Promise<{ clientName: string; configured: boolea
   return { clientName: client.name, configured: true, bundle };
 }
 
-export const audit = <T,>(b: SxBundle | null, k: AuditKey) => (b?.audits[k] as SxAudit<T> | undefined) ?? null;
+export const audit = <T,>(b: SxBundle | null, k: string) => (b?.audits[k] as SxAudit<T> | undefined) ?? null;
 
 type Check = { status?: string };
 type Section = { passed?: number; total?: number; checks?: Check[] };
@@ -31,7 +31,7 @@ const sum = (xs: number[]) => xs.reduce((a, b) => a + b, 0);
 
 /** Score and one-line summary per audit, as on the SEOSignalX dashboard cards. */
 export function scores(b: SxBundle | null) {
-  const out: Partial<Record<AuditKey, { score: number | null; summary: string }>> = {};
+  const out: Partial<Record<(typeof AUDITS)[number]["key"], { score: number | null; summary: string }>> = {};
   const eeat = audit<{ rating?: string; sections?: Section[] }>(b, "eeat")?.result;
   if (eeat?.sections) {
     // as on SEOSignalX's E-E-A-T page: passed checks out of all checks
@@ -56,6 +56,38 @@ export function scores(b: SxBundle | null) {
   }
   const crawl = audit<{ clean?: number; totalChecks?: number }>(b, "crawlOptimization")?.result;
   if (crawl) out.crawlOptimization = { score: crawl.totalChecks ? Math.round(((crawl.clean ?? 0) / crawl.totalChecks) * 100) : null, summary: `${crawl.clean ?? 0}/${crawl.totalChecks ?? 0} crawl checks clean` };
-  const vals = Object.values(out).map((x) => x?.score).filter((x): x is number => x != null);
-  return { per: out, overall: vals.length ? Math.round(sum(vals) / vals.length) : null, done: vals.length };
+  // any other saved audit (Security, Duplicate…): scored the same generic way SEOSignalX's check lists work
+  const known = new Set<string>(AUDITS.map((a) => a.key));
+  const extra = Object.entries(b?.audits ?? {}).filter(([k, a]) => !known.has(k) && a?.result).map(([k, a]) => {
+    const g = genericScore(a!.result as Record<string, unknown>);
+    return { key: k, label: auditLabel(k), href: auditHref(k), updatedAt: a!.updatedAt, truncated: Boolean(a!.truncated), ...g };
+  });
+  const vals = [...Object.values(out).map((x) => x?.score), ...extra.map((x) => x.score)].filter((x): x is number => x != null);
+  return { per: out, extra, overall: vals.length ? Math.round(sum(vals) / vals.length) : null, done: vals.length };
+}
+
+const GOOD = new Set(["pass", "passed", "clean", "ok", "good", "success"]);
+const BAD = new Set(["fail", "failed", "found", "error", "warning", "warn", "bad", "notfound"]);
+
+/**
+ * Score of an audit without its own page: a score field SEOSignalX sends (score / overallScore / seoScore),
+ * else passed ÷ total from its sections or checks.
+ */
+export function genericScore(r: Record<string, unknown>): { score: number | null; summary: string } {
+  for (const k of ["score", "overallScore", "totalScore", "seoScore", "healthScore"]) {
+    const v = r[k];
+    if (typeof v === "number" && Number.isFinite(v)) return { score: Math.round(v <= 1 && v > 0 ? v * 100 : v), summary: "SEOSignalX score" };
+  }
+  const sections = Array.isArray(r.sections) ? (r.sections as Section[]) : [];
+  if (sections.some((s) => typeof s.total === "number")) {
+    const passed = sum(sections.map((s) => s.passed ?? 0)), total = sum(sections.map((s) => s.total ?? 0));
+    if (total) return { score: Math.round((passed / total) * 100), summary: `${passed}/${total} checks passed` };
+  }
+  const checks = [...sections.flatMap((s) => s.checks ?? []), ...(Array.isArray(r.checks) ? (r.checks as Check[]) : [])];
+  const rated = checks.filter((c) => GOOD.has(String(c.status ?? "").toLowerCase()) || BAD.has(String(c.status ?? "").toLowerCase()));
+  if (rated.length) {
+    const passed = rated.filter((c) => GOOD.has(String(c.status).toLowerCase())).length;
+    return { score: Math.round((passed / rated.length) * 100), summary: `${passed}/${rated.length} checks passed` };
+  }
+  return { score: null, summary: "Saved audit" };
 }
