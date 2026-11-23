@@ -69,6 +69,7 @@ function NavList({ collapsed, onNavigate }: { collapsed: boolean; onNavigate?: (
                           const on = pathname === c.href || (c.href !== href && pathname.startsWith(`${c.href}/`));
                           return (
                             <li key={c.href}>
+                              {c.group && <p className="mb-0.5 mt-2 px-2.5 text-[10px] font-semibold uppercase tracking-[0.08em] text-faint">{c.group}</p>}
                               <Link href={c.href} onClick={onNavigate} aria-current={on ? "page" : undefined}
                                 className={cn("relative flex h-7 items-center rounded-md px-2.5 text-[12.5px] outline-none transition-colors focus-visible:ring-2 focus-visible:ring-accent",
                                   on ? "bg-surface-muted font-medium text-foreground" : "text-secondary hover:bg-surface-muted hover:text-foreground")}>

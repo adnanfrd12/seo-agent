@@ -4,7 +4,8 @@ import {
 } from "lucide-react";
 
 /** `children` are sub-tabs shown under the item; the sidebar lets them be opened and closed. */
-export interface NavItem { href: string; label: string; icon: LucideIcon; children?: { href: string; label: string }[] }
+/** A child with `group` starts a small heading above it (e.g. "Leads", "Reports"). */
+export interface NavItem { href: string; label: string; icon: LucideIcon; children?: { href: string; label: string; group?: string }[] }
 export interface NavGroup { title: string; items: NavItem[] }
 
 export const NAV: NavGroup[] = [
@@ -12,7 +13,27 @@ export const NAV: NavGroup[] = [
     title: "Analytics",
     items: [
       { href: "/overview", label: "Overview", icon: LayoutDashboard },
-      { href: "/analytics", label: "Google Analytics 4", icon: BarChart3 },
+      {
+        href: "/analytics", label: "Google Analytics 4", icon: BarChart3,
+        children: [
+          { href: "/analytics", label: "GA4 overview" },
+          { href: "/analytics/quick-wins", label: "Quick wins", group: "Action plan" },
+          { href: "/analytics/home", label: "Home", group: "Overview" },
+          { href: "/analytics/leads", label: "Leads overview", group: "Leads" },
+          { href: "/analytics/explorer", label: "Lead explorer" },
+          { href: "/analytics/lead-log", label: "Lead log" },
+          { href: "/analytics/lead-setup", label: "Lead setup" },
+          { href: "/analytics/acquisition", label: "Acquisition", group: "Reports" },
+          { href: "/analytics/engagement", label: "Engagement" },
+          { href: "/analytics/audience", label: "Audience and places" },
+          { href: "/analytics/tech", label: "Devices and tech" },
+          { href: "/analytics/ecommerce", label: "E-commerce" },
+          { href: "/analytics/funnels", label: "Funnels, paths, cohorts", group: "Explore" },
+          { href: "/analytics/realtime", label: "Realtime" },
+          { href: "/analytics/quality", label: "Insights and data quality", group: "Monitor" },
+          { href: "/analytics/seo", label: "SEO: Search Console + GA4" },
+        ],
+      },
       { href: "/search-console", label: "Google Search Console", icon: Search },
       { href: "/business-profile", label: "Google Business Profile", icon: MapPin },
       { href: "/bing", label: "Bing Webmaster", icon: Globe },

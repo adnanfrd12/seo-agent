@@ -107,6 +107,21 @@ async function handle(request: NextRequest) {
       }
       out.seeded = { keywords: seededKw, questions: seededQ };
 
+      // 0b. GA4 leads module (free: GA4 Data and Admin APIs): a stored copy older than 20 hours is read again
+      {
+        const t0 = Date.now(); let synced = 0;
+        const { ga4xTarget, isStale, loadMeta, syncGa4x } = await import("@/lib/ga4x/sync");
+        for (const id of active) {
+          if (Date.now() - t0 > 90_000) break; // the rest continues on the next run
+          try {
+            const t = await ga4xTarget(admin, id);
+            if (!t?.ctx || !isStale(await loadMeta(admin, id, t.resource.id))) continue;
+            if (await syncGa4x(admin, id, t.resource.id)) synced++;
+          } catch { /* next client; this one is retried next run */ }
+        }
+        out.ga4Leads = synced;
+      }
+
       // 1. AI visibility (weekly per question; the DataForSEO assistants respect the automatic budget inside runAiChecks)
       if (process.env.ANTHROPIC_API_KEY) {
         // at most about two minutes per run, so the steps below always get their turn; the rest continues next run
