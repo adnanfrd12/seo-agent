@@ -3,7 +3,7 @@ import { cn } from "@/lib/utils";
 import { Delta, Spark } from "./charts";
 import { Info } from "./info";
 import { Table, type Col } from "./table";
-import type { QuickWin } from "@/lib/ga4x/quickwins";
+type TaskItem = { rank: number; title: string; page: string; where: string; gain: number; effort: string };
 
 /* Layout pieces of the GA4 leads screens: the sample dashboard's structure in the dashboard's own styles. */
 
@@ -93,7 +93,7 @@ export function Note({ children }: { children: React.ReactNode }) {
 }
 
 /** The ranked task list at the bottom of each screen. */
-export function ScreenTasks({ screen, wins, unit = "leads/mo" }: { screen: string; wins: QuickWin[]; unit?: string }) {
+export function ScreenTasks({ screen, wins, unit = "leads/mo", href = "/analytics/quick-wins" }: { screen: string; wins: TaskItem[]; unit?: string; href?: string }) {
   const cols: Col[] = [{ k: "rank", label: "#", num: true }, { k: "title", label: "Change", wrap: true }, { k: "page", label: "Page", kind: "page" }, { k: "where", label: "Where on the page", wrap: true }, { k: "gain", label: "Est. gain", num: true, f: "dec1" }, { k: "effort", label: "Effort" }];
   return (
     <>
@@ -101,7 +101,7 @@ export function ScreenTasks({ screen, wins, unit = "leads/mo" }: { screen: strin
       <Card title={`Quick wins and tasks: ${screen}`} sub="Changes to make based on this screen's data, ranked by gain ÷ effort.">
         {wins.length ? <Table cols={cols} rows={wins.slice(0, 10).map((w) => ({ rank: w.rank, title: w.title, page: w.page, where: w.where, gain: w.gain, effort: w.effort }))} limit={10} />
           : <p className="py-4 text-sm text-muted">Nothing to change here right now: none of the rules for this screen found a page or setting that holds leads back.</p>}
-        <p className="mt-3 text-xs text-muted">Est. gain is in {unit}. <Link href="/analytics/quick-wins" className="underline underline-offset-2 hover:text-foreground">See every quick win with its evidence and steps</Link>.</p>
+        <p className="mt-3 text-xs text-muted">Est. gain is in {unit}. <Link href={href} className="underline underline-offset-2 hover:text-foreground">See every quick win with its evidence and steps</Link>.</p>
       </Card>
     </>
   );

@@ -3,7 +3,8 @@
 import { useMemo, useState } from "react";
 import { useStored } from "./stored";
 import { cn } from "@/lib/utils";
-import type { QuickWin } from "@/lib/ga4x/quickwins";
+/** Any quick win (GA4 or Search Console): optional evidence as label/value pairs or a small table. */
+export interface QwItem { key: string; type: string; title: string; page: string; where: string; why: string; steps: string[]; suggest?: string; measure?: string; evidence?: [string, string][]; table?: { cols: string[]; rows: (string | number)[][] }; gain: number; effort: string; conf: string; rank: number }
 import { CopyButton } from "./info";
 import { Tag } from "./table";
 
@@ -11,7 +12,7 @@ const KEY = "ga4x:qw-done";
 const parse = (v: string | null): Record<string, string> => { try { return (JSON.parse(v ?? "{}") as Record<string, string>) ?? {}; } catch { return {}; } };
 
 /** Every quick win as a card, with type / effort filters, search, Done ticks (saved in this browser), copy and CSV. */
-export function QwList({ wins, scope, unit = "leads/mo" }: { wins: QuickWin[]; scope: string; unit?: string }) {
+export function QwList({ wins, scope, unit = "leads/mo" }: { wins: QwItem[]; scope: string; unit?: string }) {
   const [type, setType] = useState<string | null>(null);
   const [effort, setEffort] = useState<string | null>(null);
   const [q, setQ] = useState("");
@@ -52,6 +53,7 @@ export function QwList({ wins, scope, unit = "leads/mo" }: { wins: QuickWin[]; s
               <div className="space-y-2">
                 <p><b className="text-xs uppercase tracking-wide text-faint">Where</b><br />{w.where}</p>
                 <p><b className="text-xs uppercase tracking-wide text-faint">Why</b><br />{w.why}</p>
+                {w.table && <table className="w-full text-xs"><thead><tr>{w.table.cols.map((c, i) => <th key={i} className={cn("py-1 font-medium text-muted", i ? "text-right" : "text-left")}>{c}</th>)}</tr></thead><tbody className="divide-y divide-hairline">{w.table.rows.map((r, j) => <tr key={j}>{r.map((v, i) => <td key={i} className={cn("py-1", i ? "text-right tabular-nums" : "break-all")}>{v}</td>)}</tr>)}</tbody></table>}
                 {w.evidence && <table className="w-full text-xs"><tbody className="divide-y divide-hairline">{w.evidence.map(([k, v]) => <tr key={k}><td className="py-1 text-muted">{k}</td><td className="py-1 text-right tabular-nums">{v}</td></tr>)}</tbody></table>}
               </div>
               <div className="space-y-2">

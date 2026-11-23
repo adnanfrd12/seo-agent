@@ -336,8 +336,8 @@ export function BubbleMap({ pts, color = C[0], label = "value", h = 320, f = "in
   );
 }
 
-export function Scatter({ points, xLabel, yLabel, xf = "k", yf = "pct", logX, xRef, yRef, h = 300, quad }: {
-  points: { x: number; y: number; s?: number; label: string; show?: boolean; c?: string }[]; xLabel: string; yLabel: string; xf?: Fmt; yf?: Fmt; logX?: boolean; xRef?: number; yRef?: number | null; h?: number; quad?: [string, number, number][];
+export function Scatter({ points, xLabel, yLabel, xf = "k", yf = "pct", logX, xRef, yRef, h = 300, quad, diag }: {
+  points: { x: number; y: number; s?: number; label: string; show?: boolean; c?: string }[]; xLabel: string; yLabel: string; xf?: Fmt; yf?: Fmt; logX?: boolean; xRef?: number; yRef?: number | null; h?: number; quad?: [string, number, number][]; diag?: boolean;
 }) {
   if (!points.length) return <p className="py-6 text-center text-sm text-muted">Not enough data in this period.</p>;
   const W = 680, H = h, l = 56, r = 18, t = 14, b = 44, iw = W - l - r, ih = H - t - b;
@@ -356,6 +356,7 @@ export function Scatter({ points, xLabel, yLabel, xf = "k", yf = "pct", logX, xR
       <text x={12} y={t + ih / 2} textAnchor="middle" transform={`rotate(-90 12 ${t + ih / 2})`} style={{ fontWeight: 600 }}>{yLabel}</text>
       {xRef != null && <line x1={sx(xRef)} x2={sx(xRef)} y1={t} y2={t + ih} stroke="var(--muted)" strokeDasharray="4 4" opacity={0.6} />}
       {yRef != null && <line x1={l} x2={W - r} y1={sy(yRef)} y2={sy(yRef)} stroke="var(--muted)" strokeDasharray="4 4" opacity={0.6} />}
+      {diag && (() => { const lo = Math.max(X0, 0), hi = Math.min(X1, y1); return hi > lo ? <line x1={sx(lo)} y1={sy(lo)} x2={sx(hi)} y2={sy(hi)} stroke="var(--muted)" strokeDasharray="4 4" opacity={0.7} /> : null; })()}
       {quad?.map(([txt, ax, ay]) => <text key={txt} x={ax ? W - r - 6 : l + 6} y={ay ? t + 14 : t + ih - 6} textAnchor={ax ? "end" : "start"} style={{ fontWeight: 600, opacity: 0.75 }}>{txt}</text>)}
       {[...points].sort((a, b) => (b.s ?? 1) - (a.s ?? 1)).map((p, i) => {
         const rr = 3 + Math.sqrt((p.s ?? 1) / smax) * 16, cx = sx(p.x), cy = sy(p.y), lf = cx > W - 170;

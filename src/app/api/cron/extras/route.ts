@@ -121,6 +121,20 @@ async function handle(request: NextRequest) {
         }
         out.ga4Leads = synced;
       }
+      // 0c. Search Console module (free: Search Console API + our crawl; URL inspections within the daily quota)
+      {
+        const t0 = Date.now(); let synced = 0;
+        const { gscxTarget, isStale, loadOne, syncGscx } = await import("@/lib/gscx/sync");
+        for (const id of active) {
+          if (Date.now() - t0 > 120_000) break; // the rest continues on the next run
+          try {
+            const t = await gscxTarget(admin, id);
+            if (!t?.ctx || !isStale(await loadOne(admin, id, t.resource.id, "meta"))) continue;
+            if (await syncGscx(admin, id, t.resource.id, { inspectBudget: 150 })) synced++;
+          } catch { /* retried next run */ }
+        }
+        out.gscModule = synced;
+      }
 
       // 1. AI visibility (weekly per question; the DataForSEO assistants respect the automatic budget inside runAiChecks)
       if (process.env.ANTHROPIC_API_KEY) {
