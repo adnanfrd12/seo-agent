@@ -51,7 +51,9 @@ function NavList({ collapsed, onNavigate }: { collapsed: boolean; onNavigate?: (
                 return (
                   <li key={href}>
                     <div className="flex items-center gap-0.5">
-                      <Link href={href} onClick={onNavigate}
+                      {/* the name opens its sub-tabs right away (as the arrow does) and goes to the section's page;
+                          on phones the menu stays open so a sub-tab can be picked next */}
+                      <Link href={href} onClick={() => { if (!open) setOpen(href, true); }} aria-expanded={open}
                         className={cn("relative flex h-8 min-w-0 flex-1 items-center gap-2.5 rounded-md px-2.5 text-[13px] outline-none transition-colors focus-visible:ring-2 focus-visible:ring-accent",
                           active ? "font-medium text-foreground" : "text-secondary hover:bg-surface-muted hover:text-foreground")}>
                         <Icon className={cn("size-4 shrink-0", active ? "text-foreground" : "text-muted")} aria-hidden />

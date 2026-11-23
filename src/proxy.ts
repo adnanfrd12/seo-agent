@@ -1,9 +1,9 @@
 import { createServerClient } from "@supabase/ssr";
 import { NextResponse, type NextRequest } from "next/server";
+import { isRangePath } from "@/lib/analytics/range-paths";
 
 const PUBLIC_PREFIXES = ["/login", "/auth", "/api/cron", "/privacy", "/terms"];
-// date-driven pages: opened without a range they get the one the user last picked (cookie written by RangeMemory)
-const RANGE_PATHS = new Set(["/overview", "/analytics", "/search-console", "/business-profile", "/bing", "/opportunities", "/insights", "/strategy", "/blog", "/social"]);
+// date-driven pages (isRangePath): opened without a range they get the one the user last picked (cookie written by RangeMemory)
 const RANGE_COOKIE = "seo_range";
 const ISO_DATE = /^\d{4}-\d{2}-\d{2}$/;
 
@@ -65,7 +65,7 @@ export async function proxy(request: NextRequest) {
 
   // restore the remembered date range on date-driven pages opened without one
   const q = request.nextUrl.searchParams;
-  if (request.method === "GET" && RANGE_PATHS.has(path) && !q.has("range") && !q.has("start") && !q.has("end")) {
+  if (request.method === "GET" && isRangePath(path) && !q.has("range") && !q.has("start") && !q.has("end")) {
     const saved = savedRange(request.cookies.get(RANGE_COOKIE)?.value);
     if (saved) {
       const url = request.nextUrl.clone();
