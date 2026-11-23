@@ -162,3 +162,22 @@ export function ConnectOne({ platform, label = "Connect" }: { platform: Platform
     </div>
   );
 }
+
+/** Removes one platform's login from its section (e.g. a wrong account connected by mistake). */
+export function DisconnectOne({ platform }: { platform: Platform }) {
+  const router = useRouter();
+  const [pending, start] = useTransition();
+  const [err, setErr] = useState<string | null>(null);
+  return (
+    <div className="space-y-1">
+      <button className={`${btn} border border-border hover:bg-surface-muted`} disabled={pending}
+        onClick={() => {
+          if (!window.confirm(`Disconnect ${PLATFORM_INFO[platform].label}? Stats already read are kept.`)) return;
+          start(async () => { setErr(null); const r = await disconnectSocial(platform); if (r.ok) router.refresh(); else setErr(r.error); });
+        }}>
+        {pending ? <Loader2 className="size-4 animate-spin" /> : <X className="size-4" />} Disconnect {PLATFORM_INFO[platform].label}
+      </button>
+      {err && <p role="alert" className="max-w-md text-xs text-negative">{err}</p>}
+    </div>
+  );
+}

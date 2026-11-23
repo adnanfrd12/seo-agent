@@ -7,7 +7,7 @@ import { MetricTrend, type MetricOption } from "@/components/charts/metric-trend
 import { KpiCard, StatCard } from "@/components/dashboard/kpi-card";
 import { TabHeader } from "@/components/dashboard/tab-header";
 import { ResearchTable } from "@/components/research/research-table";
-import { ConnectOne, SocialConnect, SocialRefresh, SocialSettings } from "@/components/research/social-controls";
+import { ConnectOne, DisconnectOne, SocialConnect, SocialRefresh, SocialSettings } from "@/components/research/social-controls";
 import { resolveRange } from "@/lib/analytics/range";
 import { researchPage } from "@/lib/dataforseo/view";
 import { revalidatePath } from "@/lib/revalidate";
@@ -228,13 +228,14 @@ function PlatformSection({ p, f, row, url, connected, ready, canEdit, token, cur
 
         {!hasData ? (
           <div className="rounded-lg border border-dashed border-border px-4 py-8 text-center">
-            <p className="text-sm font-medium">{connected ? "Connected. Reading the analytics…" : `${info.label} isn't connected`}</p>
+            <p className="text-sm font-medium">{connected ? (row?.status === "needs" ? "Connected, but no stats can be read" : "Connected. Reading the analytics…") : `${info.label} isn't connected`}</p>
             <p className="mx-auto mt-1 max-w-lg text-xs text-muted">
-              {connected ? "The first read runs in the background and appears here within a minute or two (reload the page)."
+              {connected ? (row?.status === "needs" ? "Fix the connection as described above, then the stats appear here." : "The first read runs in the background and appears here within a minute or two (reload the page).")
                 : ready ? `Connect the ${info.label} account to see followers, reach, views, engagement${p === "instagram" || p === "youtube" || p === "threads" ? ", audience demographics" : ""} and post performance.`
                 : setupNote(p)}
             </p>
             {canEdit && ready && !connected && <div className="mt-3 flex justify-center"><ConnectOne platform={p} /></div>}
+            {canEdit && connected && row?.status === "needs" && <div className="mt-3 flex justify-center"><DisconnectOne platform={p} /></div>}
             {!url && !connected && <p className="mt-2 inline-flex items-center gap-1 text-[11px] text-faint"><Link2Off className="size-3" />No profile link saved{token ? " · a token is set" : ""}</p>}
           </div>
         ) : (

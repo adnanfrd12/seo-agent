@@ -1,7 +1,7 @@
 import "server-only";
 import { executeTool, ProviderRateLimitError } from "@/lib/composio/client";
 import { entityId } from "./composio";
-import { handleOf, type Platform } from "./platforms";
+import { handleOf, PLATFORM_INFO, type Platform } from "./platforms";
 import type { MetricKey, SocialDemo, SocialPost, SocialSeries } from "./metrics";
 import { findArray, pick, pickStr } from "./treg";
 
@@ -18,6 +18,21 @@ export interface ComposioRead {
   demographics: SocialDemo[];
   recent: SocialPost[];
   notes: string[];
+}
+
+/** The connected login belongs to a different account than the profile link saved for the client. */
+export class WrongAccountError extends Error {}
+
+/**
+ * Stops a read when the logged-in account isn't the client's: e.g. a personal Pinterest connected by mistake
+ * would otherwise show its stats under the client's profile link. Only checked when both handles are known.
+ */
+function sameAccount(p: Platform, url: string | null, found: (string | null | undefined)[]) {
+  const norm = (v: string) => v.trim().replace(/^@/, "").toLowerCase();
+  const want = handleOf(url ?? "");
+  const have = found.filter((v): v is string => typeof v === "string" && Boolean(v.trim())).map(norm);
+  if (!want || !have.length || have.includes(norm(want))) return;
+  throw new WrongAccountError(`The connected ${PLATFORM_INFO[p].label} login is @${have[0]}, not @${norm(want)} (this client's profile link). Disconnect it and connect the business account.`);
 }
 
 const DAY_S = 86_400;
@@ -90,6 +105,7 @@ export async function readComposio(clientId: string, p: Platform, connectedAccou
   else if (p === "instagram") {
     const me = (await run("INSTAGRAM_GET_USER_INFO", { ig_user_id: "me", fields: "id,username,name,followers_count,follows_count,media_count" })) as Record<string, unknown>;
     const ig = pickStr(me, ["id"]) ?? undefined;
+    sameAccount(p, ctx.url, [pickStr(me, ["username"])]);
     out.name = pickStr(me, ["username", "name"]); out.followers = pick(me, ["followers_count"]); out.following = pick(me, ["follows_count"]); out.posts = pick(me, ["media_count"]);
     // daily reach and follower change: Instagram serves at most 30 days per call
     for (let w = 0; w < 3; w++) {
@@ -115,6 +131,7 @@ export async function readComposio(clientId: string, p: Platform, connectedAccou
 
   else if (p === "threads") {
     const me = await run("THREADS_GET_MY_PROFILE", { user_id: "me" });
+    sameAccount(p, ctx.url, [pickStr(me, ["username"])]);
     out.name = pickStr(me, ["username", "name"]);
     const fol = await soft("THREADS_GET_PROFILE_INSIGHTS", { user_id: "me", metrics: ["followers_count"] }, "Follower count");
     const fm = graphMetrics(fol).find((m) => m.name === "followers_count");
@@ -197,6 +214,7 @@ export async function readComposio(clientId: string, p: Platform, connectedAccou
 
   else if (p === "pinterest") {
     const prof = await run("PINTEREST_GET_PROFILE", {});
+    sameAccount(p, ctx.url, [pickStr(prof, ["username"])]);
     out.name = pickStr(prof, ["business_name", "username"]); out.followers = pick(prof, ["follower_count"]); out.following = pick(prof, ["following_count"]); out.posts = pick(prof, ["pin_count"]);
     const mv = pick(prof, ["monthly_views"]); if (mv != null) out.totals.monthly_views = mv;
     const end = iso(Date.now() - 86_400_000), start = iso(Date.now() - 90 * 86_400_000);

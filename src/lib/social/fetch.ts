@@ -7,7 +7,7 @@ import { dfsConfigured, dfsPost } from "@/lib/dataforseo/client";
 import { arr, num, obj, str } from "@/lib/dataforseo/research";
 import { ProviderAuthError, ProviderRateLimitError } from "@/lib/composio/client";
 import { socialConnections, type SocialConnection } from "./composio";
-import { readComposio } from "./composio-read";
+import { readComposio, WrongAccountError } from "./composio-read";
 import type { MetricKey, SocialDemo, SocialPost, SocialSeries } from "./metrics";
 import { tregConfigured, tregProfile, tregSupports } from "./treg";
 import { handleOf, PLATFORM_INFO, PLATFORMS, platformOf, type Platform, type SocialProfiles } from "./platforms";
@@ -408,7 +408,7 @@ export async function refreshPlatform(ctx: Ctx, p: Platform, social?: Awaited<Re
       if (acc) {
         mode = "connected";
         try { f = await viaComposio(ctx, p, acc, url, typeof s.settings.linkedin_org_id === "string" ? s.settings.linkedin_org_id : null, base.posts); }
-        catch (e) { if (url && tregConfigured() && tregSupports(p) && !token) { mode = "public"; f = await viaTreg(ctx, p, url); f.source = `${f.source}; connected analytics pending`; } else throw e; }
+        catch (e) { if (e instanceof WrongAccountError) throw e; if (url && tregConfigured() && tregSupports(p) && !token) { mode = "public"; f = await viaTreg(ctx, p, url); f.source = `${f.source}; connected analytics pending`; } else throw e; }
       }
       // 2. a pasted token (old setup) or YouTube's own path
       else if (p === "youtube") f = token ? await youtubeDataApi(token, url!, await trackedKeywords(ctx.admin, ctx.clientId)) : await dfsYoutube(ctx, url!, await trackedKeywords(ctx.admin, ctx.clientId));
@@ -434,6 +434,11 @@ export async function refreshPlatform(ctx: Ctx, p: Platform, social?: Awaited<Re
         series: mode === "connected" ? mergeSeries(prev?.series, f.series) : prev?.series, totals: f.totals ?? (mode === "connected" ? undefined : prev?.totals), demographics: f.demographics?.length ? f.demographics : prev?.demographics, notes: f.notes };
     } catch (e) {
       if (e instanceof BudgetError) throw e;
+      // another account's login: show what to fix, and drop the numbers read from that account since it was connected
+      if (e instanceof WrongAccountError && acc) {
+        const since = acc.createdAt.slice(0, 10);
+        row = { ...base, status: "needs", needs: e.message, profile: { name: null, followers: null, posts: null, views: null, likes: null }, posts: [], series: undefined, totals: undefined, demographics: undefined, notes: undefined, history: base.history.filter((h) => h.date < since) };
+      } else
       row = e instanceof NeedsError ? { ...base, status: "needs", needs: e.message } : { ...base, status: "error", error: (e instanceof Error ? e.message : "failed").slice(0, 300) };
       // keep the time of the last good read so the weekly schedule retries an error the next day
       if (row.status === "error" && prev?.status === "ok") row.fetchedAt = prev.fetchedAt;
