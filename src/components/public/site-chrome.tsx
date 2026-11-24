@@ -18,7 +18,7 @@ const SECTIONS = [
 ];
 
 /** Sticky header. On the homepage the links scroll; elsewhere they go back to the homepage section. */
-export function PublicNav({ home = false, signIn = true }: { home?: boolean; signIn?: boolean }) {
+export function PublicNav({ home = false }: { home?: boolean }) {
   const href = (h: string) => (home ? h : `/${h}`);
   return (
     <header className="sticky top-0 z-30 border-b border-[#17120E]/[0.07] bg-[#FBF8F4]/85 backdrop-blur-md print:static">
@@ -30,9 +30,9 @@ export function PublicNav({ home = false, signIn = true }: { home?: boolean; sig
         <ul className="hidden items-center gap-8 text-[15px] text-[#4A423B] md:flex">
           {SECTIONS.map((l) => <li key={l.hash}><a href={href(l.hash)} className="rounded outline-none hover:text-[#17120E] focus-visible:ring-2 focus-visible:ring-[#F26A1B]">{l.label}</a></li>)}
         </ul>
-        {signIn ? <Link href="/login" className="inline-flex items-center gap-2 rounded-lg bg-[#17120E] px-5 py-2.5 text-[15px] font-semibold text-white outline-none transition hover:bg-[#2A221B] focus-visible:ring-4 focus-visible:ring-[#F26A1B]/30 print:hidden">
+        <Link href="/login" className="inline-flex items-center gap-2 rounded-lg bg-[#17120E] px-5 py-2.5 text-[15px] font-semibold text-white outline-none transition hover:bg-[#2A221B] focus-visible:ring-4 focus-visible:ring-[#F26A1B]/30 print:hidden">
           Sign in <ArrowRight className="size-4" aria-hidden />
-        </Link> : <span className="w-[104px]" aria-hidden />}
+        </Link>
       </nav>
     </header>
   );

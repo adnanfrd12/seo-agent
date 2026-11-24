@@ -72,7 +72,7 @@ export function LoginForm({ next, initialError }: { next: string; initialError: 
 
   return (
     <div className="w-full">
-      <h1 className="mt-4 font-[family-name:var(--font-public-serif)] text-[3.4rem] leading-none tracking-[-0.02em] text-[#17120E]">Sign in</h1>
+      <h1 className="font-[family-name:var(--font-public-serif)] text-[2.6rem] leading-none tracking-[-0.01em] text-[#17120E]">Sign in</h1>
 
       <form onSubmit={onSubmit} className="mt-8 space-y-4">
         <div>
