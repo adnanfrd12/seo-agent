@@ -126,7 +126,9 @@ export async function processQueue(opts: { budgetMs?: number; concurrency?: numb
       const stats = { range: { start, end }, written: run.written, failures: run.failures };
       const failed = Object.keys(run.failures).length;
       const ok = Object.keys(run.written).length;
-      if (run.authError) {
+      if (run.authError && !viaLbm && (await revoked(admin, job, run.authError))) {
+        tally("revoked");
+      } else if (run.authError) {
         await finish("failed", `${job.provider === "bing" ? "Bing" : viaLbm ? "Local Brand Manager" : "Google"} authorization failed. Reconnect the integration.`, stats, true);
         tally("auth");
       } else if (failed === 0) {
@@ -147,7 +149,9 @@ export async function processQueue(opts: { budgetMs?: number; concurrency?: numb
       }
     } catch (e) {
       const msg = e instanceof Error ? e.message : "unknown error";
-      if (e instanceof ProviderAuthError) {
+      if (e instanceof ProviderAuthError && (await revoked(admin, job, e))) {
+        tally("revoked");
+      } else if (e instanceof ProviderAuthError) {
         await finish("failed", "Google authorization failed. Reconnect the integration.", {}, true);
         tally("auth");
       } else {
@@ -160,6 +164,20 @@ export async function processQueue(opts: { budgetMs?: number; concurrency?: numb
   };
   await Promise.all(Array.from({ length: Math.max(1, opts.concurrency ?? 3) }, () => worker()));
   return result;
+}
+
+/**
+ * Revocation detection: when the platform says our access was revoked (after the provider's own token refresh),
+ * the connection and its data are deleted (Privacy Policy section 7) and the workspace admins get an in-app alert.
+ */
+async function revoked(admin: ReturnType<typeof createAdminClient>, job: Job, err: unknown): Promise<boolean> {
+  const msg = err instanceof Error ? err.message : String(err ?? "");
+  if (!job.connection_id) return false;
+  const { isRevocation, onRevocationDetected } = await import("@/lib/compliance/deletion");
+  if (!isRevocation(msg)) return false;
+  const label = job.provider === "ga4" ? "Google Analytics" : job.provider === "gsc" ? "Search Console" : job.provider === "gbp" ? "Google Business Profile" : job.provider === "bing" ? "Bing Webmaster Tools" : "Microsoft Clarity";
+  try { await onRevocationDetected(admin, job.connection_id, job.client_id, label); return true; }
+  catch (e) { console.error("[sync] revocation cleanup failed", e instanceof Error ? e.message : e); return false; }
 }
 
 /** Chains the next-older history chunk after a successful initial/backfill import. */

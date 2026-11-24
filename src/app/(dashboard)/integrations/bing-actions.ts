@@ -105,10 +105,10 @@ export async function disconnectBing(): Promise<Result> {
   if (!allowed) return { ok: false, error: "Only owners and admins can disconnect integrations." };
   const { admin, conn } = await connection(client.id);
   if (conn) {
-    await admin.from("integration_secrets").delete().eq("connection_id", conn.id);
-    await admin.from("integration_connections").update({ status: "disconnected" }).eq("id", conn.id);
-    await admin.from("integration_resources").update({ is_selected: false }).eq("connection_id", conn.id);
+    // disconnect deletes the stored key and every row of data read with it (src/lib/compliance/deletion.ts)
+    const { handleDeletionRequest } = await import("@/lib/compliance/deletion");
+    await handleDeletionRequest(admin, { platform: "bing_webmaster", platformUserId: null, source: "dashboard", workspaceId: client.id, refs: [conn.id] });
   }
   refresh();
-  return { ok: true, message: "Bing disconnected. Stored history is kept." };
+  return { ok: true, message: "Bing disconnected. The key and the data read with it were deleted." };
 }

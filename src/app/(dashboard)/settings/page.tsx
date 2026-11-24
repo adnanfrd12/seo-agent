@@ -1,6 +1,7 @@
 import { PageHeader } from "@/components/dashboard/page-header";
 import { getSession } from "@/lib/analytics/client-context";
 import { createClient } from "@/lib/supabase/server";
+import { DeleteWorkspace } from "./delete-workspace";
 import { Card, ClientForm, PasswordForm, ProfileForm, TeamManager, type Member } from "./settings-forms";
 
 export default async function SettingsPage() {
@@ -32,6 +33,11 @@ export default async function SettingsPage() {
           <ClientForm name={client.name} timezone={client.timezone} defaultRangeDays={client.defaultRangeDays}
             canEdit={canEdit} timezones={timezones} />
         </Card>
+        {client.role === "owner" && (
+          <Card title="Delete workspace" description="Close this client's workspace and delete its data (Privacy Policy, section 7).">
+            <DeleteWorkspace name={client.name} />
+          </Card>
+        )}
         </div>
       </div>
     </div>

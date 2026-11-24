@@ -18,6 +18,8 @@ export interface ComposioRead {
   demographics: SocialDemo[];
   recent: SocialPost[];
   notes: string[];
+  /** platform account IDs (user / page / channel / open_id), kept so deletion notifications can be matched */
+  ids: Record<string, string>;
 }
 
 /** The connected login belongs to a different account than the profile link saved for the client. */
@@ -80,7 +82,7 @@ export async function readComposio(clientId: string, p: Platform, connectedAccou
     }
   };
   const now = Math.floor(Date.now() / 1000);
-  const out: ComposioRead = { name: null, followers: null, following: null, posts: null, totals: {}, series: {}, demographics: [], recent: [], notes };
+  const out: ComposioRead = { name: null, followers: null, following: null, posts: null, totals: {}, series: {}, demographics: [], recent: [], notes, ids: {} };
 
   if (p === "facebook") {
     const pages = findArray(await run("FACEBOOK_LIST_MANAGED_PAGES", { fields: "id,name,username,link,followers_count,fan_count", limit: 100 }), ["data", "pages"]);
@@ -88,6 +90,8 @@ export async function readComposio(clientId: string, p: Platform, connectedAccou
     const h = (handleOf(ctx.url ?? "") ?? "").toLowerCase();
     const page = pages.find((x) => h && [x.username, x.id, String(x.link ?? "").split("/").filter(Boolean).pop()].some((v) => String(v ?? "").toLowerCase() === h)) ?? pages[0];
     const pageId = String(page.id);
+    out.ids.page_id = pageId;
+    try { const meUser = await run("FACEBOOK_GET_CURRENT_USER", { fields: "id" }); const uid = pickStr(meUser, ["id"]); if (uid) out.ids.user_id = uid; } catch (e) { if (e instanceof ProviderRateLimitError) throw e; }
     out.name = pickStr(page, ["name"]); out.followers = n(page.followers_count) ?? n(page.fan_count);
     const daily = await soft("FACEBOOK_GET_PAGE_INSIGHTS", { page_id: pageId, period: "day", since: String(now - 90 * DAY_S), until: String(now),
       metrics: "page_follows,page_daily_follows_unique,page_daily_unfollows_unique,page_media_view,page_post_engagements,page_video_views,page_total_actions" }, "Page insights");
@@ -105,6 +109,7 @@ export async function readComposio(clientId: string, p: Platform, connectedAccou
   else if (p === "instagram") {
     const me = (await run("INSTAGRAM_GET_USER_INFO", { ig_user_id: "me", fields: "id,username,name,followers_count,follows_count,media_count" })) as Record<string, unknown>;
     const ig = pickStr(me, ["id"]) ?? undefined;
+    if (ig) out.ids.user_id = ig;
     sameAccount(p, ctx.url, [pickStr(me, ["username"])]);
     out.name = pickStr(me, ["username", "name"]); out.followers = pick(me, ["followers_count"]); out.following = pick(me, ["follows_count"]); out.posts = pick(me, ["media_count"]);
     // daily reach and follower change: Instagram serves at most 30 days per call
@@ -131,6 +136,7 @@ export async function readComposio(clientId: string, p: Platform, connectedAccou
 
   else if (p === "threads") {
     const me = await run("THREADS_GET_MY_PROFILE", { user_id: "me" });
+    { const tid = pickStr(me, ["id"]); if (tid) out.ids.user_id = tid; }
     sameAccount(p, ctx.url, [pickStr(me, ["username"])]);
     out.name = pickStr(me, ["username", "name"]);
     const fol = await soft("THREADS_GET_PROFILE_INSIGHTS", { user_id: "me", metrics: ["followers_count"] }, "Follower count");
@@ -162,6 +168,7 @@ export async function readComposio(clientId: string, p: Platform, connectedAccou
     const me = await run("TWITTER_USER_LOOKUP_ME", { user_fields: ["public_metrics", "username", "name", "created_at"] });
     const u = (findArray({ w: [me] }, ["w"])[0] ?? {}) as Record<string, unknown>;
     const id = pickStr(u, ["id"]), username = pickStr(u, ["username"]);
+    if (id) out.ids.user_id = id;
     out.name = pickStr(u, ["name", "username"]); out.followers = pick(u, ["followers_count"]); out.following = pick(u, ["following_count"]); out.posts = pick(u, ["tweet_count"]);
     const tweets = id ? findArray(await soft("TWITTER_GET_USER_POSTS", { id, max_results: 50, exclude: ["replies", "retweets"], tweet_fields: ["public_metrics", "created_at"] }, "Posts"), ["data", "tweets"]) : [];
     out.recent = tweets.map((t) => ({ id: String(t.id), title: String(t.text ?? "").slice(0, 160), url: username ? `https://x.com/${username}/status/${t.id}` : null, date: day(t.created_at),
@@ -178,6 +185,7 @@ export async function readComposio(clientId: string, p: Platform, connectedAccou
       out.name = pickStr(info, ["localizedName", "name", "vanityName"]);
     }
     const urn = `urn:li:organization:${org}`;
+    out.ids.org_id = String(org);
     const size = await soft("LINKEDIN_GET_NETWORK_SIZE", { organization_id: org, edgeType: "COMPANY_FOLLOWED_BY_MEMBER" }, "Follower count");
     out.followers = size ? pick(size, ["firstDegreeSize", "first_degree_size"]) : null;
     const startMs = (now - 90 * DAY_S) * 1000, endMs = now * 1000;
@@ -200,7 +208,8 @@ export async function readComposio(clientId: string, p: Platform, connectedAccou
   }
 
   else if (p === "tiktok") {
-    const u = await run("TIKTOK_GET_USER_STATS", { fields: ["display_name", "follower_count", "following_count", "likes_count", "video_count"] });
+    const u = await run("TIKTOK_GET_USER_STATS", { fields: ["open_id", "display_name", "follower_count", "following_count", "likes_count", "video_count"] });
+    { const oid = pickStr(u, ["open_id"]); if (oid) out.ids.user_id = oid; }
     out.name = pickStr(u, ["display_name"]); out.followers = pick(u, ["follower_count"]); out.following = pick(u, ["following_count"]); out.posts = pick(u, ["video_count"]);
     const lt = pick(u, ["likes_count"]); if (lt != null) out.totals.lifetime_likes = lt;
     let cursor: unknown, pages = 0;
@@ -214,6 +223,7 @@ export async function readComposio(clientId: string, p: Platform, connectedAccou
 
   else if (p === "pinterest") {
     const prof = await run("PINTEREST_GET_PROFILE", {});
+    { const pid = pickStr(prof, ["id", "username"]); if (pid) out.ids.user_id = pid; }
     sameAccount(p, ctx.url, [pickStr(prof, ["username"])]);
     out.name = pickStr(prof, ["business_name", "username"]); out.followers = pick(prof, ["follower_count"]); out.following = pick(prof, ["following_count"]); out.posts = pick(prof, ["pin_count"]);
     const mv = pick(prof, ["monthly_views"]); if (mv != null) out.totals.monthly_views = mv;
@@ -236,6 +246,7 @@ export async function readComposio(clientId: string, p: Platform, connectedAccou
   else {
     const ch = await run("YOUTUBE_GET_CHANNEL_STATISTICS", { mine: true, part: "snippet,statistics" });
     const item = findArray(ch, ["items", "channels"])[0] ?? (ch as Record<string, unknown>);
+    { const cid = pickStr(item, ["id"]); if (cid) out.ids.channel_id = cid; }
     out.name = pickStr(item, ["title"]); out.followers = pick(item, ["subscriberCount"]); out.posts = pick(item, ["videoCount"]);
     const lv = pick(item, ["viewCount"]); if (lv != null) out.totals.lifetime_views = lv;
     const startDate = iso(Date.now() - 90 * 86_400_000), endDate = iso(Date.now() - 86_400_000);

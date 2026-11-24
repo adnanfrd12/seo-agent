@@ -98,13 +98,15 @@ export async function socialConnectLink(p: Platform): Promise<{ ok: true; url: s
   }
 }
 
-/** Removes the client's Composio connection for one platform (stats already stored are kept). */
+/** Disconnect = delete: removes the Composio account (and its tokens) and the stats read from it (src/lib/compliance/deletion.ts). */
 export async function disconnectSocial(p: Platform): Promise<Result> {
   const o = await owner();
   if ("error" in o) return { ok: false, error: o.error! };
   if (!(PLATFORMS as readonly string[]).includes(p)) return { ok: false, error: "Unknown platform." };
-  const { disconnectSocialAccount } = await import("@/lib/social/composio");
-  try { await disconnectSocialAccount(o.client.id, p); } catch { return { ok: false, error: "Couldn't disconnect. Try again." }; }
+  const { handleDeletionRequest, socialRef } = await import("@/lib/compliance/deletion");
+  const { platformBySocial } = await import("@/config/platforms");
+  try { await handleDeletionRequest(createAdminClient(), { platform: platformBySocial(p)?.id ?? p, platformUserId: null, source: "dashboard", workspaceId: o.client.id, refs: [socialRef(o.client.id, p)] }); }
+  catch { return { ok: false, error: "Couldn't disconnect. Try again." }; }
   revalidatePath("/social");
-  return { ok: true, message: "Disconnected. The stats already read are kept." };
+  return { ok: true, message: "Disconnected. The access token and the stats read from this account were deleted." };
 }

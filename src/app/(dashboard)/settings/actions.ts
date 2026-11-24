@@ -167,3 +167,24 @@ export async function removeMember(input: { userId: string }): Promise<ActionRes
   revalidatePath("/settings");
   return { ok: true, message: "Access removed." };
 }
+
+/* ------------------------------------------------------------------ workspace deletion */
+/**
+ * Deletes this workspace (client) for good: every connection through the deletion service (Composio accounts,
+ * Google grants, tokens and all data received), then the client row and members who belong to no other workspace.
+ * Owners only, and the exact workspace name must be typed to confirm.
+ */
+export async function deleteWorkspace(confirmName: string): Promise<ActionResult> {
+  const { client } = await getSession();
+  if (!client) return fail("No client selected.");
+  if (client.role !== "owner") return fail("Only an owner can delete the workspace.");
+  if (confirmName.trim() !== client.name.trim()) return fail("Type the workspace name exactly to confirm.");
+  const { deleteWorkspace: run } = await import("@/lib/compliance/deletion");
+  try {
+    await run(createAdminClient(), client.id, "dashboard");
+  } catch (e) {
+    return fail(`The workspace couldn't be deleted completely: ${(e instanceof Error ? e.message : "unknown error").slice(0, 200)}. Try again or email im@waheedzen.com.`);
+  }
+  revalidatePath("/", "layout");
+  return { ok: true, message: "Workspace and its data deleted." };
+}

@@ -51,12 +51,14 @@ export interface SocialRow {
 }
 
 type Ctx = { admin: SupabaseClient; clientId: string; source: SpendSource };
-type Fetched = Pick<SocialRow, "profile" | "posts" | "source"> & Pick<SocialRow, "series" | "totals" | "demographics" | "notes"> & { rankings?: SocialRanking[]; cost?: number; newSecret?: string };
+type Fetched = Pick<SocialRow, "profile" | "posts" | "source"> & Pick<SocialRow, "series" | "totals" | "demographics" | "notes"> & { rankings?: SocialRanking[]; cost?: number; newSecret?: string; ids?: Record<string, string> };
 
 const sum = (xs: (number | null)[]) => xs.reduce<number>((a, b) => a + (b ?? 0), 0);
 const n = (v: unknown) => (typeof v === "number" && Number.isFinite(v) ? v : typeof v === "string" && v.trim() !== "" && Number.isFinite(Number(v)) ? Number(v) : null);
 
 class NeedsError extends Error {}
+/** the platform says SEO Insights' access was revoked: the connection and its data are deleted */
+class RevokedError extends Error {}
 
 async function getJson(url: string, init: RequestInit = {}): Promise<Record<string, unknown>> {
   const r = await fetch(url, { ...init, cache: "no-store", signal: AbortSignal.timeout(30_000) });
@@ -351,6 +353,7 @@ async function viaComposio(ctx: Ctx, p: Platform, acc: SocialConnection, url: st
   let st;
   try { st = await readComposio(ctx.clientId, p, acc.id, { url, linkedinOrgId, knownPosts }); }
   catch (e) {
+    if (e instanceof ProviderAuthError && (await import("@/lib/compliance/deletion")).isRevocation(e.message)) throw new RevokedError(e.message);
     if (e instanceof ProviderAuthError) throw new NeedsError(`The ${PLATFORM_INFO[p].label} connection expired or was revoked. Press Connect to log in again.`);
     if (e instanceof ProviderRateLimitError) throw new Error(`${PLATFORM_INFO[p].label} is rate limiting requests right now; the last data is kept and it is read again on the next run.`);
     throw e;
@@ -360,7 +363,7 @@ async function viaComposio(ctx: Ctx, p: Platform, acc: SocialConnection, url: st
   return {
     source: "Composio (connected)",
     profile: { name: st.name, followers: st.followers, following: st.following, posts: st.posts, views, likes: t.likes ?? null, impressions: t.impressions ?? sumLast(st.series.impressions, 28), reach: t.reach ?? null, comments: t.comments ?? null },
-    posts: st.recent, series: st.series, totals: st.totals, demographics: st.demographics, notes: st.notes,
+    posts: st.recent, series: st.series, totals: st.totals, demographics: st.demographics, notes: st.notes, ids: st.ids,
   };
 }
 
@@ -427,6 +430,11 @@ export async function refreshPlatform(ctx: Ctx, p: Platform, social?: Awaited<Re
         const { settings } = await clientSocial(ctx.admin, ctx.clientId);
         await ctx.admin.from("clients").update({ settings: { ...settings, social_tokens: { ...((settings.social_tokens ?? {}) as object), [p]: encryptSecret(f.newSecret) } } }).eq("id", ctx.clientId);
       }
+      if (mode === "connected" && acc && f.ids && Object.keys(f.ids).length) {
+        const { recordPlatformAccount } = await import("@/lib/compliance/deletion");
+        const { platformBySocial } = await import("@/config/platforms");
+        await recordPlatformAccount(ctx.admin, ctx.clientId, platformBySocial(p)?.id ?? p, f.ids, acc.id).catch(() => undefined);
+      }
       const day = now.slice(0, 10);
       const point: SocialPoint = { date: day, followers: f.profile.followers, posts: f.profile.posts, views: f.profile.views, engagement: engagementOf(f.posts), reach: f.profile.reach ?? null, impressions: f.profile.impressions ?? null };
       const history = [...base.history.filter((h) => h.date !== day), point].sort((a, b) => a.date.localeCompare(b.date)).slice(-HISTORY_MAX);
@@ -434,6 +442,12 @@ export async function refreshPlatform(ctx: Ctx, p: Platform, social?: Awaited<Re
         series: mode === "connected" ? mergeSeries(prev?.series, f.series) : prev?.series, totals: f.totals ?? (mode === "connected" ? undefined : prev?.totals), demographics: f.demographics?.length ? f.demographics : prev?.demographics, notes: f.notes };
     } catch (e) {
       if (e instanceof BudgetError) throw e;
+      if (e instanceof RevokedError) {
+        const { onRevocationDetected, socialRef } = await import("@/lib/compliance/deletion");
+        await onRevocationDetected(ctx.admin, socialRef(ctx.clientId, p), ctx.clientId, PLATFORM_INFO[p].label);
+        // nothing is saved: the stats read from the revoked account were just deleted
+        return { ...base, status: "needs", needs: `${PLATFORM_INFO[p].label} access was revoked, so its data was deleted. Press Connect to log in again.`, profile: { name: null, followers: null, posts: null, views: null, likes: null }, posts: [], history: [], series: undefined, totals: undefined, demographics: undefined, notes: undefined };
+      }
       // another account's login: show what to fix, and drop the numbers read from that account since it was connected
       if (e instanceof WrongAccountError && acc) {
         const since = acc.createdAt.slice(0, 10);

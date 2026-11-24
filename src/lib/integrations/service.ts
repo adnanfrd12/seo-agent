@@ -3,7 +3,6 @@ import { composio } from "@/lib/composio/client";
 import { ga4Adapter } from "@/lib/composio/ga4";
 import { gscAdapter } from "@/lib/composio/gsc";
 import { serverEnv } from "@/lib/env";
-import { revokeGbp } from "./gbp-service";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { createClient } from "@/lib/supabase/server";
 import type { DiscoveredResource } from "@/lib/analytics/types";
@@ -162,6 +161,12 @@ export async function completeConnect(clientId: string, provider: ProviderId): P
     })
     .eq("id", conn.id);
 
+  // remember the Composio account with the client so deletion requests can be matched to it
+  {
+    const { recordPlatformAccount } = await import("@/lib/compliance/deletion");
+    await recordPlatformAccount(admin, clientId, PROVIDER_PLATFORM[provider] ?? provider, { connected_account: active.id }, active.id).catch(() => undefined);
+  }
+
   // Revoke superseded/expired duplicates so no unused live OAuth grants are left behind.
   await Promise.allSettled(
     accounts.filter((a) => a.id !== active.id).map((a) => composio().connectedAccounts.delete(a.id)),
@@ -217,6 +222,11 @@ export async function enqueueSync(clientId: string, provider: ProviderId) {
   return data ?? 0;
 }
 
+/**
+ * Disconnect = delete: removes the Composio account (and its tokens) or revokes the direct Google grant, deletes the
+ * stored tokens and every row of data received from this connection, and records an audit entry
+ * (src/lib/compliance/deletion.ts). The Privacy Policy and Data Deletion page promise this.
+ */
 export async function disconnect(clientId: string, provider: ProviderId) {
   const admin = createAdminClient();
   const { data: conn } = await admin
@@ -226,27 +236,8 @@ export async function disconnect(clientId: string, provider: ProviderId) {
     .eq("provider", provider)
     .maybeSingle();
   if (!conn) return;
-
-  // Revoke every Composio account for this client+toolkit, not just the stored one.
-  if (provider !== "gbp") {
-    try {
-      const accounts = await listAccounts(clientId, provider);
-      await Promise.allSettled(accounts.map((a) => composio().connectedAccounts.delete(a.id)));
-    } catch {
-      // upstream already gone or unreachable; still disconnect locally
-    }
-  } else {
-    await revokeGbp(admin, conn.id);
-  }
-  await admin
-    .from("integration_connections")
-    .update({ status: "disconnected", composio_connected_account_id: null, last_error: null })
-    .eq("id", conn.id);
-  // stop syncing; keep historical metrics
-  await admin.from("integration_resources").update({ is_selected: false }).eq("connection_id", conn.id);
-  await admin
-    .from("analytics_sync_jobs")
-    .update({ status: "failed", error: "disconnected", finished_at: new Date().toISOString() })
-    .eq("connection_id", conn.id)
-    .eq("status", "queued");
+  const { handleDeletionRequest } = await import("@/lib/compliance/deletion");
+  await handleDeletionRequest(admin, { platform: PROVIDER_PLATFORM[provider] ?? provider, platformUserId: null, source: "dashboard", workspaceId: clientId, refs: [conn.id] });
 }
+
+const PROVIDER_PLATFORM: Partial<Record<ProviderId, string>> = { ga4: "google_analytics", gsc: "google_search_console", gbp: "google_business_profile" };

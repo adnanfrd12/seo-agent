@@ -55,12 +55,12 @@ export async function disconnectClarity(): Promise<Result> {
   const admin = createAdminClient();
   const { data: conn } = await admin.from("integration_connections").select("id").eq("client_id", client.id).eq("provider", "clarity").maybeSingle();
   if (conn) {
-    await admin.from("integration_secrets").delete().eq("connection_id", conn.id);
-    await admin.from("integration_connections").update({ status: "disconnected" }).eq("id", conn.id);
-    await admin.from("integration_resources").update({ is_selected: false }).eq("connection_id", conn.id);
+    // disconnect deletes the stored key and every row of data read with it (src/lib/compliance/deletion.ts)
+    const { handleDeletionRequest } = await import("@/lib/compliance/deletion");
+    await handleDeletionRequest(admin, { platform: "microsoft_clarity", platformUserId: null, source: "dashboard", workspaceId: client.id, refs: [conn.id] });
   }
   revalidatePath("/clarity"); revalidatePath("/integrations");
-  return { ok: true, message: "Clarity disconnected. Stored history is kept." };
+  return { ok: true, message: "Clarity disconnected. The key and the data read with it were deleted." };
 }
 
 export async function syncClarityNow(): Promise<Result> {

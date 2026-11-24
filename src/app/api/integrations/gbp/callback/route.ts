@@ -1,7 +1,7 @@
 import { timingSafeEqual } from "node:crypto";
 import { NextResponse, type NextRequest } from "next/server";
 import { GbpApiError } from "@/lib/google/gbp";
-import { emailFromIdToken, exchangeCode, GBP_OAUTH_COOKIE, GBP_SCOPE } from "@/lib/google/oauth";
+import { emailFromIdToken, subFromIdToken, exchangeCode, GBP_OAUTH_COOKIE, GBP_SCOPE } from "@/lib/google/oauth";
 import { discoverLocations, storeGrant } from "@/lib/integrations/gbp-service";
 import { requireAdmin } from "@/lib/integrations/http";
 import { createAdminClient } from "@/lib/supabase/admin";
@@ -58,6 +58,11 @@ export async function GET(request: NextRequest) {
     { onConflict: "client_id,provider" },
   ).select("id").single();
   if (error || !conn) return fail("Could not save the connection.");
+  const sub = subFromIdToken(tokens.id_token);
+  if (sub) {
+    const { recordPlatformAccount } = await import("@/lib/compliance/deletion");
+    await recordPlatformAccount(admin, clientId, "google_business_profile", { user_id: sub }, null).catch(() => undefined);
+  }
 
   try {
     await storeGrant(admin, conn.id, tokens);

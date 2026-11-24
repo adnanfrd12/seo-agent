@@ -95,3 +95,14 @@ export function emailFromIdToken(idToken: string | undefined): string | null {
     return null;
   }
 }
+
+/** Google account ID ("sub") from the id_token payload, used to match deletion requests. */
+export function subFromIdToken(idToken: string | undefined): string | null {
+  if (!idToken) return null;
+  try {
+    const payload = JSON.parse(Buffer.from(idToken.split(".")[1] ?? "", "base64url").toString("utf8"));
+    return typeof payload.sub === "string" ? payload.sub : null;
+  } catch {
+    return null;
+  }
+}
