@@ -137,11 +137,6 @@ export function LoginForm({ next, initialError }: { next: string; initialError: 
         </button>
       </form>
 
-      <p className="mt-6 text-center text-xs text-[#8a8a94]">
-        By signing in, you agree to our{" "}
-        <a href="/terms" className="font-medium text-[#E8552A] hover:underline">Terms and Conditions</a> and{" "}
-        <a href="/privacy" className="font-medium text-[#E8552A] hover:underline">Privacy Policy</a>.
-      </p>
     </div>
   );
 }
