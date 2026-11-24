@@ -5,6 +5,8 @@ import { useRouter } from "next/navigation";
 import { Copy, Loader2, Plug, RefreshCw, Search, Settings2, X } from "lucide-react";
 import { detectSocialProfiles, disconnectSocial, refreshSocialNow, saveSocialSettings, socialConnectLink } from "@/app/(dashboard)/social/actions";
 import { PLATFORM_INFO, PLATFORMS, type Platform } from "@/lib/social/platforms";
+import { platformBySocial } from "@/config/platforms";
+import { ComingSoon, ConsentPanel } from "@/components/integrations/consent-panel";
 
 type Msg = { ok: boolean; text: string } | null;
 const btn = "inline-flex items-center gap-1.5 rounded-lg px-3 py-1.5 text-sm font-medium disabled:opacity-60";
@@ -82,7 +84,7 @@ export function SocialSettings({ profiles, tokens, linkedinOrgId }: { profiles: 
   );
 }
 
-export interface ConnectRow { platform: Platform; state: "connected" | "pending" | "none"; ready: boolean; note: string | null }
+export interface ConnectRow { platform: Platform; state: "connected" | "pending" | "none"; ready: boolean; note: string | null; lastSync?: string | null }
 
 /** One Connect button per platform: the owner logs in on the platform's own page through Composio (official OAuth). */
 export function SocialConnect({ rows, canEdit }: { rows: ConnectRow[]; canEdit: boolean }) {
@@ -91,7 +93,10 @@ export function SocialConnect({ rows, canEdit }: { rows: ConnectRow[]; canEdit: 
   const [busy, setBusy] = useState<Platform | null>(null);
   const [msg, setMsg] = useState<Msg>(null);
   const [link, setLink] = useState<{ p: Platform; url: string } | null>(null);
+  // the registry panel (what is read, why, permissions) is shown before leaving for the platform's consent screen
+  const [consent, setConsent] = useState<{ p: Platform; copy: boolean } | null>(null);
   if (!canEdit) return null;
+  const consentEntry = consent ? platformBySocial(consent.p) : null;
   const go = (p: Platform, copy: boolean) => {
     setBusy(p);
     start(async () => {
@@ -106,7 +111,7 @@ export function SocialConnect({ rows, canEdit }: { rows: ConnectRow[]; canEdit: 
     });
   };
   const remove = (p: Platform) => {
-    if (!window.confirm(`Disconnect ${PLATFORM_INFO[p].label}? Stats already read are kept.`)) return;
+    if (!window.confirm(`Disconnect ${PLATFORM_INFO[p].label}? Access is removed and the stats read from this account are deleted. This can't be undone.`)) return;
     setBusy(p);
     start(async () => {
       const r = await disconnectSocial(p);
@@ -131,16 +136,25 @@ export function SocialConnect({ rows, canEdit }: { rows: ConnectRow[]; canEdit: 
             </div>
             {r.ready ? (
               <div className="flex flex-wrap gap-1.5">
-                <button className={`${small} bg-accent text-accent-foreground hover:opacity-90`} disabled={pending} onClick={() => go(r.platform, false)}>
+                <button className={`${small} bg-accent text-accent-foreground hover:opacity-90`} disabled={pending} onClick={() => setConsent({ p: r.platform, copy: false })} aria-expanded={consent?.p === r.platform}>
                   {busy === r.platform ? <Loader2 className="size-3.5 animate-spin" /> : <Plug className="size-3.5" />} {r.state === "connected" ? "Reconnect" : "Connect"}
                 </button>
-                <button className={`${small} border border-border hover:bg-surface-muted`} disabled={pending} onClick={() => go(r.platform, true)} title="Copy a login link to send to the account owner"><Copy className="size-3.5" /> Link</button>
-                {r.state !== "none" && <button className={`${small} text-faint hover:text-negative`} disabled={pending} onClick={() => remove(r.platform)} aria-label={`Disconnect ${PLATFORM_INFO[r.platform].label}`}><X className="size-3.5" /></button>}
+                <button className={`${small} border border-border hover:bg-surface-muted`} disabled={pending} onClick={() => setConsent({ p: r.platform, copy: true })} title="Copy a login link to send to the account owner"><Copy className="size-3.5" /> Link</button>
+                {r.state !== "none" && <button className={`${small} border border-border text-secondary hover:text-negative`} disabled={pending} onClick={() => remove(r.platform)} aria-label={`Disconnect ${PLATFORM_INFO[r.platform].label}`}><X className="size-3.5" /> Disconnect</button>}
               </div>
-            ) : <p className="text-[11px] text-warn">Needs a one-time developer app in Composio (see the note below).</p>}
+            ) : platformBySocial(r.platform)?.status === "planned" ? <ComingSoon /> : <p className="text-[11px] text-warn">Needs a one-time developer app in Composio (see the note below).</p>}
+            {r.state === "connected" && <p className="text-[11px] text-muted">Last sync: {r.lastSync ? new Date(r.lastSync).toLocaleString() : "not yet"}</p>}
           </li>
         ))}
       </ul>
+      {consent && consentEntry && (
+        <ConsentPanel p={consentEntry} className="mt-3">
+          <button type="button" className={`${small} bg-accent text-accent-foreground hover:opacity-90`} disabled={pending} onClick={() => { const c = consent; setConsent(null); go(c.p, c.copy); }}>
+            {busy === consent.p ? <Loader2 className="size-3.5 animate-spin" /> : <Plug className="size-3.5" />} {consent.copy ? `Copy ${PLATFORM_INFO[consent.p].label} login link` : `Continue to ${PLATFORM_INFO[consent.p].label}`}
+          </button>
+          <button type="button" className={`${small} border border-border hover:bg-surface-muted`} onClick={() => setConsent(null)}>Cancel</button>
+        </ConsentPanel>
+      )}
       {rows.some((r) => !r.ready) && <p className="mt-3 text-xs text-muted">{rows.filter((r) => !r.ready).map((r) => r.note).join(" ")}</p>}
       {link && <input readOnly aria-label="Login link" value={link.url} onFocus={(e) => e.currentTarget.select()} className="mt-3 w-full min-w-0 rounded-md border border-border bg-background px-2 py-1 text-xs" />}
       {msg && <p role={msg.ok ? "status" : "alert"} className={`mt-2 text-sm ${msg.ok ? "text-positive" : "text-negative"}`}>{msg.text}</p>}
@@ -152,12 +166,23 @@ export function SocialConnect({ rows, canEdit }: { rows: ConnectRow[]; canEdit: 
 export function ConnectOne({ platform, label = "Connect" }: { platform: Platform; label?: string }) {
   const [pending, start] = useTransition();
   const [err, setErr] = useState<string | null>(null);
+  const [ask, setAsk] = useState(false);
+  const entry = platformBySocial(platform);
+  const go = () => start(async () => { setErr(null); const r = await socialConnectLink(platform); if (r.ok) window.location.href = r.url; else setErr(r.error); });
   return (
-    <div className="space-y-1">
-      <button className={`${btn} bg-accent text-accent-foreground hover:opacity-90`} disabled={pending}
-        onClick={() => start(async () => { setErr(null); const r = await socialConnectLink(platform); if (r.ok) window.location.href = r.url; else setErr(r.error); })}>
+    <div className="space-y-2">
+      <button className={`${btn} bg-accent text-accent-foreground hover:opacity-90`} disabled={pending || ask} aria-expanded={ask}
+        onClick={() => (entry ? setAsk(true) : go())}>
         {pending ? <Loader2 className="size-4 animate-spin" /> : <Plug className="size-4" />} {label} {PLATFORM_INFO[platform].label}
       </button>
+      {ask && entry && (
+        <ConsentPanel p={entry} className="max-w-xl text-left">
+          <button type="button" className={`${btn} bg-accent text-accent-foreground hover:opacity-90`} disabled={pending} onClick={go}>
+            {pending ? <Loader2 className="size-4 animate-spin" /> : <Plug className="size-4" />} Continue to {PLATFORM_INFO[platform].label}
+          </button>
+          <button type="button" className={`${btn} border border-border hover:bg-surface-muted`} onClick={() => setAsk(false)}>Cancel</button>
+        </ConsentPanel>
+      )}
       {err && <p role="alert" className="max-w-md text-xs text-negative">{err}</p>}
     </div>
   );
@@ -172,7 +197,7 @@ export function DisconnectOne({ platform }: { platform: Platform }) {
     <div className="space-y-1">
       <button className={`${btn} border border-border hover:bg-surface-muted`} disabled={pending}
         onClick={() => {
-          if (!window.confirm(`Disconnect ${PLATFORM_INFO[platform].label}? Stats already read are kept.`)) return;
+          if (!window.confirm(`Disconnect ${PLATFORM_INFO[platform].label}? Access is removed and the stats read from this account are deleted. This can't be undone.`)) return;
           start(async () => { setErr(null); const r = await disconnectSocial(platform); if (r.ok) router.refresh(); else setErr(r.error); });
         }}>
         {pending ? <Loader2 className="size-4 animate-spin" /> : <X className="size-4" />} Disconnect {PLATFORM_INFO[platform].label}

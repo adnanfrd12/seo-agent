@@ -11,6 +11,8 @@ import { DataForSeoCard } from "./dataforseo-card";
 import { ScheduledJobs } from "./scheduled-jobs";
 import { PROVIDER_META, type ProviderId } from "@/lib/integrations/providers";
 import { createClient } from "@/lib/supabase/server";
+import { platformById } from "@/config/platforms";
+import { ConsentPanel } from "@/components/integrations/consent-panel";
 
 // bulk client setup runs inside a server action on this page
 export const maxDuration = 300;
@@ -70,7 +72,7 @@ export default async function IntegrationsPage({
 
   return (
     <>
-      <PageHeader title="Integrations" description="Connect Google accounts once; data then syncs automatically." />
+      <PageHeader title="Integrations" description="Connect Google accounts once; data then syncs automatically. All access is read-only; Disconnect deletes the data read from that account." />
       {sp.connected && sp.connected in PROVIDER_META && (
         <p role="status" className="mb-4 rounded-lg bg-surface p-3 text-sm text-positive ring-1 ring-border">
           {PROVIDER_META[sp.connected as ProviderId].label} connected. Choose what to track below.
@@ -110,6 +112,7 @@ export default async function IntegrationsPage({
           <dt className="text-muted">Last sync</dt><dd>{bing?.last_synced_at ? new Date(bing.last_synced_at).toLocaleString() : "Never"}</dd>
         </dl>
         {bing?.last_error && bingConnected && <p role="alert" className="mt-2 text-sm text-negative">{bing.last_error}</p>}
+        {!bingConnected && <ConsentPanel p={platformById("bing_webmaster")!} className="mt-3" />}
         <div className="mt-3">
           <BingPanel connected={bingConnected} canEdit={canEdit} hasEnvKey={Boolean(process.env.BING_WEBMASTER_API_KEY?.trim())} selected={bingSelected} suggest={siteHints} />
         </div>
@@ -149,6 +152,7 @@ export default async function IntegrationsPage({
         </div>
         {clarity?.last_synced_at && <p className="mt-1 text-xs text-muted">Last synced {new Date(clarity.last_synced_at).toLocaleString()}</p>}
         {clarity?.last_error && <p role="alert" className="mt-1 text-sm text-negative">{clarity.last_error}</p>}
+        {!clarityConnected && <ConsentPanel p={platformById("microsoft_clarity")!} className="mt-3" />}
         <div className="mt-3"><ConnectClarity connected={clarityConnected} canEdit={canEdit} /></div>
         <p className="mt-3 text-xs text-muted">
           Clarity&apos;s official Data Export API returns only the last 1–3 days (10 requests per project per day), so the dashboard stores one day per

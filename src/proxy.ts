@@ -2,7 +2,18 @@ import { createServerClient } from "@supabase/ssr";
 import { NextResponse, type NextRequest } from "next/server";
 import { isRangePath } from "@/lib/analytics/range-paths";
 
-const PUBLIC_PREFIXES = ["/login", "/auth", "/api/cron", "/privacy", "/terms"];
+const PUBLIC_PREFIXES = ["/login", "/auth", "/api/cron", "/privacy", "/terms", "/data-deletion", "/platforms", "/api/platform-webhooks"];
+/** public without a login: the homepage, crawler files and the legal aliases below */
+const PUBLIC_EXACT = new Set(["/", "/robots.txt", "/sitemap.xml"]);
+/** old or common legal URLs, permanently (301) redirected to the current pages */
+const LEGAL_REDIRECTS: Record<string, string> = {
+  "/privacy-policy": "/privacy",
+  "/terms-of-service": "/terms",
+  "/terms-and-conditions": "/terms",
+  "/delete-data": "/data-deletion",
+  "/permissions": "/platforms",
+  "/integrations/permissions": "/platforms",
+};
 // date-driven pages (isRangePath): opened without a range they get the one the user last picked (cookie written by RangeMemory)
 const RANGE_COOKIE = "seo_range";
 const ISO_DATE = /^\d{4}-\d{2}-\d{2}$/;
@@ -25,6 +36,13 @@ function savedRange(raw: string | undefined): URLSearchParams | null {
 const REQUIRED = ["NEXT_PUBLIC_SUPABASE_URL", "NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY"] as const;
 
 export async function proxy(request: NextRequest) {
+  const alias = LEGAL_REDIRECTS[request.nextUrl.pathname.replace(/\/+$/, "") || "/"];
+  if (alias) {
+    const url = request.nextUrl.clone();
+    url.pathname = alias;
+    return NextResponse.redirect(url, 301);
+  }
+
   // A missing variable used to crash every request with an opaque 500. Say exactly what is wrong
   // (names only, never values) so a fresh deployment is easy to fix.
   const missing = REQUIRED.filter((k) => !process.env[k]);
@@ -55,7 +73,7 @@ export async function proxy(request: NextRequest) {
 
   const { data } = await supabase.auth.getClaims();
   const path = request.nextUrl.pathname;
-  const isPublic = PUBLIC_PREFIXES.some((p) => path.startsWith(p));
+  const isPublic = PUBLIC_EXACT.has(path) || PUBLIC_PREFIXES.some((p) => path === p || path.startsWith(`${p}/`) || path.startsWith(`${p}?`));
 
   if (!data?.claims && !isPublic) {
     const url = request.nextUrl.clone();

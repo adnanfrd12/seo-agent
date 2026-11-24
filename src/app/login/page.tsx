@@ -6,12 +6,18 @@ import { AnalyticsIcon, BusinessProfileIcon, GoogleG } from "@/components/brand/
 import { BingIcon, ClarityIcon, SearchConsoleIcon } from "@/components/login/login-icons";
 import { LoginPreview } from "@/components/login/login-preview";
 import { SignInLink } from "@/components/login/sign-in-link";
+import { SiteFooter } from "@/components/legal/site-footer";
+import { accessMailto, SITE } from "@/config/platforms";
 import { LoginForm } from "./login-form";
 import styles from "./login.module.css";
 
 const caveat = Caveat({ subsets: ["latin"], weight: ["600"], display: "swap" });
 
-export const metadata: Metadata = { title: `Sign in · ${BRAND_NAME}` };
+export const metadata: Metadata = {
+  title: `Sign in · ${BRAND_NAME}`,
+  description: "Sign in to SEO Insights, the invite-only SEO, analytics and social media reporting platform operated by Waheed Zen LLC for its clients.",
+  alternates: { canonical: "/login" },
+};
 
 const NAV = [
   { label: "Product", href: "#product" },
@@ -56,8 +62,7 @@ function safeNext(raw: string | string[] | undefined): string {
 const COLUMN = "mx-auto w-full max-w-[1800px] px-[clamp(1rem,4vw,5rem)]";
 
 const delay = (s: number) => ({ animationDelay: `${s}s` });
-const contactHref = () =>
-  `mailto:${process.env.NEXT_PUBLIC_CONTACT_EMAIL ?? ""}?subject=${encodeURIComponent(`${BRAND_NAME} sales enquiry`)}`;
+const contactHref = () => accessMailto;
 
 export default async function LoginPage({ searchParams }: { searchParams: Promise<Record<string, string | string[] | undefined>> }) {
   const sp = await searchParams;
@@ -198,15 +203,36 @@ export default async function LoginPage({ searchParams }: { searchParams: Promis
             ))}
           </ul>
         </div>
-        <p id="contact" className="border-t border-[#F5F1ED] px-4 py-4 text-center text-xs text-[#8a8a94]">
-          Questions about plans or pricing?{" "}
-          <a href={contactHref()} className="font-semibold text-[#EA5A22] hover:underline">Contact sales</a>
-          <span aria-hidden className="mx-2">·</span>
-          <a href="/privacy" className="hover:text-[#1f1f25] hover:underline">Privacy Policy</a>
-          <span aria-hidden className="mx-2">·</span>
-          <a href="/terms" className="hover:text-[#1f1f25] hover:underline">Terms and Conditions</a>
+        <p id="contact" className="border-t border-[#F5F1ED] px-4 py-4 text-center text-xs text-[#6b6b76]">
+          Questions about access or pricing?{" "}
+          <a href={contactHref()} className="font-semibold text-[#C2410C] hover:underline">Contact sales</a>
         </p>
       </section>
+
+      {/* what SEO Insights is and who runs it (public homepage requirement for platform reviews) */}
+      <section id="about" aria-labelledby="about-title" className="relative z-10 scroll-mt-6 border-t border-[#F1ECE7] bg-[#FFFCF9]">
+        <div className={`${COLUMN} grid gap-6 py-10 lg:grid-cols-[minmax(0,1fr)_minmax(0,1fr)] lg:gap-16`}>
+          <div className="max-w-[70ch]">
+            <h2 id="about-title" className="text-2xl font-bold tracking-tight">About {BRAND_NAME}</h2>
+            <p className="mt-3 text-[15px] leading-7 text-[#3a3a42]">
+              {BRAND_NAME} is an invite-only SEO, analytics and social media reporting platform operated by {SITE.operator}, a Montana limited liability company
+              in {SITE.city}, for its client businesses. Authorized people connect a business&apos;s Google Search Console, Google Analytics, Google Business Profile,
+              Bing Webmaster Tools, Microsoft Clarity and social media accounts with <strong>read-only</strong> access, and {BRAND_NAME} turns that data into dashboards,
+              reports, alerts and AI-assisted recommendations. It never posts, messages or changes anything on a connected account.
+            </p>
+          </div>
+          <div className="max-w-[70ch] text-[15px] leading-7 text-[#3a3a42]">
+            <p>Accounts are created by invitation; there is no public sign-up. To request access, email <a href={contactHref()} className="font-semibold text-[#C2410C] underline underline-offset-2">{SITE.email}</a>.</p>
+            <ul className="mt-3 flex flex-wrap gap-x-5 gap-y-1 font-medium">
+              <li><a href="/privacy" className="text-[#C2410C] underline underline-offset-2">Privacy Policy</a></li>
+              <li><a href="/terms" className="text-[#C2410C] underline underline-offset-2">Terms and Conditions</a></li>
+              <li><a href="/data-deletion" className="text-[#C2410C] underline underline-offset-2">Data Deletion</a></li>
+              <li><a href="/platforms" className="text-[#C2410C] underline underline-offset-2">Connected platforms and permissions</a></li>
+            </ul>
+          </div>
+        </div>
+      </section>
+      <SiteFooter className="relative z-10" />
     </main>
   );
 }

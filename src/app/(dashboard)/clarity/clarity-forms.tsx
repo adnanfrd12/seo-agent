@@ -27,7 +27,7 @@ export function ConnectClarity({ connected, canEdit }: { connected: boolean; can
     <div className="space-y-2">
       <div className="flex flex-wrap gap-2">
         <button className={btn} disabled={pending} onClick={() => run(syncClarityNow)}>{pending && <Loader2 className="size-4 animate-spin" />} Sync now</button>
-        <button className={btn2} disabled={pending} onClick={() => { if (confirm("Disconnect Clarity? Stored history is kept.")) run(disconnectClarity); }}>Disconnect</button>
+        <button className={btn2} disabled={pending} onClick={() => { if (confirm("Disconnect Clarity? The API token and the data read with it are deleted. This can't be undone.")) run(disconnectClarity); }}>Disconnect</button>
       </div>
       {note}
     </div>

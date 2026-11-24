@@ -5,6 +5,7 @@ import { useRouter } from "next/navigation";
 import { ArrowRight, Eye, EyeOff, Lock, Mail } from "lucide-react";
 import { BRAND_NAME, BrandMark } from "@/components/brand/brand-mark";
 import { GoogleG } from "@/components/brand/google-icons";
+import { accessMailto } from "@/config/platforms";
 import { createClient } from "@/lib/supabase/client";
 
 /** "Remember me" only remembers the email address on this device. Sessions persist either way. */
@@ -99,8 +100,7 @@ export function LoginForm({ next, initialError }: { next: string; initialError: 
     });
   }
 
-  const contact = process.env.NEXT_PUBLIC_CONTACT_EMAIL ?? "";
-  const requestAccess = `mailto:${contact}?subject=${encodeURIComponent(`${BRAND_NAME} access request`)}`;
+  const requestAccess = accessMailto;
 
   return (
     <div className="relative w-full rounded-[28px] border border-[#F0EBE6] bg-white p-6 shadow-[0_30px_80px_-30px_rgba(120,60,20,0.25),0_8px_24px_-12px_rgba(0,0,0,0.08)] sm:p-9">
@@ -120,8 +120,8 @@ export function LoginForm({ next, initialError }: { next: string; initialError: 
       <button type="button" onClick={onGoogle} disabled={busy !== null}
         className="group mt-7 flex w-full items-center justify-center gap-3 rounded-xl border border-[#E7E2DD] bg-white py-3 text-[15px] font-semibold text-[#16161a] outline-none transition hover:border-[#D9D2CB] hover:bg-[#FCFAF8] focus-visible:ring-4 focus-visible:ring-[#F26A1B]/20 disabled:opacity-60">
         <GoogleG />
+        {/* Google sign-in branding: the standard G mark on the left, Google's own wording, no extra icons */}
         {busy === "google" ? "Connecting to Google…" : "Continue with Google"}
-        <ArrowRight className="size-4 text-[#8a8a94] transition group-hover:translate-x-0.5" aria-hidden />
       </button>
 
       <div className="my-5 flex items-center gap-4 text-xs font-semibold text-[#9a9aa5]" aria-hidden>
@@ -192,6 +192,9 @@ export function LoginForm({ next, initialError }: { next: string; initialError: 
       </a>
       <p id="access-note" className="mt-2.5 text-center text-xs text-[#8a8a94]">
         Accounts are set up by invitation. This opens an email to request access.
+      </p>
+      <p className="mt-3 text-center text-xs text-[#6b6b76]">
+        {BRAND_NAME} is an invite-only analytics platform operated by Waheed Zen LLC for its clients.
       </p>
       <p className="mt-4 text-center text-xs text-[#8a8a94]">
         By signing in, you agree to our{" "}

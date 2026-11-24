@@ -3,6 +3,8 @@
 import { useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import { AlertTriangle, CheckCircle2, CircleSlash, Loader2, RefreshCw } from "lucide-react";
+import { platformByProvider } from "@/config/platforms";
+import { ConsentPanel } from "@/components/integrations/consent-panel";
 import { PROVIDER_META, type ProviderId } from "@/lib/integrations/providers";
 import { cn } from "@/lib/utils";
 
@@ -39,6 +41,9 @@ export function IntegrationCard({
   const state = conn?.status ?? "disconnected";
   const [busy, setBusy] = useState<string | null>(null);
   const [message, setMessage] = useState<string | null>(null);
+  // the consent panel is shown before leaving for Google's consent screen
+  const [consent, setConsent] = useState(false);
+  const entry = platformByProvider(provider);
   const [picked, setPicked] = useState<Set<string>>(
     new Set(status.resources.filter((r) => r.is_selected).map((r) => r.id)),
   );
@@ -98,8 +103,8 @@ export function IntegrationCard({
     }
   }
   async function disconnect() {
-    if (!confirm(`Disconnect ${meta.label}? Stored history is kept; syncing stops.`)) return;
-    if (await call("disconnect")) router.refresh();
+    if (!confirm(`Disconnect ${meta.label}? Access is removed and the data received from it (including its history) is deleted. This can't be undone.`)) return;
+    if (await call("disconnect")) { setMessage(`${meta.label} disconnected and its data deleted.`); router.refresh(); }
   }
 
   const badge =
@@ -204,16 +209,24 @@ export function IntegrationCard({
               </>
             ) : state === "error" ? (
               <>
-                <button className={btnPrimary} onClick={connect} disabled={!canEdit || busy !== null}>Reconnect</button>
+                <button className={btnPrimary} onClick={() => (entry ? setConsent(true) : connect())} disabled={!canEdit || busy !== null}>Reconnect</button>
                 <button className={btn} onClick={disconnect} disabled={!canEdit || busy !== null}>Disconnect</button>
               </>
             ) : (
-              <button className={btnPrimary} onClick={connect} disabled={!canEdit || busy !== null}>
+              <button className={btnPrimary} onClick={() => (entry ? setConsent(true) : connect())} disabled={!canEdit || busy !== null || consent} aria-expanded={consent}>
                 {busy === "connect" && <Loader2 className="size-4 animate-spin" />} Connect Account
               </button>
             )}
           </div>
         </>
+      )}
+      {consent && entry && (
+        <ConsentPanel p={entry}>
+          <button type="button" className={btnPrimary} onClick={() => { setConsent(false); connect(); }} disabled={busy !== null}>
+            {busy === "connect" && <Loader2 className="size-4 animate-spin" />} Continue to Google
+          </button>
+          <button type="button" className={btn} onClick={() => setConsent(false)}>Cancel</button>
+        </ConsentPanel>
       )}
       {message && <p role="status" className="text-sm text-muted">{message}</p>}
     </section>

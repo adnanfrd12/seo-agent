@@ -1,83 +1,85 @@
 import type { Metadata } from "next";
-import { BRAND_NAME } from "@/components/brand/brand-mark";
-import { ContactLine, LegalPage, type LegalSection } from "@/components/legal/legal-page";
+import Link from "next/link";
+import { SITE } from "@/config/platforms";
+import { A, LegalPage, type LegalSection } from "@/components/legal/legal-page";
+import { PolicyRefs, PrivacyPlatforms, ProcessorTable } from "@/components/legal/platform-blocks";
 
 export const metadata: Metadata = {
-  title: `Privacy Policy · ${BRAND_NAME}`,
-  description: `How ${BRAND_NAME} collects, uses, protects and shares information.`,
+  title: "Privacy Policy · SEO Insights",
+  description: "How SEO Insights, operated by Waheed Zen LLC, collects, uses, shares and deletes information, including read-only data from connected Google, Microsoft and social accounts.",
+  alternates: { canonical: "/privacy" },
 };
 
+const mail = <a href={`mailto:${SITE.email}`} className={A}>{SITE.email}</a>;
+
 const sections: LegalSection[] = [
-  { id: "who-we-are", title: "Who we are", body: <>
-    <p>{BRAND_NAME} (&quot;we&quot;, &quot;us&quot;, &quot;our&quot;) is an SEO and marketing analytics platform. It brings a business&apos;s website, search, local and social performance data together in one dashboard, with reports and recommendations.</p>
-    <p>This policy explains what information we collect when you use the {BRAND_NAME} website and dashboard (the &quot;Service&quot;), how we use it, who we share it with and the choices you have. For data that belongs to a client business, we act on behalf of the agency or business that set up the account.</p>
+  { id: "what-seo-insights-is", title: "What SEO Insights is", body: <>
+    <p>SEO Insights is an invite-only platform that Waheed Zen LLC uses to report on search, website, business-listing and social media performance for its client businesses. Team members and client users are invited; there is no public sign-up. Every connection to a third-party platform is <strong>read-only</strong>: we never post, comment, message, follow, upload or change anything on any connected account.</p>
   </> },
   { id: "information-we-collect", title: "Information we collect", body: <>
-    <p><strong>Account information.</strong> Your name, email address, profile picture (if you sign in with Google), role and the client workspaces you belong to. Accounts are created by invitation.</p>
-    <p><strong>Connected account data.</strong> When an authorised user connects a third-party account, we receive read access to the data that account allows, for example:</p>
+    <p><strong>Account information:</strong> name, email, role, the business (workspace) you belong to and sign-in details. With Sign in with Google we receive your name, email and profile picture.</p>
+    <p><strong>Connected account data:</strong> when an authorized person connects a business account through the platform&apos;s official sign-in (OAuth) or an API key, we receive only the read-only data listed for that platform:</p>
+    <PrivacyPlatforms />
+    <p><strong>Market and search data:</strong> keyword volumes, search results, competitor and backlink data from DataForSEO. It concerns search terms and websites, not individuals.</p>
+    <p><strong>Usage and technical data:</strong> log data (IP address, browser, device, pages, timestamps, errors) to run, secure and troubleshoot the service. We do not use product analytics or tracking tools on SEO Insights.</p>
+    <p><strong>Communications:</strong> messages, support requests and deletion requests you send us.</p>
+    <p>We do not collect payment card details in SEO Insights and do not knowingly collect sensitive personal information.</p>
+  </> },
+  { id: "how-we-use-information", title: "How we use information", body: <>
+    <p>Only to: show dashboards, reports, charts and alerts to the business that owns the data and the people it authorized; sync data on a schedule and keep history to show changes over time; generate SEO and marketing insights and recommendations, including with AI (section 5); authenticate users, secure the service, prevent abuse and fix problems; and communicate with you about the service.</p>
+    <p>We <strong>do not</strong> sell personal information, use connected account data for advertising, build advertising profiles, share it with data brokers, or use it to train AI models.</p>
+  </> },
+  { id: "platform-terms", title: "Platform terms and Google Limited Use", body: <>
+    <p>We use each platform&apos;s data only as its developer terms allow:</p>
+    <PolicyRefs />
+    <p><strong>Google:</strong> SEO Insights&apos; use and transfer of information received from Google APIs to any other app will adhere to the <a href="https://developers.google.com/terms/api-services-user-data-policy" className={A} target="_blank" rel="noopener noreferrer">Google API Services User Data Policy</a>, including the Limited Use requirements. Google user data is used only to provide the user-facing features described here; it is not used for advertising, is not sold, is not used to train AI models, and is not read by humans unless you give permission, it is necessary for security or to comply with law, or it is aggregated and anonymized for internal operations.</p>
+    <p><strong>Meta (Facebook, Instagram, Threads):</strong> Platform Data is not sold, licensed or used for advertising or AI training, and is deleted when you remove SEO Insights or ask Meta to delete it (see <Link href="/data-deletion" className={A}>Data Deletion</Link>).</p>
+    <p><strong>TikTok, Pinterest, X, LinkedIn, Microsoft:</strong> data is used only to show the account owner their own statistics, is not sold or shared, and is not used to train AI models.</p>
+  </> },
+  { id: "ai-generated-insights", title: "AI-generated insights", body: <>
+    <p>SEO Insights uses Anthropic&apos;s Claude models to turn analytics and SEO data into plain-language insights and recommendations. We send Anthropic only the data needed for that task: aggregated metrics, search queries, page URLs, titles and text from the business&apos;s public website, social account statistics, and the text of reports you choose to upload. We never send passwords, access tokens or payment details. Under our commercial agreement, Anthropic does not use this data to train its models. AI output can be incomplete or wrong; review recommendations before applying them.</p>
+  </> },
+  { id: "how-we-share-information", title: "How we share information", body: <>
+    <p>Only with service providers that help us run SEO Insights, under contracts limiting their use to providing services to us:</p>
+    <ProcessorTable />
+    <p>Data from a business&apos;s connected accounts is visible only to that business&apos;s authorized users and the Waheed Zen LLC team members who manage its account. We may disclose information if required by law, to protect rights and safety, or in a merger or acquisition under this policy. We never sell or rent personal information and do not &quot;share&quot; it for cross-context behavioral advertising.</p>
+  </> },
+  { id: "retention", title: "Retention", body: <>
     <ul>
-      <li>Google Analytics 4 (traffic, engagement and conversion reports), Google Search Console (search queries, clicks, impressions, positions) and Google Business Profile (profile details, performance, reviews and posts);</li>
-      <li>Bing Webmaster Tools and Microsoft Clarity (search and behaviour summaries);</li>
-      <li>social accounts such as Facebook Pages, Instagram, LinkedIn Pages, Pinterest, YouTube, Threads, X and TikTok (profile details, follower counts, post and audience insights).</li>
+      <li><strong>Access tokens and API keys</strong> are deleted as soon as an account is disconnected or access is revoked.</li>
+      <li><strong>Data received from a connected account</strong> is kept while the account is connected and the workspace is active, to show history. It is deleted within <strong>30 days</strong> (usually immediately) after the account is disconnected, access is revoked, the platform notifies us of removal or a deletion request, or we receive a verified request.</li>
+      <li><strong>Workspaces and user accounts</strong> are deleted within <strong>30 days</strong> after closure or a verified request.</li>
+      <li><strong>Backups</strong> containing deleted data are overwritten within <strong>{SITE.backupDays} days</strong>; <strong>server logs</strong> are kept up to <strong>{SITE.logDays} days</strong>.</li>
+      <li>We keep only a minimal record that a deletion request was received and completed, and anything the law requires.</li>
     </ul>
-    <p><strong>Public and research data.</strong> Public information about websites, search results, keywords, backlinks, business listings, reviews and public social profiles, obtained from data providers or the public web. This includes competitors that a client chooses to track.</p>
-    <p><strong>Website content.</strong> Public pages and posts of a client&apos;s own website, read to analyse content and technical SEO.</p>
-    <p><strong>Usage and technical data.</strong> Log data such as IP address, browser type, pages viewed, actions taken and error reports, used to run and secure the Service.</p>
-    <p><strong>Cookies.</strong> Strictly necessary cookies keep you signed in and remember preferences such as the selected date range. We don&apos;t use advertising cookies or sell browsing data.</p>
-  </> },
-  { id: "how-we-use", title: "How we use information", body: <>
-    <ul>
-      <li>To provide the Service: show dashboards, charts and reports, sync connected accounts and keep history for trend analysis;</li>
-      <li>to generate insights, summaries and recommendations, including with AI models processing the client&apos;s analytics data;</li>
-      <li>to authenticate users, manage access and protect against fraud, abuse and security incidents;</li>
-      <li>to send service messages such as sign-in links, alerts and reports you&apos;ve asked for;</li>
-      <li>to maintain, troubleshoot and improve the Service;</li>
-      <li>to comply with legal obligations.</li>
-    </ul>
-    <p>We don&apos;t sell personal information, and we don&apos;t use connected account data for advertising.</p>
-  </> },
-  { id: "google-limited-use", title: "Google API services and connected platforms", body: <>
-    <p>{BRAND_NAME}&apos;s use and transfer of information received from Google APIs follows the <a className="text-[#E8552A] underline-offset-2 hover:underline" href="https://developers.google.com/terms/api-services-user-data-policy" target="_blank" rel="noreferrer">Google API Services User Data Policy</a>, including the Limited Use requirements. Google user data is used only to provide and improve the user-facing features of the Service, is not transferred to others except as needed to provide those features, to comply with law or as part of a merger or acquisition, is not used for advertising, and is not read by people unless you consent, it&apos;s needed for security, or the law requires it.</p>
-    <p>Social accounts are connected through each platform&apos;s official sign-in (OAuth), in some cases through our integration partner Composio. We request read-only access to profile and insights data and never post on your behalf. Data received from each platform is handled under that platform&apos;s developer terms as well as this policy.</p>
-    <p>You can disconnect an account at any time from the dashboard, and you can also revoke access in the platform&apos;s own security settings (for example, your Google Account&apos;s third-party access page).</p>
-  </> },
-  { id: "sharing", title: "How we share information", body: <>
-    <p>We share information only as needed to run the Service, with service providers bound by confidentiality and data-protection obligations:</p>
-    <ul>
-      <li>hosting, database and authentication (for example Vercel and Supabase);</li>
-      <li>integration and connection management (Composio);</li>
-      <li>SEO and market data providers (for example DataForSEO), which receive search terms, domains and business names, not your personal account data;</li>
-      <li>AI processing (Anthropic), which analyses report data to produce insights and doesn&apos;t use it to train its models under our commercial terms;</li>
-      <li>email delivery for alerts and reports.</li>
-    </ul>
-    <p>Within a client workspace, its owners, admins and invited members can see that workspace&apos;s data. We may also disclose information if the law requires it, to protect rights and safety, or as part of a merger, acquisition or sale of assets, subject to this policy.</p>
-  </> },
-  { id: "retention", title: "Data retention", body: <>
-    <p>We keep account and analytics data while the workspace is active, so trends and comparisons stay available. Connection tokens are deleted when an account is disconnected. When a workspace is closed, or on a verified request, we delete or anonymise its data within a reasonable period, except where the law requires us to keep it. Backups expire on a rolling schedule.</p>
   </> },
   { id: "security", title: "Security", body: <>
-    <p>We protect information with encryption in transit (HTTPS), encryption of stored access tokens, role-based access control, row-level security in the database and limited staff access. No system is completely secure, but we work to protect your information and will notify affected users of a breach where the law requires it.</p>
+    <p>Data is encrypted in transit (TLS) and at rest. Tokens and keys are stored encrypted and never exposed to the browser. Production access is limited to authorized Waheed Zen LLC personnel using two-factor authentication. No system is perfectly secure; we will notify affected users of a breach as required by law.</p>
   </> },
   { id: "your-rights", title: "Your rights and choices", body: <>
-    <p>Depending on where you live (including under the GDPR, UK GDPR and California privacy laws), you may have the right to access, correct, delete or export your personal information, and to object to or restrict certain processing. You can:</p>
     <ul>
-      <li>update your profile, and disconnect integrations, from within the dashboard;</li>
-      <li>ask us to access, correct, export or delete your data by contacting us (see below);</li>
-      <li>complain to your local data-protection authority.</li>
+      <li><strong>Disconnect</strong> any account at any time in SEO Insights ({SITE.disconnectPath}).</li>
+      <li><strong>Revoke access</strong> on the platform (steps on <Link href="/data-deletion" className={A}>Data Deletion</Link> and <Link href="/platforms" className={A}>Connected platforms</Link>).</li>
+      <li><strong>Access, correct, export or delete</strong> your information: email {mail}. We respond within <strong>30 days</strong> (45 days where a state law allows, with notice).</li>
+      <li>Depending on where you live (e.g. California and other US states, the EEA, the UK) you may have further rights, such as objecting to processing or complaining to a data protection authority. We will not discriminate against you for exercising them.</li>
     </ul>
-    <p>Where we process client data on behalf of an agency or business, we&apos;ll pass your request to them or help them respond.</p>
+    <p>Where EU/UK law applies, we rely on performing our contract with the business you belong to, our legitimate interests in running and securing the service, and consent where required (for example when you connect an account).</p>
   </> },
-  { id: "international", title: "International transfers", body: <>
-    <p>Our service providers may process information in countries other than yours, including the United States. Where required, we rely on appropriate safeguards such as standard contractual clauses.</p>
+  { id: "cookies", title: "Cookies", body: <>
+    <p>SEO Insights uses only cookies needed to sign you in and keep the app secure (Supabase authentication cookies), plus one functional cookie that remembers the date range you last picked. We do not use advertising cookies or tracking pixels on SEO Insights.</p>
   </> },
-  { id: "children", title: "Children", body: <p>The Service is for businesses and isn&apos;t directed at children under 16. We don&apos;t knowingly collect their personal information.</p> },
-  { id: "changes", title: "Changes to this policy", body: <p>We may update this policy as the Service changes. We&apos;ll post the new version here with a new &quot;Last updated&quot; date and, for significant changes, notify account owners.</p> },
-  { id: "contact", title: "Contact us", body: <p>For privacy questions or requests, contact us at <ContactLine subject="Privacy request" />.</p> },
+  { id: "international-users", title: "International users", body: <p>SEO Insights is operated from the United States; data is processed in the United States and other countries where our providers operate, with safeguards such as Standard Contractual Clauses where required.</p> },
+  { id: "children", title: "Children", body: <p>SEO Insights is a business tool, not directed to anyone under 18. We do not knowingly collect children&apos;s information.</p> },
+  { id: "changes", title: "Changes", body: <p>We post changes here and update the date above; significant changes are announced to workspace owners by email or in the app.</p> },
+  { id: "contact", title: "Contact", body: <p>{SITE.operator} (SEO Insights), {SITE.address} · {mail} · <a href={SITE.phoneHref} className={A}>{SITE.phone}</a></p> },
 ];
 
 export default function PrivacyPage() {
   return (
-    <LegalPage title="Privacy Policy" sections={sections} other={{ href: "/terms", label: "Terms and Conditions" }}
-      intro={<p>Your trust matters to us. This policy describes how {BRAND_NAME} handles information about you and the businesses we serve. By using the Service, you acknowledge the practices described here.</p>} />
+    <LegalPage
+      title="Privacy Policy"
+      intro={<p>This Privacy Policy explains how <strong>SEO Insights</strong> (&quot;SEO Insights&quot;, &quot;we&quot;, &quot;us&quot;) collects, uses, shares and deletes information. SEO Insights is operated by <strong>Waheed Zen LLC</strong>, a Montana limited liability company, {SITE.address} ({mail}, <a href={SITE.phoneHref} className={A}>{SITE.phone}</a>). Waheed Zen LLC&apos;s agency website has its own policy at <a href={SITE.operatorPrivacy} className={A} target="_blank" rel="noopener noreferrer">{SITE.operatorPrivacy}</a>.</p>}
+      sections={sections}
+    />
   );
 }

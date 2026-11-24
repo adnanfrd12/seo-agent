@@ -86,7 +86,7 @@ export function BingPanel({ connected, canEdit, hasEnvKey, selected, suggest }: 
           </button>
         )}
         <button className={btn2} disabled={pending || selected.length === 0} onClick={() => run(syncBingNow)}>Sync now</button>
-        <button className={btn2} disabled={pending} onClick={() => { if (confirm("Disconnect Bing? Stored history is kept.")) run(disconnectBing); }}>Disconnect</button>
+        <button className={btn2} disabled={pending} onClick={() => { if (confirm("Disconnect Bing? The API key and the data read with it are deleted. This can't be undone.")) run(disconnectBing); }}>Disconnect</button>
       </div>
       {note}
     </div>

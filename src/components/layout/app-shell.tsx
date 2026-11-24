@@ -5,6 +5,7 @@ import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { ChevronDown, Menu, PanelLeftClose, PanelLeftOpen, X } from "lucide-react";
 import { BrandMark, BRAND_NAME } from "@/components/brand/brand-mark";
+import { SiteFooter } from "@/components/legal/site-footer";
 import { NAV } from "@/lib/analytics/nav";
 import { cn } from "@/lib/utils";
 
@@ -178,6 +179,7 @@ export function AppShell({ sidebarTop, header, children }: { sidebarTop: React.R
         </div>
         <main className="relative flex-1 overflow-y-auto overscroll-contain">
           <div className="w-full px-4 py-6 md:px-6 md:py-8 xl:px-8 2xl:px-10">{children}</div>
+          <SiteFooter muted />
         </main>
       </div>
     </div>
