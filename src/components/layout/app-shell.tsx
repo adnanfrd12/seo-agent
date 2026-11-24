@@ -62,9 +62,9 @@ function NavList({ collapsed, onNavigate }: { collapsed: boolean; onNavigate?: (
                 return (
                   <li key={href}>
                     <div className="flex items-center gap-0.5">
-                      {/* the name opens its sub-tabs right away (as the arrow does) and goes to the section's page;
-                          on phones the menu stays open so a sub-tab can be picked next */}
-                      <Link href={to(href)} onClick={() => { if (!open) setOpen(href, true); }} aria-expanded={open}
+                      {/* the name toggles its sub-tabs like the arrow: a closed list opens and goes to the section's page,
+                          an open list closes and stays on the current page */}
+                      <Link href={to(href)} onClick={(e) => { if (open) { e.preventDefault(); setOpen(href, false); } else setOpen(href, true); }} aria-expanded={open}
                         className={cn("relative flex h-8 min-w-0 flex-1 items-center gap-2.5 rounded-md px-2.5 text-[13px] outline-none transition-colors focus-visible:ring-2 focus-visible:ring-accent",
                           active ? "font-medium text-foreground" : "text-secondary hover:bg-surface-muted hover:text-foreground")}>
                         <Icon className={cn("size-4 shrink-0", active ? "text-foreground" : "text-muted")} aria-hidden />
@@ -82,7 +82,6 @@ function NavList({ collapsed, onNavigate }: { collapsed: boolean; onNavigate?: (
                           const on = pathname === c.href || (c.href !== href && pathname.startsWith(`${c.href}/`));
                           return (
                             <li key={c.href}>
-                              {c.group && <p className="mb-0.5 mt-2 px-2.5 text-[10px] font-semibold uppercase tracking-[0.08em] text-faint">{c.group}</p>}
                               <Link href={to(c.href)} onClick={onNavigate} aria-current={on ? "page" : undefined}
                                 className={cn("relative flex h-7 items-center rounded-md px-2.5 text-[12.5px] outline-none transition-colors focus-visible:ring-2 focus-visible:ring-accent",
                                   on ? "bg-surface-muted font-medium text-foreground" : "text-secondary hover:bg-surface-muted hover:text-foreground")}>
