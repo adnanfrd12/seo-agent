@@ -214,9 +214,9 @@ export async function readComposio(clientId: string, p: Platform, connectedAccou
   }
 
   else if (p === "tiktok") {
-    const u = await run("TIKTOK_GET_USER_STATS", { fields: ["open_id", "display_name", "avatar_url", "follower_count", "following_count", "likes_count", "video_count"] });
+    const u = await run("TIKTOK_GET_USER_STATS", { fields: ["open_id", "username", "display_name", "avatar_url", "follower_count", "following_count", "likes_count", "video_count"] });
     { const oid = pickStr(u, ["open_id"]); if (oid) out.ids.user_id = oid; }
-    out.avatar = pickStr(u, ["avatar_url"]);
+    out.handle = pickStr(u, ["username"]); out.avatar = pickStr(u, ["avatar_url"]);
     out.name = pickStr(u, ["display_name"]); out.followers = pick(u, ["follower_count"]); out.following = pick(u, ["following_count"]); out.posts = pick(u, ["video_count"]);
     const lt = pick(u, ["likes_count"]); if (lt != null) out.totals.lifetime_likes = lt;
     let cursor: unknown, pages = 0;
