@@ -61,20 +61,15 @@ function NavList({ collapsed, onNavigate }: { collapsed: boolean; onNavigate?: (
                 const open = openMap[href] ? openMap[href] === "1" : active;
                 return (
                   <li key={href}>
-                    <div className="flex items-center gap-0.5">
-                      {/* the name toggles its sub-tabs like the arrow: a closed list opens and goes to the section's page,
-                          an open list closes and stays on the current page */}
-                      <Link href={to(href)} onClick={(e) => { if (open) { e.preventDefault(); setOpen(href, false); } else setOpen(href, true); }} aria-expanded={open}
-                        className={cn("relative flex h-8 min-w-0 flex-1 items-center gap-2.5 rounded-md px-2.5 text-[13px] outline-none transition-colors focus-visible:ring-2 focus-visible:ring-accent",
-                          active ? "font-medium text-foreground" : "text-secondary hover:bg-surface-muted hover:text-foreground")}>
-                        <Icon className={cn("size-4 shrink-0", active ? "text-foreground" : "text-muted")} aria-hidden />
-                        <span className="truncate">{label}</span>
-                      </Link>
-                      <button type="button" onClick={() => setOpen(href, !open)} aria-expanded={open} aria-label={`${open ? "Hide" : "Show"} ${label} tabs`}
-                        className="grid size-7 shrink-0 place-items-center rounded-md text-muted outline-none hover:bg-surface-muted hover:text-foreground focus-visible:ring-2 focus-visible:ring-accent">
-                        <ChevronDown className={cn("size-3.5 transition-transform", !open && "-rotate-90")} aria-hidden />
-                      </button>
-                    </div>
+                    {/* one row: icon, name and arrow together. A closed list opens and goes to the section's page;
+                        an open list closes and stays on the current page */}
+                    <Link href={to(href)} onClick={(e) => { if (open) { e.preventDefault(); setOpen(href, false); } else setOpen(href, true); }} aria-expanded={open}
+                      className={cn("relative flex h-8 min-w-0 items-center gap-2.5 rounded-md px-2.5 text-[13px] outline-none transition-colors focus-visible:ring-2 focus-visible:ring-accent",
+                        active ? "font-medium text-foreground" : "text-secondary hover:bg-surface-muted hover:text-foreground")}>
+                      <Icon className={cn("size-4 shrink-0", active ? "text-foreground" : "text-muted")} aria-hidden />
+                      <span className="min-w-0 flex-1 truncate">{label}</span>
+                      <ChevronDown className={cn("size-3.5 shrink-0 text-muted transition-transform", !open && "-rotate-90")} aria-hidden />
+                    </Link>
                     {open && (
                       <ul className="ml-[17px] mt-px space-y-px border-l border-hairline pl-2">
                         {children.map((c) => {
