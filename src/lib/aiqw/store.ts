@@ -1,5 +1,6 @@
 import "server-only";
 import type { SupabaseClient } from "@supabase/supabase-js";
+import { cachedRows } from "@/lib/data-cache";
 import type { Candidate, RunState, StoredWin } from "./types";
 
 /**
@@ -21,6 +22,8 @@ async function put(admin: SupabaseClient, clientId: string, key: string, data: u
 }
 
 export const loadItems = async (admin: SupabaseClient, clientId: string) => (await get<{ items: StoredWin[] }>(admin, clientId, "items"))?.items ?? [];
+/** Read-only copy for display (shared in memory until the list is saved again). Writers use loadItems. */
+export const readItems = async (admin: SupabaseClient, clientId: string) => ((await cachedRows(admin, clientId, EP, ["items"])).get("items")?.data as { items: StoredWin[] } | undefined)?.items ?? [];
 export const saveItems = (admin: SupabaseClient, clientId: string, items: StoredWin[]) => put(admin, clientId, "items", { items }, items.length);
 
 export const loadRun = (admin: SupabaseClient, clientId: string, id: string) => get<RunState>(admin, clientId, `run:${id}`);

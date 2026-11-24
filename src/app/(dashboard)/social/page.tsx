@@ -36,12 +36,14 @@ export default async function SocialPage({ searchParams }: { searchParams: Promi
   if (!page) return null;
   const { client, canEdit } = page;
   const supabase = await createClient();
-  const [rows, social] = await Promise.all([loadSocial(supabase, client.id), clientSocial(createAdminClient(), client.id)]);
+  // stored stats, settings and the two Composio lookups are independent: all four at once
+  const [rows, social, conns, readyMap] = await Promise.all([
+    loadSocial(supabase, client.id), clientSocial(createAdminClient(), client.id),
+    socialConnections(client.id).catch((): SocialConnection[] => []), // Composio unreachable: buttons still shown
+    composioReadyMap(),
+  ]);
   const tokens = tokenState(social.tokens);
-  let conns: SocialConnection[] = [];
-  try { conns = await socialConnections(client.id); } catch { /* Composio unreachable: buttons still shown */ }
   const active = new Set(conns.filter((c) => c.status === "ACTIVE").map((c) => c.platform));
-  const readyMap = await composioReadyMap();
 
   // connected accounts refresh themselves: a stale one is read in the background after this page is sent
   const stale = staleConnected(rows, active, STALE_MS);

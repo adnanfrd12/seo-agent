@@ -1,4 +1,5 @@
 import "server-only";
+import { cachedRows } from "@/lib/data-cache";
 import type { SupabaseClient } from "@supabase/supabase-js";
 import { todayIn, shiftDays } from "@/lib/analytics/range";
 import { and, batch, exact, ga, inList, not, or, regex, report, type Filter, type Ga4xCtx } from "./api";
@@ -19,16 +20,21 @@ const STALE_MS = 20 * 3600_000;
 
 /** The client's GA4 property to read: the picked one, else the one whose name or stream matches the client, else the first. */
 export async function ga4xTarget(admin: SupabaseClient, clientId: string, resourceId?: string | null) {
-  const { data } = await admin.from("integration_resources").select("id, external_id, display_name, timezone, connection_id, is_selected")
-    .eq("client_id", clientId).eq("provider", "ga4").eq("is_selected", true).order("display_name");
+  // the selected properties, the client's name and its GA4 connection, in parallel
+  const [{ data }, { data: c }, { data: conns }] = await Promise.all([
+    admin.from("integration_resources").select("id, external_id, display_name, timezone, connection_id, is_selected")
+      .eq("client_id", clientId).eq("provider", "ga4").eq("is_selected", true).order("display_name"),
+    admin.from("clients").select("name").eq("id", clientId).maybeSingle(),
+    admin.from("integration_connections").select("id, status, composio_entity_id, composio_connected_account_id").eq("client_id", clientId).eq("provider", "ga4"),
+  ]);
   const list = (data ?? []) as { id: string; external_id: string; display_name: string | null; timezone: string | null; connection_id: string | null }[];
   if (!list.length) return null;
-  const { data: c } = await admin.from("clients").select("name, website, settings").eq("id", clientId).maybeSingle();
   const want = String((c as { name?: string } | null)?.name ?? "").toLowerCase();
   const res = list.find((r) => r.id === resourceId)
     ?? list.find((r) => want && (r.display_name ?? "").toLowerCase().includes(want.split(" ")[0]))
     ?? list.find((r) => !/firebase|default account/i.test(r.display_name ?? "")) ?? list[0];
-  const { data: conn } = await admin.from("integration_connections").select("status, composio_entity_id, composio_connected_account_id").eq("id", res.connection_id ?? "").maybeSingle();
+  let conn: unknown = (conns ?? []).find((x) => x.id === res.connection_id) ?? null;
+  if (!conn && res.connection_id) conn = (await admin.from("integration_connections").select("status, composio_entity_id, composio_connected_account_id").eq("id", res.connection_id).maybeSingle()).data;
   const cn = conn as { status?: string; composio_entity_id?: string | null; composio_connected_account_id?: string | null } | null;
   if (!cn?.composio_connected_account_id || !cn.composio_entity_id) return { resource: res, ctx: null as Ga4xCtx | null, choices: list };
   return { resource: res, ctx: { userId: cn.composio_entity_id, connectedAccountId: cn.composio_connected_account_id, property: res.external_id } as Ga4xCtx, choices: list };
@@ -56,6 +62,19 @@ export async function loadCubes<N extends CubeName>(admin: SupabaseClient, clien
   return out;
 }
 export const isStale = (m: Ga4xMeta | null) => !m || Date.now() - Date.parse(m.fetchedAt) > STALE_MS;
+
+/**
+ * Screen reads (read-only): meta and cubes in one go through the in-memory data cache, which re-downloads a row only
+ * when a sync has rewritten it (lib/data-cache). `version` changes whenever any of the rows does. Sync code keeps
+ * using loadMeta / loadCubes, which always read the database.
+ */
+export async function readGa4x<N extends CubeName>(admin: SupabaseClient, clientId: string, resourceId: string, names: readonly N[]) {
+  const hashes = [key(resourceId, "meta"), ...names.map((n) => key(resourceId, `cube:${n}`))];
+  const rows = await cachedRows(admin, clientId, ENDPOINT, hashes);
+  const cubes = {} as Record<N, Cube>;
+  for (const n of names) cubes[n] = (rows.get(key(resourceId, `cube:${n}`))?.data as Cube | undefined) ?? { cols: [], rows: [] };
+  return { meta: (rows.get(key(resourceId, "meta"))?.data as Ga4xMeta | undefined) ?? null, cubes, version: hashes.map((h) => rows.get(h)?.fetchedAt ?? "-").join("|") };
+}
 
 /* events GA4 sends on every page: too many to keep per landing page and city, and never leads */
 const BULK = ["page_view", "session_start", "first_visit", "user_engagement", "scroll"];

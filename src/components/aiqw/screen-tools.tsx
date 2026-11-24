@@ -1,8 +1,9 @@
+import { Suspense } from "react";
 import Link from "next/link";
 import { getSession } from "@/lib/analytics/client-context";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { screenLabel } from "@/lib/aiqw/screens";
-import { loadItems } from "@/lib/aiqw/store";
+import { readItems } from "@/lib/aiqw/store";
 import { AskClaude, ScreenRunButton } from "./screen-tools-client";
 import { SourceBadge } from "./badges";
 
@@ -10,12 +11,31 @@ import { SourceBadge } from "./badges";
  * Bottom of a screen: this screen's AI quick wins (from the shared list), "✨ Quick wins for this screen" and
  * "💬 Ask Claude". `screen` is the key from src/lib/aiqw/screens.ts.
  */
-export async function AiScreenTools({ screen }: { screen: string | null }) {
+export function AiScreenTools({ screen }: { screen: string | null }) {
   if (!screen) return null;
+  // streamed separately: the screen above never waits for it
+  return <Suspense fallback={<ToolsSkeleton />}><Tools screen={screen} /></Suspense>;
+}
+
+/** Same footprint as the box, so nothing jumps when it arrives. */
+function ToolsSkeleton() {
+  return (
+    <section aria-busy="true" aria-label="Loading AI quick wins" className="mt-8 rounded-[10px] border border-border bg-surface p-4">
+      <div className="flex flex-wrap items-start justify-between gap-3">
+        <div className="space-y-1.5"><div className="skeleton h-3 w-64 rounded" /><div className="skeleton h-3 w-80 max-w-full rounded" /></div>
+        <div className="skeleton h-8 w-48 rounded-lg" />
+      </div>
+      <div className="mt-3 space-y-2">{[0, 1, 2].map((i) => <div key={i} className="skeleton h-12 rounded-md" />)}</div>
+      <div className="skeleton mt-4 h-9 rounded-lg" />
+    </section>
+  );
+}
+
+async function Tools({ screen }: { screen: string }) {
   const { client } = await getSession();
   if (!client) return null;
   const canEdit = ["owner", "admin"].includes(client.role);
-  const items = (await loadItems(createAdminClient(), client.id).catch(() => []))
+  const items = (await readItems(createAdminClient(), client.id).catch(() => []))
     .filter((w) => w.seen_run && (w.status === "todo" || w.status === "doing") && w.scope_screens.includes(screen))
     .sort((a, b) => b.score - a.score).slice(0, 5);
   return (

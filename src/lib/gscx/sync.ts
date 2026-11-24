@@ -1,4 +1,5 @@
 import "server-only";
+import { cachedRows } from "@/lib/data-cache";
 import type { SupabaseClient } from "@supabase/supabase-js";
 import { todayIn, shiftDays } from "@/lib/analytics/range";
 import { sa, type GscCtx, type SaRow } from "./api";
@@ -26,12 +27,17 @@ export interface GscMeta {
 export interface InspState { history: Record<string, Inspection[]>; quota: { date: string; used: number }; lastRun: string | null }
 
 export async function gscxTarget(admin: SupabaseClient, clientId: string, resourceId?: string | null) {
-  const { data } = await admin.from("integration_resources").select("id, external_id, display_name, connection_id")
-    .eq("client_id", clientId).eq("provider", "gsc").eq("is_selected", true).order("display_name");
+  // the selected sites and the client's Search Console connection, in parallel
+  const [{ data }, { data: conns }] = await Promise.all([
+    admin.from("integration_resources").select("id, external_id, display_name, connection_id")
+      .eq("client_id", clientId).eq("provider", "gsc").eq("is_selected", true).order("display_name"),
+    admin.from("integration_connections").select("id, composio_entity_id, composio_connected_account_id").eq("client_id", clientId).eq("provider", "gsc"),
+  ]);
   const list = (data ?? []) as { id: string; external_id: string; display_name: string | null; connection_id: string | null }[];
   if (!list.length) return null;
   const res = list.find((r) => r.id === resourceId) ?? list.find((r) => r.external_id.startsWith("sc-domain:")) ?? list[0];
-  const { data: conn } = await admin.from("integration_connections").select("composio_entity_id, composio_connected_account_id").eq("id", res.connection_id ?? "").maybeSingle();
+  let conn: unknown = (conns ?? []).find((c) => c.id === res.connection_id) ?? null;
+  if (!conn && res.connection_id) conn = (await admin.from("integration_connections").select("composio_entity_id, composio_connected_account_id").eq("id", res.connection_id).maybeSingle()).data;
   const cn = conn as { composio_entity_id?: string | null; composio_connected_account_id?: string | null } | null;
   const ctx: GscCtx | null = cn?.composio_connected_account_id && cn.composio_entity_id ? { userId: cn.composio_entity_id, connectedAccountId: cn.composio_connected_account_id, site: res.external_id } : null;
   return { resource: res, ctx, choices: list };
@@ -54,6 +60,21 @@ export async function loadCubes(admin: SupabaseClient, clientId: string, rid: st
   return out;
 }
 export const isStale = (m: GscMeta | null) => !m || Date.now() - Date.parse(m.fetchedAt) > STALE_MS;
+
+/**
+ * Screen reads (read-only): cubes plus single rows (meta, inventory, inspections, sitemaps) in one go, through the
+ * in-memory data cache, which re-downloads a row only when a sync has rewritten it (lib/data-cache). `version`
+ * changes whenever any of the rows does. Sync code keeps using loadCubes / loadOne, which always read the database.
+ */
+export async function readGscx(admin: SupabaseClient, clientId: string, rid: string, names: readonly GCube[], ones: readonly string[]) {
+  const hashes = [...names.map((n) => k(rid, `cube:${n}`)), ...ones.map((o) => k(rid, o))];
+  const rows = await cachedRows(admin, clientId, ENDPOINT, hashes);
+  const cubes = {} as Record<GCube, Cube>;
+  for (const n of names) cubes[n] = (rows.get(k(rid, `cube:${n}`))?.data as Cube | undefined) ?? { cols: [], rows: [] };
+  const one: Record<string, unknown> = {};
+  for (const o of ones) one[o] = rows.get(k(rid, o))?.data ?? null;
+  return { cubes, one, version: hashes.map((h) => rows.get(h)?.fetchedAt ?? "-").join("|") };
+}
 
 /** Search performance: every cube for the property. A report that fails is recorded; the rest still run. */
 export async function syncGscx(admin: SupabaseClient, clientId: string, resourceId?: string | null, opts: { inventory?: boolean; inspectBudget?: number } = {}): Promise<GscMeta | null> {

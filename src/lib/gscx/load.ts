@@ -9,7 +9,8 @@ import { addDays, G, type Period } from "./g";
 import type { InventoryRow, SitemapInfo } from "./inventory";
 import { pathOf, type GscSettings } from "./model";
 import { gscQuickWins, type GscWin } from "./quickwins";
-import { gscxTarget, isStale, loadCubes, loadOne, syncGscx, syncInventory, type GCube, type GscMeta, type InspState } from "./sync";
+import { gscxTarget, isStale, loadCubes, readGscx, syncGscx, syncInventory, type GCube, type GscMeta, type InspState } from "./sync";
+import { memo } from "@/lib/memo";
 
 const ALL: GCube[] = ["totals", "q", "qp", "pg", "pd", "cd", "dev", "app", "hour", "qm"];
 export const TYPES = [["web", "Web"], ["image", "Image"], ["video", "Video"], ["news", "News"], ["discover", "Discover"], ["googleNews", "Google News"]] as const;
@@ -20,13 +21,20 @@ export type GscView =
   | { state: "error"; clientName: string; message: string }
   | { state: "ok"; clientName: string; clientId: string; g: G; wins: GscWin[]; period: Period; settingsSource: Record<keyof GscSettings, string>; ctx: NonNullable<Awaited<ReturnType<typeof gscxTarget>>>["ctx"] };
 
-/** Default settings from what the portal already knows about the business; anything saved on the Brand / Local screens wins. */
-async function settingsFor(admin: ReturnType<typeof createAdminClient>, clientId: string, inv: InventoryRow[], qRows: (string | number)[][]): Promise<{ s: GscSettings; src: Record<keyof GscSettings, string> }> {
+type SettingsSources = { c: { name: string; settings: unknown } | null; nap: Awaited<ReturnType<typeof clientNap>> | null; gbp: { metadata: unknown } | null };
+
+/** What the settings defaults are built from (read in parallel with the cubes). */
+async function settingsSources(admin: ReturnType<typeof createAdminClient>, clientId: string): Promise<SettingsSources> {
   const [{ data: c }, nap, { data: gbp }] = await Promise.all([
     admin.from("clients").select("name, settings").eq("id", clientId).maybeSingle(),
     clientNap(admin, clientId).catch(() => null),
     admin.from("integration_resources").select("metadata").eq("client_id", clientId).eq("provider", "gbp").eq("is_selected", true).limit(1).maybeSingle(),
   ]);
+  return { c, nap, gbp };
+}
+
+/** Default settings from what the portal already knows about the business; anything saved on the Brand / Local screens wins. */
+function settingsFrom({ c, nap, gbp }: SettingsSources, inv: InventoryRow[], qRows: (string | number)[][]): { s: GscSettings; src: Record<keyof GscSettings, string> } {
   const st = ((c?.settings ?? {}) as Record<string, unknown>);
   const saved = (st.gsc_settings ?? {}) as Partial<GscSettings>;
   const host = inv[0] ? new URL(inv[0].url).hostname.replace(/^www\./, "") : "";
@@ -64,6 +72,20 @@ async function settingsFor(admin: ReturnType<typeof createAdminClient>, clientId
   };
 }
 
+/** The rows every Search Console screen reads besides the cubes. */
+const ONES = ["meta", "inventory", "insp", "sitemaps"] as const;
+type Read = Awaited<ReturnType<typeof readGscx>>;
+const partsOf = (read: Read) => ({ meta: read.one.meta as GscMeta | null, inv: read.one.inventory as InventoryRow[] | null, insp: read.one.insp as InspState | null, sitemaps: (read.one.sitemaps as SitemapInfo[] | null) ?? [] });
+/** The last 28 days vs the 28 before (what the quick wins use). */
+const g28Of = (read: Read, s: GscSettings, meta: GscMeta) => {
+  const { inv, insp, sitemaps } = partsOf(read);
+  const p28: Period = { start: addDays(meta.end, -27), end: meta.end, days: 28, pstart: addDays(meta.end, -55), pend: addDays(meta.end, -28) };
+  return new G(meta, read.cubes, p28, s, inv, insp, sitemaps);
+};
+/** Rule-based quick wins depend only on the synced rows and the settings: the list is reused until either changes. */
+const winsFor = (clientId: string, rid: string, read: Read, s: GscSettings, meta: GscMeta, g28?: G) =>
+  memo(`gsc-wins|${clientId}|${rid}|${read.version}|${JSON.stringify(s)}`, 30 * 60_000, async () => gscQuickWins(g28 ?? g28Of(read, s, meta)));
+
 export async function gscPage(sp: SearchParams): Promise<GscView | null> {
   const { client } = await getSession();
   if (!client) return null;
@@ -71,15 +93,20 @@ export async function gscPage(sp: SearchParams): Promise<GscView | null> {
   const t = await gscxTarget(admin, client.id, first(sp.site));
   if (!t) return { state: "no_gsc", clientName: client.name };
   if (!t.ctx) return { state: "not_connected", clientName: client.name, property: t.resource.display_name };
-  let meta = await loadOne<GscMeta>(admin, client.id, t.resource.id, "meta");
+  const rid = t.resource.id;
+  // the synced rows (from memory when unchanged) and the settings sources, in parallel
+  const [first0, sources] = await Promise.all([readGscx(admin, client.id, rid, ALL, ONES), settingsSources(admin, client.id)]);
+  let read = first0;
+  let meta = partsOf(read).meta;
   if (!meta) {
-    try { meta = await syncGscx(admin, client.id, t.resource.id, { inventory: false }); }
+    try { meta = await syncGscx(admin, client.id, rid, { inventory: false }); }
     catch (e) { return { state: "error", clientName: client.name, message: e instanceof Error ? e.message : "Search Console couldn't be read." }; }
     if (!meta) return { state: "not_connected", clientName: client.name, property: t.resource.display_name };
-    const id = client.id, rid = t.resource.id, ctx = t.ctx;
+    const id = client.id, ctx = t.ctx;
     after(() => loadCubes(createAdminClient(), id, rid, ["pg"]).then((c) => syncInventory(createAdminClient(), id, rid, ctx, c.pg.rows)).then(() => undefined, () => undefined));
+    read = await readGscx(admin, client.id, rid, ALL, ONES);
   } else if (isStale(meta)) {
-    const id = client.id, rid = t.resource.id;
+    const id = client.id;
     after(() => syncGscx(createAdminClient(), id, rid).then(() => undefined, () => undefined));
   }
   // Search Console's default is the last 28 days; the dashboard's range picker (7 / 30 / 90 / custom) also applies
@@ -88,16 +115,12 @@ export async function gscPage(sp: SearchParams): Promise<GscView | null> {
   const days = Math.max(1, Math.round((Date.parse(end) - Date.parse(r.start)) / 86_400_000) + 1);
   const start = r.preset === "custom" ? r.start : addDays(end, -(days - 1));
   const period: Period = { start, end, days, pstart: addDays(start, -days), pend: addDays(start, -1) };
-  const [cubes, inv, insp, sitemaps] = await Promise.all([
-    loadCubes(admin, client.id, t.resource.id, ALL), loadOne<InventoryRow[]>(admin, client.id, t.resource.id, "inventory"),
-    loadOne<InspState>(admin, client.id, t.resource.id, "insp"), loadOne<SitemapInfo[]>(admin, client.id, t.resource.id, "sitemaps"),
-  ]);
-  const { s, src } = await settingsFor(admin, client.id, inv ?? [], cubes.q.rows);
+  const { inv, insp, sitemaps } = partsOf(read);
+  const { s, src } = settingsFrom(sources, inv ?? [], read.cubes.q.rows);
   const type = TYPES.some(([k]) => k === first(sp.type)) ? String(first(sp.type)) : "web";
-  const g = new G(meta, cubes, period, s, inv, insp, sitemaps ?? [], type);
+  const g = new G(meta, read.cubes, period, s, inv, insp, sitemaps, type);
   // quick wins always use the last 28 days vs the 28 before
-  const p28: Period = { start: addDays(meta.end, -27), end: meta.end, days: 28, pstart: addDays(meta.end, -55), pend: addDays(meta.end, -28) };
-  const wins = gscQuickWins(new G(meta, cubes, p28, s, inv, insp, sitemaps ?? []));
+  const wins = await winsFor(client.id, rid, read, s, meta);
   return { state: "ok", clientName: client.name, clientId: client.id, g, wins, period, settingsSource: src, ctx: t.ctx };
 }
 
@@ -108,15 +131,18 @@ export async function gscPage(sp: SearchParams): Promise<GscView | null> {
 export async function gscWinsFor(admin: ReturnType<typeof createAdminClient>, clientId: string) {
   const t = await gscxTarget(admin, clientId, null);
   if (!t?.ctx) return null;
-  let meta = await loadOne<GscMeta>(admin, clientId, t.resource.id, "meta");
-  if (!meta || isStale(meta)) meta = (await syncGscx(admin, clientId, t.resource.id, { inventory: false }).catch(() => null)) ?? meta;
+  const rid = t.resource.id;
+  const [first0, sources] = await Promise.all([readGscx(admin, clientId, rid, ALL, ONES), settingsSources(admin, clientId)]);
+  let read = first0;
+  let meta = partsOf(read).meta;
+  if (!meta || isStale(meta)) {
+    const synced = await syncGscx(admin, clientId, rid, { inventory: false }).catch(() => null);
+    if (synced) { meta = synced; read = await readGscx(admin, clientId, rid, ALL, ONES); }
+  }
   if (!meta) return null;
-  const [cubes, inv, insp, sitemaps] = await Promise.all([
-    loadCubes(admin, clientId, t.resource.id, ALL), loadOne<InventoryRow[]>(admin, clientId, t.resource.id, "inventory"),
-    loadOne<InspState>(admin, clientId, t.resource.id, "insp"), loadOne<SitemapInfo[]>(admin, clientId, t.resource.id, "sitemaps"),
-  ]);
-  const { s } = await settingsFor(admin, clientId, inv ?? [], cubes.q.rows);
-  const p28: Period = { start: addDays(meta.end, -27), end: meta.end, days: 28, pstart: addDays(meta.end, -55), pend: addDays(meta.end, -28) };
-  const g = new G(meta, cubes, p28, s, inv, insp, sitemaps ?? []);
-  return { g, wins: gscQuickWins(g), inv: inv ?? [], site: t.resource.external_id, meta };
+  const { inv } = partsOf(read);
+  const { s } = settingsFrom(sources, inv ?? [], read.cubes.q.rows);
+  const g28 = g28Of(read, s, meta);
+  const wins = await winsFor(clientId, rid, read, s, meta, g28);
+  return { g: g28, wins, inv: inv ?? [], site: t.resource.external_id, meta };
 }
