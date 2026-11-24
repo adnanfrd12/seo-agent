@@ -94,7 +94,7 @@ export function TrendChart({
           </li>
           {marker && (
             <li className="flex items-center gap-1.5">
-              <span className="inline-block h-2.5 w-3 rounded-sm bg-surface-muted ring-1 ring-border" aria-hidden /> {marker.label}
+              <span className="inline-block h-2.5 w-3 rounded-sm bg-foreground/[0.1]" aria-hidden /> {marker.label}
             </li>
           )}
         </ul>
@@ -135,7 +135,7 @@ export function TrendChart({
               </defs>
               <CartesianGrid stroke="var(--hairline)" vertical={false} />
               {marker && data.some((d) => d.date >= marker.from) && (
-                <ReferenceArea x1={marker.from} x2={data[data.length - 1].date} fill="var(--surface-muted)" fillOpacity={0.9} ifOverflow="extendDomain" />
+                <ReferenceArea x1={marker.from} x2={data[data.length - 1].date} fill="var(--foreground)" fillOpacity={0.07} ifOverflow="extendDomain" />
               )}
               <XAxis
                 dataKey="date" tickFormatter={shortDate} tick={{ fill: "var(--faint)", fontSize: 11 }}
