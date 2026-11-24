@@ -24,7 +24,7 @@ export const SITE = {
   appDomain: "waheedzen.com",
   legalUpdated: "November 23, 2026",
   /** where Disconnect lives in the app (audited) */
-  disconnectPath: "Integrations (Google Analytics, Search Console, Business Profile, Bing Webmaster Tools, Microsoft Clarity) or Social media → Connected accounts (social platforms), then Disconnect",
+  disconnectPath: "Integrations for Google Analytics, Search Console, Business Profile, Bing Webmaster Tools and Microsoft Clarity, or Social media → Connect social accounts for social platforms",
   /** backups: Supabase daily backups kept 7 days on the Pro plan (PITR not enabled); logs: Vercel runtime logs */
   backupDays: 7,
   logDays: 30,
