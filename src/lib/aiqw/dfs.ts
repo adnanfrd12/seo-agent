@@ -2,7 +2,9 @@ import "server-only";
 import type { SupabaseClient } from "@supabase/supabase-js";
 import { dfsConfigured, dfsPost } from "@/lib/dataforseo/client";
 import { recordSpend } from "@/lib/dataforseo/budget";
-import { arr, num, obj, resolveTarget, str } from "@/lib/dataforseo/research";
+import { arr, num, obj, resolveTarget, str, type Json } from "@/lib/dataforseo/research";
+import { STATES } from "@/lib/ga4x/model";
+import { clientNap } from "@/lib/reviews/listings";
 import type { AiQwSettings } from "./settings";
 
 /**
@@ -15,17 +17,46 @@ import type { AiQwSettings } from "./settings";
  * Backlinks and Local screens already keep (kw_gap, link_gap, gbp_profile, reviews).
  */
 export interface KwData { keyword: string; volume: number | null; cpc: number | null; competition: number | null; difficulty: number | null; intent: string | null; trend: number[]; serp: string[]; at: string }
-export interface SerpData { keyword: string; at: string; ourPosition: number | null; ourUrl: string | null; features: string[]; paa: string[]; top: { pos: number; domain: string; url: string; title: string }[]; aiOverview: boolean; localPack: string[] }
+export interface SerpData { keyword: string; at: string; ourPosition: number | null; ourUrl: string | null; features: string[]; paa: string[]; top: { pos: number; domain: string; url: string; title: string }[]; aiOverview: boolean; localPack: string[]; /** where the results were fetched for (e.g. "Houston,Texas,United States") */ loc?: string }
 
 const DAY = 86_400_000;
 const TTL = DAY; // 24 hours
 const norm = (k: string) => k.trim().toLowerCase().replace(/\s+/g, " ");
 
+/**
+ * Where DataForSEO is asked from. Keyword data (DataForSEO Labs) is country-level: the research target's country, or
+ * the settings location when it is a country. Live Google results are fetched where the customers search: the
+ * settings location, else the business's own city (from its Business Profile address), else the country.
+ */
 export async function dfsTarget(admin: SupabaseClient, clientId: string, s: AiQwSettings) {
   const t = await resolveTarget(admin, clientId);
   if (!t) return null;
-  const loc = s.locationName.trim() ? { location_name: s.locationName.trim() } : { location_code: t.location_code };
-  return { domain: t.domain.replace(/^www\./, ""), loc, language_code: s.languageCode.trim() || t.language_code, competitors: t.competitors };
+  const override = s.locationName.trim();
+  const loc: Record<string, string | number> = override && !override.includes(",") ? { location_name: override } : { location_code: t.location_code };
+  let serpLoc: Record<string, string | number> = override ? { location_name: override } : loc;
+  if (!override && t.location_code === 2840) {
+    const nap = await clientNap(admin, clientId).catch(() => null);
+    const state = nap?.state ? STATES[nap.state.trim().toUpperCase()] ?? nap.state.trim() : null;
+    if (nap?.city && state) serpLoc = { location_name: `${nap.city.trim()},${state},United States` };
+  }
+  return { domain: t.domain.replace(/^www\./, ""), loc, serpLoc, serpLocLabel: String(serpLoc.location_name ?? `location ${serpLoc.location_code}`), language_code: s.languageCode.trim() || t.language_code, competitors: t.competitors };
+}
+
+/**
+ * Google now links organic results through google.com/goto, so DataForSEO's `domain` and `url` can be Google's; the
+ * real site is in the breadcrumb ("https://www.fastsigns.com › galleria-tx › …").
+ */
+export function resultHost(i: Json): string {
+  const b = str(i.breadcrumb) ?? "";
+  const m = b.match(/^https?:\/\/[^\s›]+/);
+  const raw = m?.[0] ?? str(i.url) ?? "";
+  try { return new URL(raw).hostname.replace(/^www\./, "").toLowerCase(); } catch { return (str(i.domain) ?? "").replace(/^www\./, "").toLowerCase(); }
+}
+export function resultUrl(i: Json): string {
+  const u = str(i.url) ?? "";
+  if (!/^https?:\/\/(www\.)?google\.[a-z.]+\/goto/i.test(u)) return u;
+  const parts = (str(i.breadcrumb) ?? "").split("›").map((x) => x.trim()).filter((x) => x && !x.includes("...") && x !== "…");
+  return parts.length ? `${parts[0].replace(/\/$/, "")}${parts.length > 1 ? `/${parts.slice(1).join("/")}` : ""}` : u;
 }
 
 /** Month-to-date DataForSEO spend for this client: all features, or only the quick-wins engine's own calls. */
@@ -101,29 +132,30 @@ export async function refreshSerp(admin: SupabaseClient, clientId: string, s: Ai
   if (!t) return { fetched: 0, cost: 0 };
   const have = await loadSerp(admin, clientId);
   const now = Date.now();
-  const want = [...new Set(keywords.map(norm))].filter((k) => { const h = have.get(k); return !h || now - Date.parse(h.at) > TTL; }).slice(0, max);
+  // a result older than a day, or fetched for another location, is fetched again
+  const want = [...new Set(keywords.map(norm))].filter((k) => { const h = have.get(k); return !h || now - Date.parse(h.at) > TTL || h.loc !== t.serpLocLabel; }).slice(0, max);
   let cost = 0, fetched = 0;
   const one = async (keyword: string) => {
-    const { result, cost: c } = await dfsPost("/serp/google/organic/live/advanced", { keyword, ...t.loc, language_code: t.language_code, depth: 10, people_also_ask_click_depth: 1 });
+    const { result, cost: c } = await dfsPost("/serp/google/organic/live/advanced", { keyword, ...t.serpLoc, language_code: t.language_code, depth: 10 });
     cost += c;
     await recordSpend(admin, clientId, "aiqw_serp", c, "manual");
     const items = arr(result?.items);
     const organic = items.filter((i) => i.type === "organic");
-    const mine = organic.find((i) => String(i.domain ?? "").replace(/^www\./, "").endsWith(t.domain));
+    const mine = organic.find((i) => resultHost(i).endsWith(t.domain));
     const paa = items.filter((i) => i.type === "people_also_ask").flatMap((i) => arr(i.items).map((q) => str(q.title)).filter((q): q is string => Boolean(q)));
     const local = items.filter((i) => i.type === "local_pack").map((i) => str(i.title)).filter((x): x is string => Boolean(x));
     const at = new Date().toISOString();
     const d: SerpData = {
-      keyword, at, ourPosition: mine ? num(mine.rank_group) : null, ourUrl: mine ? str(mine.url) : null,
+      keyword, at, loc: t.serpLocLabel, ourPosition: mine ? num(mine.rank_group) : null, ourUrl: mine ? resultUrl(mine) : null,
       features: [...new Set(items.map((i) => String(i.type)).filter((x) => x !== "organic"))], paa: [...new Set(paa)].slice(0, 8),
-      top: organic.slice(0, 10).map((i) => ({ pos: num(i.rank_group) ?? 0, domain: str(i.domain) ?? "", url: str(i.url) ?? "", title: str(i.title) ?? "" })),
+      top: organic.slice(0, 10).map((i) => ({ pos: num(i.rank_group) ?? 0, domain: resultHost(i), url: resultUrl(i), title: str(i.title) ?? "" })),
       aiOverview: items.some((i) => i.type === "ai_overview"), localPack: local.slice(0, 3),
     };
     await admin.from("dfs_cache").upsert({ client_id: clientId, endpoint: "aiqw_serp", params_hash: keyword.slice(0, 200), params: { keyword }, data: d, row_count: d.top.length, cost: c, fetched_at: at }, { onConflict: "client_id,endpoint,params_hash" });
     fetched++;
   };
-  // 4 at a time
-  for (let i = 0; i < want.length; i += 4) await Promise.all(want.slice(i, i + 4).map((k) => one(k).catch(() => undefined)));
+  // all at once (at most 20): each live request takes 20-40 seconds on DataForSEO's side
+  await Promise.all(want.map((k) => one(k).catch(() => undefined)));
   return { fetched, cost };
 }
 

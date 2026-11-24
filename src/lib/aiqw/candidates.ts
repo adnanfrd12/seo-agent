@@ -17,6 +17,9 @@ import type { CandQuery, Candidate, Fact, PageContext, Scope, Source } from "./t
  * chooses, prioritises and writes; it may quote only what is in a candidate.
  */
 export const NEW_PAGE = "(new page)", SITE_WIDE = "(site-wide)", GBP = "(Google Business Profile)", OFFSITE = "(other websites: backlinks)";
+/** One metro area's share of US searches (Houston ≈ 7 million of 335 million people). */
+export const LOCAL_SHARE = 0.02;
+const GENERIC = /^(near|me|best|cheap|top|local|company|companies|business|businesses|store|stores|shop|shops|service|services|custom|cost|price|prices|the|and|for|how|what|with)$/;
 export const SENTINELS = [NEW_PAGE, SITE_WIDE, GBP, OFFSITE];
 
 /** A lead is weighted as 10 clicks when clicks-based and lead-based wins share one list. */
@@ -109,6 +112,17 @@ export function buildCandidates(inp: BuildInput): BuildResult {
 
   /* -------------------------------------------------- DataForSEO rules */
   const g = inp.gsc?.g;
+  // DataForSEO volumes are national. A local business only gets the searches made in its own area: a search that
+  // names its city counts in full, any other at about 2% (one metro area's share of US searches).
+  const cities = (g?.settings.cities ?? []).map((c) => c.toLowerCase().trim()).filter((c) => c.length > 2);
+  const localBiz = Boolean(inp.local.self) || cities.length > 0;
+  const geoShare = (q: string) => (!localBiz || cities.some((c) => q.toLowerCase().includes(c)) ? 1 : LOCAL_SHARE);
+  const shareFact = (q: string): Fact => ({ name: "Share of the searches in the service area (estimate)", value: geoShare(q) === 1 ? (localBiz ? "100% (the search names the city)" : "100%") : "2% (one metro area's share of US searches)", source: "dataforseo" });
+  // what the business does: its services and Business Profile categories and services (generic words don't count)
+  const sing = (w: string) => w.replace(/ies$/, "y").replace(/s$/, "");
+  const serviceWords = new Set([...(g?.settings.services ?? []), inp.local.self?.category ?? "", ...(inp.local.self?.additional ?? []), ...(inp.local.self?.services ?? [])]
+    .flatMap((x) => x.toLowerCase().split(/[^a-z0-9]+/)).filter((w) => w.length >= 3 && !GENERIC.test(w)).map(sing));
+  const aboutServices = (q: string) => !serviceWords.size || q.toLowerCase().split(/[^a-z0-9]+/).some((w) => w.length >= 3 && !GENERIC.test(w) && serviceWords.has(sing(w)));
   const ourQ = g ? g.queries() : new Map();
   const ourPrevQ = g ? g.queries(true) : new Map();
   const qps = g ? queryPages(g) : [];
@@ -130,8 +144,7 @@ export function buildCandidates(inp: BuildInput): BuildResult {
       const v = rows[0].volume ?? 0;
       // DataForSEO's estimate of the monthly visits the best-placed competitor page gets from this keyword
       const best = [...rows].sort((a, b) => (b.their_traffic ?? 0) - (a.their_traffic ?? 0))[0];
-      // a local business only gets the searches made in its own area: about 2% of US searches for one metro area
-      const localShare = inp.local.self ? 0.02 : 1;
+      const localShare = geoShare(kw);
       const cap = v * benchmarkCtr(5) * localShare;
       const etv = Math.min(best.their_traffic ?? 0, cap);
       if (etv < 0.5) continue;
@@ -144,7 +157,8 @@ export function buildCandidates(inp: BuildInput): BuildResult {
           ...rows.slice(0, 3).map((r) => ({ name: `${r.competitor} ranks`, value: `position ${r.their_position ?? "?"} with ${r.their_url ?? "?"}`, source: "dataforseo" as Source })),
           { name: "Our best position (Search Console, 28 days)", value: ourQ.get(kw)?.pos != null ? r1(ourQ.get(kw)!.pos!) : "not ranking in the top 30", source: "gsc" },
           { name: `Estimated monthly visits ${best.competitor} gets from it (DataForSEO)`, value: r1(etv), source: "dataforseo" },
-          { name: "Gain basis (estimate)", value: localShare < 1 ? "the lower of the competitor's visits and searches × 5.5% CTR at position 5 × 2% (share of US searches made in one metro area)" : "the lower of the competitor's visits and searches × 5.5% CTR at position 5", source: "dataforseo" },
+          shareFact(kw),
+          { name: "Gain basis (estimate)", value: "the lower of the competitor's visits and the searches in the service area × 5.5% CTR at position 5", source: "dataforseo" },
         ],
         queries: [enrich({ query: kw })], page_context: null, computed_gain: etv, gain_unit: "clicks/mo", effort_hint: "High", sources: ["dataforseo", "gsc"],
         draft: { title: `Create a page (or a new section) for "${kw}"`, where: "New page", steps: ["Check which existing page is closest; add a section there if it fits, else create a new page.", `Use "${kw}" in the title, H1 and first paragraph.`, "Link to it from the closest service page."] },
@@ -160,13 +174,14 @@ export function buildCandidates(inp: BuildInput): BuildResult {
       const path = pathOf(page);
       // volume-weighted striking distance: low impressions in Search Console, but real searches per DataForSEO
       if (m.pos >= 8 && m.pos <= 20 && imp30 < 100 && (k.volume ?? 0) >= 100 && !g.isBrand(q)) {
-        const gain = (k.volume ?? 0) * Math.max(0, benchmarkCtr(3) - benchmarkCtr(m.pos));
+        const gain = (k.volume ?? 0) * geoShare(q) * Math.max(0, benchmarkCtr(3) - benchmarkCtr(m.pos));
         push({
           candidate_id: `dfs_striking_volume:${path}|${q}`, rule: "dfs_striking_volume", page_url: path, scope_screens: ["gsc:queries", "gsc:opps", "dfs:keywords"],
           facts: [
             { name: "Average position (28 days)", value: r1(m.pos), source: "gsc" }, { name: "Impressions (28 days)", value: m.impressions, source: "gsc" },
             { name: "Monthly searches (DataForSEO)", value: k.volume ?? 0, source: "dataforseo" }, { name: "Keyword difficulty", value: k.difficulty ?? "unknown", source: "dataforseo" },
-            { name: "Gain basis (estimate)", value: "searches × (10% CTR at position 3 − CTR at the current position)", source: "dataforseo" },
+            shareFact(q),
+            { name: "Gain basis (estimate)", value: "searches in the service area × (10% CTR at position 3 − CTR at the current position)", source: "dataforseo" },
           ],
           queries: [enrich({ query: q, impressions: m.impressions, clicks: m.clicks, position: r1(m.pos), ctr: m.ctr })], page_context: ctx(path),
           computed_gain: gain, gain_unit: "clicks/mo", effort_hint: "Medium", sources: ["gsc", "dataforseo", "crawl"],
@@ -208,22 +223,21 @@ export function buildCandidates(inp: BuildInput): BuildResult {
     }
   }
   if (g && on("dataforseo") && inp.settings.dfs.local) {
-    // local pack: local-intent searches show a map pack
-    const cities = g.settings.cities.map((c) => c.toLowerCase());
-    const local = [...ourQ].filter(([q]) => /near me/.test(q) || cities.some((c) => c && q.includes(c)))
+    // local pack: local-intent searches about the business's services show a map pack
+    const local = [...ourQ].filter(([q]) => (/near me/.test(q) || cities.some((c) => q.includes(c))) && aboutServices(q))
       .map(([q, m]) => ({ q, m, k: kwOf(q), s: inp.serp.get(norm(q)) }))
       .filter((x) => (x.s?.features ?? x.k?.serp ?? []).includes("local_pack") && !(x.s?.localPack ?? []).some((n) => inp.local.self?.title && n.toLowerCase().includes(inp.local.self.title.toLowerCase())))
       .sort((a, b) => (b.k?.volume ?? b.m.impressions) - (a.k?.volume ?? a.m.impressions)).slice(0, 10);
     if (local.length) {
-      const vol = local.reduce((a, x) => a + (x.k?.volume ?? x.m.impressions * f30), 0);
+      const vol = local.reduce((a, x) => a + (x.k?.volume != null ? x.k.volume * geoShare(x.q) : x.m.impressions * f30), 0);
       const p = inp.local.self;
       push({
         candidate_id: "dfs_local_pack:gbp", rule: "dfs_local_pack", page_url: GBP, scope_screens: ["gsc:local", "dfs:keywords"],
         facts: [
           { name: "Local searches showing a map pack", value: local.length, source: "dataforseo" },
-          { name: "Their monthly searches combined", value: Math.round(vol), source: "dataforseo" },
+          { name: "Their monthly searches in the service area combined (estimate)", value: Math.round(vol), source: "dataforseo" },
           ...(p ? [{ name: "Business Profile category", value: p.category ?? "unknown", source: "dataforseo" as Source }, { name: "Additional categories", value: p.additional.join(", ") || "none", source: "dataforseo" as Source }, { name: "Photos", value: p.photos ?? "unknown", source: "dataforseo" as Source }, { name: "Rating", value: p.rating ?? "unknown", source: "dataforseo" as Source }, { name: "Reviews", value: p.votes ?? "unknown", source: "dataforseo" as Source }, { name: "Services listed", value: p.services.length, source: "dataforseo" as Source }] : []),
-          { name: "Gain basis (estimate)", value: "combined searches × 5% for a map-pack listing", source: "dataforseo" },
+          { name: "Gain basis (estimate)", value: "searches in the service area (a search naming the city in full, others at 2%) × 5% for a map-pack listing", source: "dataforseo" },
         ],
         queries: local.map((x) => enrich({ query: x.q, impressions: x.m.impressions, clicks: x.m.clicks, position: x.m.pos != null ? r1(x.m.pos) : undefined })), page_context: null,
         computed_gain: vol * 0.05, gain_unit: "clicks/mo", effort_hint: "Medium", sources: ["dataforseo", "gsc"],

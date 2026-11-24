@@ -16,6 +16,8 @@ const { readSettings, callCost } = await import("@/lib/aiqw/settings");
 const { batchCustomId, chunkCandidates } = await import("@/lib/aiqw/claude");
 const { pickForScope, weightedGain } = await import("@/lib/aiqw/candidates");
 const { QuickWinsSchema } = await import("@/lib/aiqw/schema");
+const { resultHost, resultUrl } = await import("@/lib/aiqw/dfs");
+const { buildCandidates } = await import("@/lib/aiqw/candidates");
 import type { Candidate } from "@/lib/aiqw/types";
 import type { QuickWinItem } from "@/lib/aiqw/schema";
 
@@ -118,4 +120,78 @@ test("batch custom_id matches the API pattern and keeps the chunk index readable
     assert.match(c, /^[a-zA-Z0-9_-]{1,64}$/);
     assert.equal(Number(c.split("-").pop()), 7);
   }
+});
+
+test("live results: the real site comes from the breadcrumb when Google wraps the link", () => {
+  const wrapped = { type: "organic", domain: "google.com", url: "https://google.com/goto?url=CAES", breadcrumb: "https://www.fastsigns.com › galleria-tx › products › me..." };
+  assert.equal(resultHost(wrapped), "fastsigns.com");
+  assert.equal(resultUrl(wrapped), "https://www.fastsigns.com/galleria-tx/products");
+  const plain = { type: "organic", domain: "www.example.com", url: "https://www.example.com/a/b", breadcrumb: "https://www.example.com › a › b" };
+  assert.equal(resultHost(plain), "example.com");
+  assert.equal(resultUrl(plain), "https://www.example.com/a/b");
+});
+
+test("keyword gaps: national volume counts in full only when the search names the business's city", () => {
+  const settings = readSettings({});
+  const gsc = { g: { settings: { cities: ["houston"], services: ["led signs", "channel letters"], brand: [] }, queries: () => new Map(), pages: () => new Map(), qp: () => [], p: { days: 28 }, isBrand: () => false, linksIn: new Map() }, wins: [], inv: [] };
+  const gaps = { kw: [
+    { keyword: "led signs houston", volume: 1000, difficulty: 10, intent: "commercial", their_position: 3, their_url: "https://x.com/a", their_traffic: 500, competitor: "x.com" },
+    { keyword: "led signs", volume: 1000, difficulty: 10, intent: "commercial", their_position: 3, their_url: "https://x.com/b", their_traffic: 500, competitor: "x.com" },
+  ], links: [], competitors: ["x.com"] };
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const r = buildCandidates({ settings, sources: ["dataforseo", "gsc"], gsc: gsc as any, ga4: null, kw: new Map(), serp: new Map(), gaps, local: { self: null, rivals: [] } });
+  const named = r.all.find((c) => c.candidate_id === "dfs_keyword_gap:led signs houston")!;
+  const plain = r.all.find((c) => c.candidate_id === "dfs_keyword_gap:led signs")!;
+  assert.equal(named.computed_gain, 55, "1,000 × 5.5% in full");
+  assert.equal(plain.computed_gain, 1.1, "1,000 × 5.5% × 2%");
+});
+
+/* ------------------------------------------------------------------ in-memory data cache: never stale */
+function fakeDb(rows: { client_id: string; endpoint: string; params_hash: string; data: unknown; fetched_at: string }[]) {
+  const calls = { heads: 0, data: 0 };
+  const admin = {
+    from: () => {
+      let cols = "", filters: ((r: (typeof rows)[number]) => boolean)[] = [];
+      const q = {
+        select: (c: string) => { cols = c; return q; },
+        eq: (k: string, v: string) => { filters.push((r) => (r as Record<string, unknown>)[k] === v); return q; },
+        in: (k: string, vs: string[]) => {
+          filters.push((r) => vs.includes((r as Record<string, unknown>)[k] as string));
+          const hit = rows.filter((r) => filters.every((f) => f(r)));
+          filters = [];
+          if (cols.includes("data")) { calls.data++; return Promise.resolve({ data: hit.map((r) => ({ params_hash: r.params_hash, data: r.data, fetched_at: r.fetched_at })), error: null }); }
+          calls.heads++;
+          return Promise.resolve({ data: hit.map((r) => ({ params_hash: r.params_hash, fetched_at: r.fetched_at })), error: null });
+        },
+      };
+      return q;
+    },
+  };
+  return { admin, calls };
+}
+
+test("data cache: reuses an unchanged row, re-downloads a rewritten one, drops a deleted one", async () => {
+  const { cachedRows } = await import("@/lib/data-cache");
+  const rows = [
+    { client_id: "c-test", endpoint: "gscx", params_hash: "r:cube:q", data: { cols: ["q"], rows: [["a"]] }, fetched_at: "2026-11-24T01:00:00Z" },
+    { client_id: "c-test", endpoint: "gscx", params_hash: "r:meta", data: { end: "2026-11-22" }, fetched_at: "2026-11-24T01:00:00Z" },
+  ];
+  const { admin, calls } = fakeDb(rows);
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const read = () => cachedRows(admin as any, "c-test", "gscx", ["r:cube:q", "r:meta", "r:missing"]);
+  const a = await read();
+  assert.deepEqual([...a.keys()].sort(), ["r:cube:q", "r:meta"]);
+  assert.deepEqual(calls, { heads: 0, data: 1 }, "first read: one query with the data");
+  const b = await read();
+  assert.equal(b.get("r:cube:q")!.data, a.get("r:cube:q")!.data, "same object from memory");
+  assert.deepEqual(calls, { heads: 1, data: 1 }, "second read: only the version check");
+  // a sync rewrites one row
+  rows[0] = { ...rows[0], data: { cols: ["q"], rows: [["a"], ["b"]] }, fetched_at: "2026-11-24T09:00:00Z" };
+  const c = await read();
+  assert.deepEqual((c.get("r:cube:q")!.data as { rows: unknown[] }).rows.length, 2, "the new version is returned");
+  assert.deepEqual(calls, { heads: 2, data: 2 }, "only the changed row is downloaded");
+  // a row is deleted
+  rows.splice(1, 1);
+  const d = await read();
+  assert.equal(d.has("r:meta"), false, "a deleted row is not returned from memory");
 });

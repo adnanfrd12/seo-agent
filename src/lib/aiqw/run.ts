@@ -21,8 +21,8 @@ import { scoreOf, validateItem } from "./validate";
 
 /** Rough cost of one chunk on each model, used for the budget check before a run. */
 const EST_PER_CHUNK = { "claude-opus-5-5": 0.6, "claude-sonnet-5-5": 0.3 } as const;
-/** A live run must finish inside the 300-second function limit: no new chunk starts after this. */
-const CHUNK_DEADLINE_MS = 200_000;
+/** A live run must finish inside the 300-second function limit: no new chunk starts this long after the run began. */
+const CHUNK_DEADLINE_MS = 170_000;
 const DAY = 86_400_000;
 
 export const STEP_LABELS = [
@@ -106,12 +106,37 @@ async function gather(admin: SupabaseClient, run: RunState): Promise<Gathered> {
   await step("fresh", "done", fresh.length ? fresh.join(" · ") : "No synced data yet");
 
   // Search Console and GA4 re-sync inside gscWinsFor / ga4WinsFor when their copy is older than a day
+  const target = await dfsTarget(admin, run.clientId, settings);
   const needGsc = on("gsc") || on("dataforseo") || on("crawl") || on("bing") || on("gbp");
   await step("gsc", needGsc ? "running" : "skipped", needGsc ? undefined : "Not selected");
   const gsc = needGsc ? await gscWinsFor(admin, run.clientId).catch(() => null) : null;
   if (needGsc) await step("gsc", gsc ? "done" : "failed", gsc
     ? `${Date.now() - Date.parse(gsc.meta.fetchedAt) < 5 * 60_000 ? "Synced now" : `Up to date (synced ${ago(gsc.meta.fetchedAt)})`} · data to ${gsc.meta.end} · ${n(gsc.g.queries().size)} queries and ${n(gsc.g.pages().size)} pages in 28 days`
     : "Search Console isn't connected or couldn't be read");
+
+  // Deep and nightly runs: DataForSEO keyword data and live results start now, while the other sources are read
+  const notes: string[] = [];
+  let dfsCost = 0;
+  const liveDfs = on("dataforseo") && target && (run.depth === "deep" || run.trigger === "nightly");
+  const dfsJob = liveDfs ? (async () => {
+    const spent = await dfsMonthSpend(admin, run.clientId, true);
+    if (spent >= settings.dfsMonthlyBudget) { notes.push(`live calls skipped: $${spent.toFixed(2)} of the $${settings.dfsMonthlyBudget} monthly limit used`); return; }
+    try {
+      const jobs: Promise<void>[] = [];
+      if (settings.dfs.volume && gsc) {
+        const top = [...gsc.g.queries()].sort((a, b) => b[1].impressions - a[1].impressions).slice(0, 300).map(([q]) => q);
+        jobs.push(refreshKw(admin, run.clientId, settings, top).then((r) => { dfsCost += r.cost; notes.push(`${n(r.fetched)} keyword volumes refreshed`); }));
+      }
+      if (settings.dfs.serp && run.depth === "deep" && gsc) {
+        // live Google results for the top 20 opportunities (page one or striking distance, by impressions)
+        const sc = run.scope;
+        const opp = [...gsc.g.queries()].filter(([q, m]) => m.pos != null && m.pos <= 20 && !gsc.g.isBrand(q)).sort((a, b) => b[1].impressions - a[1].impressions)
+          .filter(([q]) => sc.kind !== "page" || gsc.g.qp().some((x) => x.query === q && pathOf(String(x.page)) === sc.url)).slice(0, 20).map(([q]) => q);
+        jobs.push(refreshSerp(admin, run.clientId, settings, opp, 20).then((r) => { dfsCost += r.cost; notes.push(`live Google results for ${r.fetched} keywords (${target!.serpLocLabel})`); }));
+      }
+      await Promise.all(jobs);
+    } catch (e) { notes.push(e instanceof DfsError ? e.message : "DataForSEO unavailable"); }
+  })() : Promise.resolve();
 
   const needGa4 = on("ga4") || on("clarity");
   await step("ga4", needGa4 ? "running" : "skipped", needGa4 ? undefined : "Not selected");
@@ -138,31 +163,8 @@ async function gather(admin: SupabaseClient, run: RunState): Promise<Gathered> {
     await step("platforms", "done", parts.length ? parts.join(" · ") : "No data in the selected sources");
   }
 
-  const target = await dfsTarget(admin, run.clientId, settings);
   await step("dataforseo", on("dataforseo") ? "running" : "skipped", on("dataforseo") ? undefined : "Not selected");
-  const notes: string[] = [];
-  let dfsCost = 0;
-  if (on("dataforseo") && target && (run.depth === "deep" || run.trigger === "nightly")) {
-    const spent = await dfsMonthSpend(admin, run.clientId, true);
-    if (spent >= settings.dfsMonthlyBudget) notes.push(`live calls skipped: $${spent.toFixed(2)} of the $${settings.dfsMonthlyBudget} monthly limit used`);
-    else {
-      try {
-        if (settings.dfs.volume && gsc) {
-          const top = [...gsc.g.queries()].sort((a, b) => b[1].impressions - a[1].impressions).slice(0, 300).map(([q]) => q);
-          const r = await refreshKw(admin, run.clientId, settings, top);
-          dfsCost += r.cost; notes.push(`${n(r.fetched)} keyword volumes refreshed`);
-        }
-        if (settings.dfs.serp && run.depth === "deep" && gsc) {
-          // live Google results for the top 20 opportunities (page one or striking distance, by impressions)
-          const sc = run.scope;
-          const opp = [...gsc.g.queries()].filter(([q, m]) => m.pos != null && m.pos <= 20 && !gsc.g.isBrand(q)).sort((a, b) => b[1].impressions - a[1].impressions)
-            .filter(([q]) => sc.kind !== "page" || gsc.g.qp().some((x) => x.query === q && pathOf(String(x.page)) === sc.url)).slice(0, 20).map(([q]) => q);
-          const r = await refreshSerp(admin, run.clientId, settings, opp, 20);
-          dfsCost += r.cost; notes.push(`live Google results for ${r.fetched} keywords`);
-        }
-      } catch (e) { notes.push(e instanceof DfsError ? e.message : "DataForSEO unavailable"); }
-    }
-  }
+  await dfsJob;
   run.usage.dfsCost += dfsCost;
   const [kw, serp, gaps, local] = await Promise.all([
     loadKw(admin, run.clientId), loadSerp(admin, run.clientId), loadGaps(admin, run.clientId),
@@ -204,6 +206,7 @@ async function finish(admin: SupabaseClient, run: RunState, d: Gathered, chunks:
   await step("check", "running");
   const system = systemBlocks(systemPrompt(d.settings, d.name, d.domain));
   const kept: { item: QuickWinItem; c: Candidate }[] = [];
+  const repairs: { item: QuickWinItem; c: Candidate; errs: string[]; byId: Map<string, Candidate>; also?: Candidate[] }[] = [];
   const mergedAway = new Set<string>();
   for (let i = 0; i < chunks.length; i++) {
     const out: QuickWinsOutput | null = results[i]?.output ?? null;
@@ -227,14 +230,17 @@ async function finish(admin: SupabaseClient, run: RunState, d: Gathered, chunks:
       if (!item.keep) { run.counts.skipped++; continue; }
       const c = byId.get(item.candidate_id)!;
       if (!errs) { kept.push({ item, c }); continue; }
-      // repair once by re-asking Claude for that item with the error, else drop it and log why
-      const fix = await repairItem(d.settings, system, c, item, errs);
-      if (fix.log) { run.usage.log.push(fix.log); addUsage(run, fix.log); }
-      const again = fix.item ? validateItem({ ...fix.item, candidate_id: item.candidate_id, keep: true }, byId, d.inventory, d.settings.bannedWords, mergedInto.get(item.candidate_id)) : ["no answer"];
-      if (fix.item && !again) { run.counts.repaired++; kept.push({ item: { ...fix.item, candidate_id: item.candidate_id, keep: true }, c }); }
-      else { run.counts.rejected++; run.rejections.push({ key: item.candidate_id, reason: (again ?? errs).join("; ") }); }
+      repairs.push({ item, c, errs, byId, also: mergedInto.get(item.candidate_id) });
     }
   }
+  // repair once by re-asking Claude for that item with the error (4 at a time), else drop it and log why
+  await pool(repairs, 4, async (r) => {
+    const fix = await repairItem(d.settings, system, r.c, r.item, r.errs);
+    if (fix.log) { run.usage.log.push(fix.log); addUsage(run, fix.log); }
+    const again = fix.item ? validateItem({ ...fix.item, candidate_id: r.item.candidate_id, keep: true }, r.byId, d.inventory, d.settings.bannedWords, r.also) : ["no answer"];
+    if (fix.item && !again) { run.counts.repaired++; kept.push({ item: { ...fix.item, candidate_id: r.item.candidate_id, keep: true }, c: r.c }); }
+    else { run.counts.rejected++; run.rejections.push({ key: r.item.candidate_id, reason: (again ?? r.errs).join("; ") }); }
+  });
   run.counts.merged = mergedAway.size;
   const final = kept.filter((k) => !mergedAway.has(k.c.candidate_id));
   run.counts.kept = final.length;
@@ -318,7 +324,6 @@ export async function executeRun(admin: SupabaseClient, run: RunState): Promise<
       claudeStep.state = "running"; claudeStep.detail = `${sent} · 0 of ${chunks.length} answered`;
       await saveRun(admin, run);
       const system = systemBlocks(systemPrompt(d.settings, d.name, d.domain));
-      const t0 = Date.now();
       const onDone = async (r: ChunkResult) => {
         for (const l of r.logs) { run.usage.log.push(l); addUsage(run, l); }
         run.counts.chunksDone++; claudeStep.detail = `${sent} · ${run.counts.chunksDone} of ${chunks.length} answered${r.error ? ` (one failed: ${r.error})` : ""}`;
@@ -328,7 +333,8 @@ export async function executeRun(admin: SupabaseClient, run: RunState): Promise<
       const firstP = runChunk(d.settings, system, chunks[0], 0).then(async (r) => { await onDone(r); return r; });
       if (chunks.length > 1) await new Promise((ok) => setTimeout(ok, 8000));
       const late: ChunkResult = { output: null, logs: [], error: "Not run: the run reached its time limit. Run this screen or page on its own." };
-      const rest = await pool(chunks.slice(1), CONCURRENCY - 1, (c, i) => (Date.now() - t0 > CHUNK_DEADLINE_MS ? Promise.resolve(late) : runChunk(d.settings, system, c, i + 1)), onDone);
+      const runT0 = Date.parse(run.startedAt);
+      const rest = await pool(chunks.slice(1), CONCURRENCY - 1, (c, i) => (Date.now() - runT0 > CHUNK_DEADLINE_MS ? Promise.resolve(late) : runChunk(d.settings, system, c, i + 1)), onDone);
       const results = [await firstP, ...rest];
       const failed = results.filter((r) => !r.output).length;
       claudeStep.state = failed === results.length ? "failed" : "done";

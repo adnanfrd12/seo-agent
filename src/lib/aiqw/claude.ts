@@ -15,7 +15,7 @@ import type { CallLog, Candidate } from "./types";
 const MAX_TOKENS = 16000;
 /** About 12 candidates per request keeps an answer (about 900 output tokens per kept item) well under max_tokens. */
 export const CHUNK = 12;
-export const CONCURRENCY = 6;
+export const CONCURRENCY = 10;
 
 type Sys = Anthropic.TextBlockParam[];
 export const systemBlocks = (text: string): Sys => [{ type: "text", text, cache_control: { type: "ephemeral" } }];
