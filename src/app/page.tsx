@@ -1,7 +1,7 @@
 import type { Metadata } from "next";
 import { redirect } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
-import LoginPage from "./login/page";
+import { LandingPage } from "@/components/public/landing-page";
 
 export const metadata: Metadata = {
   title: "SEO, analytics and social media reporting · SEO Insights",
@@ -11,11 +11,11 @@ export const metadata: Metadata = {
 
 /**
  * Public homepage (platform reviews require one on the app's domain): what SEO Insights is, who operates it, links to
- * the legal pages, and the sign-in box. Signed-in users go straight to their dashboard.
+ * the legal pages, and a link to the sign-in page. Signed-in users go straight to their dashboard.
  */
-export default async function Home({ searchParams }: { searchParams: Promise<Record<string, string | string[] | undefined>> }) {
+export default async function Home() {
   const supabase = await createClient();
   const { data } = await supabase.auth.getClaims();
   if (data?.claims) redirect("/overview");
-  return <LoginPage searchParams={searchParams} />;
+  return <LandingPage />;
 }

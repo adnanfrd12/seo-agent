@@ -3,7 +3,6 @@
 import { useState, useSyncExternalStore } from "react";
 import { useRouter } from "next/navigation";
 import { ArrowRight, Eye, EyeOff, Lock, Mail } from "lucide-react";
-import { BRAND_NAME, BrandMark } from "@/components/brand/brand-mark";
 import { createClient } from "@/lib/supabase/client";
 
 /** "Remember me" only remembers the email address on this device. Sessions persist either way. */
@@ -21,7 +20,7 @@ function writeRemembered(email: string | null) {
 const noopSubscribe = () => () => {};
 
 const field =
-  "w-full rounded-xl border border-[#E7E2DD] bg-white py-3 pl-11 pr-3 text-[15px] text-[#16161a] outline-none transition placeholder:text-[#9a9aa5] hover:border-[#D9D2CB] focus-visible:border-[#F26A1B] focus-visible:ring-4 focus-visible:ring-[#F26A1B]/15";
+  "w-full rounded-lg border border-[#E2DAD2] bg-white py-3 pl-11 pr-3 text-[15px] text-[#16161a] outline-none transition placeholder:text-[#9a9aa5] hover:border-[#D9D2CB] focus-visible:border-[#F26A1B] focus-visible:ring-4 focus-visible:ring-[#F26A1B]/15";
 
 type Notice = { kind: "error" | "info"; text: string } | null;
 
@@ -72,16 +71,8 @@ export function LoginForm({ next, initialError }: { next: string; initialError: 
   }
 
   return (
-    <div className="relative w-full rounded-[28px] border border-[#F0EBE6] bg-white p-6 shadow-[0_30px_80px_-30px_rgba(120,60,20,0.25),0_8px_24px_-12px_rgba(0,0,0,0.08)] sm:p-9">
-      <div className="flex flex-col items-center text-center">
-        <div className="flex items-center gap-2.5">
-          <BrandMark className="h-8" />
-          <span className="text-[22px] font-bold tracking-tight text-[#16161a]">{BRAND_NAME}</span>
-        </div>
-        <p className="mt-1.5 text-[10px] font-semibold uppercase tracking-[0.28em] text-[#8a8a94]">SEO Analytics Platform</p>
-      </div>
-
-      <h1 className="sr-only">Sign in to {BRAND_NAME}</h1>
+    <div className="w-full">
+      <h1 className="font-[family-name:var(--font-public-serif)] text-[2.6rem] leading-none tracking-[-0.01em] text-[#17120E]">Sign in</h1>
 
       <form onSubmit={onSubmit} className="mt-8 space-y-4">
         <div>
@@ -132,8 +123,8 @@ export function LoginForm({ next, initialError }: { next: string; initialError: 
         </div>
 
         <button type="submit" disabled={busy !== null}
-          className="flex w-full items-center justify-center gap-2 rounded-xl bg-gradient-to-r from-[#F26A1B] to-[#E8452C] py-3.5 text-base font-semibold text-white shadow-lg shadow-[#E8452C]/30 outline-none transition hover:brightness-105 active:brightness-95 focus-visible:ring-4 focus-visible:ring-[#F26A1B]/30 disabled:opacity-60">
-          {busy === "password" ? "Signing in…" : <>Sign In <ArrowRight className="size-[18px]" aria-hidden /></>}
+          className="flex w-full items-center justify-center gap-2 rounded-lg bg-[#17120E] py-3.5 text-[15px] font-semibold text-white hover:bg-[#2A221B] outline-none transition focus-visible:ring-4 focus-visible:ring-[#F26A1B]/30 disabled:opacity-60">
+          {busy === "password" ? "Signing in…" : <>Sign in <ArrowRight className="size-[18px]" aria-hidden /></>}
         </button>
       </form>
 
