@@ -34,3 +34,6 @@ alter table public.data_deletion_log enable row level security;
 revoke all on public.data_deletion_log from anon, authenticated;
 
 comment on table public.data_deletion_requests is 'One row per deletion request; confirmation_code is shown on /data-deletion/status';
+
+-- make the new tables visible to the API immediately
+notify pgrst, 'reload schema';

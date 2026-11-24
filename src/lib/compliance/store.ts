@@ -74,8 +74,9 @@ export async function updateRequest(admin: SupabaseClient, code: string, patch: 
 
 export async function findRequest(admin: SupabaseClient, code: string): Promise<Pick<DeletionRequest, "status" | "created_at" | "completed_at"> | null> {
   const { data, error } = await admin.from("data_deletion_requests").select("status, created_at, completed_at").eq("confirmation_code", code).maybeSingle();
-  if (!error) return data;
-  if (!missingTable(error)) throw new Error("Lookup failed");
+  if (!error && data) return data;
+  if (error && !missingTable(error)) throw new Error("Lookup failed");
+  // not in the table: it may have been received before the migration was applied (Storage fallback)
   const r = await getJson<DeletionRequest>(admin, `requests/${code}.json`);
   return r ? { status: r.status, created_at: r.created_at, completed_at: r.completed_at } : null;
 }
