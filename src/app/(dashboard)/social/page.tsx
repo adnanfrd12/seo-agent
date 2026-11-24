@@ -27,6 +27,8 @@ const signed = (v: number | null | undefined) => (v == null ? "—" : `${v > 0 ?
 const fmtMetric = (k: MetricKey, v: number | null | undefined) => (v == null ? "—" : METRICS[k].format === "percent" ? `${v.toFixed(2)}%` : METRICS[k].format === "minutes" ? `${nf(Math.round(v))} min` : nf(v));
 const dateLabel = (iso: string) => new Date(`${iso}T00:00:00Z`).toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric", timeZone: "UTC" });
 const STALE_MS = 12 * 60 * 60 * 1000;
+/** Per-platform sections: Threads first, then the usual order. */
+const SECTION_ORDER: Platform[] = ["threads", ...PLATFORMS.filter((p) => p !== "threads")];
 
 type Sp = { connected?: string; connect_error?: string; range?: string; start?: string; end?: string };
 
@@ -98,6 +100,8 @@ export default async function SocialPage({ searchParams }: { searchParams: Promi
       {sp.connected && canEdit && !sp.connect_error && <p role="status" className="mb-4 rounded-lg border border-positive/40 bg-positive/10 px-3 py-2 text-sm">{PLATFORM_INFO[sp.connected as Platform]?.label ?? "The account"} is connected and its analytics were read.</p>}
       {sp.connect_error && canEdit && <p role="alert" className="mb-4 rounded-lg border border-negative/40 bg-negative/10 px-3 py-2 text-sm">{sp.connect_error.slice(0, 300)}</p>}
 
+      <div className="mb-6"><SocialConnect canEdit={canEdit} rows={connectRows} /></div>
+
       {/* ---------------------------------------------------------------- combined overview */}
       <section aria-labelledby="all-platforms" className="space-y-4">
         <div className="flex flex-wrap items-end justify-between gap-2">
@@ -109,7 +113,7 @@ export default async function SocialPage({ searchParams }: { searchParams: Promi
         {withData.length === 0 ? (
           <div className="rounded-[10px] border border-dashed border-border bg-surface px-6 py-10 text-center">
             <p className="text-sm font-medium">No social analytics yet</p>
-            <p className="mx-auto mt-1 max-w-md text-xs text-muted">Connect an account below. Its analytics appear here and in its own section as soon as the login finishes.</p>
+            <p className="mx-auto mt-1 max-w-md text-xs text-muted">Connect an account above. Its analytics appear here and in its own section as soon as the login finishes.</p>
           </div>
         ) : (
           <>
@@ -144,20 +148,18 @@ export default async function SocialPage({ searchParams }: { searchParams: Promi
         )}
       </section>
 
-      <div className="mt-6"><SocialConnect canEdit={canEdit} rows={connectRows} /></div>
-
       {/* ---------------------------------------------------------------- per platform */}
       <section aria-labelledby="by-platform" className="mt-8">
         <h2 id="by-platform" className="text-lg font-semibold tracking-tight">By platform</h2>
         <nav aria-label="Platforms" className="sticky top-0 z-10 -mx-1 mt-2 flex gap-1.5 overflow-x-auto bg-background/90 px-1 py-2 backdrop-blur">
-          {PLATFORMS.map((p) => (
+          {SECTION_ORDER.map((p) => (
             <a key={p} href={`#social-${p}`} className="inline-flex shrink-0 items-center gap-1.5 rounded-full border border-border bg-surface px-3 py-1 text-xs font-medium hover:bg-surface-muted">
               <span className="size-2 rounded-full" style={{ background: active.has(p) ? platformColor(p) : "var(--border-strong)" }} aria-hidden />{PLATFORM_INFO[p].label}
             </a>
           ))}
         </nav>
         <div className="mt-3 space-y-6">
-          {PLATFORMS.map((p) => {
+          {SECTION_ORDER.map((p) => {
             const f = all.find((x) => x.platform === p);
             return <PlatformSection key={p} p={p} f={f} row={rows[p]} url={social.profiles[p]} connected={active.has(p)} ready={readyMap[p]} canEdit={canEdit}
               token={tokens[p]} cur={cur} prev={prev} clientId={client.id} />;
