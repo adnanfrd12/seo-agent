@@ -114,6 +114,8 @@ html:has(.dash-fonts) {
   --font-geist-mono: var(--font-dash-mono);
 }
 html:has(.dash-fonts) body { font-feature-settings: normal; }
+/* KPI numbers: large tabular figures (KPI cards, metric tiles, scores) */
+html:has(.dash-fonts) .tabular-nums:is(.text-xl, .text-2xl, .text-3xl, .text-4xl, [class*="text-[2"], [class*="text-[3"], [class*="text-[4"]),
 html:has(.dash-fonts) :is(h1, h2, h3) { font-family: var(--font-dash-display), var(--font-dash-sans), system-ui, sans-serif; }
 
 /* numbers line up in every table and metric */
