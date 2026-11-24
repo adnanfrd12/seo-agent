@@ -37,7 +37,7 @@ export interface SocialPoint { date: string; followers: number | null; posts: nu
 export interface SocialRow {
   platform: Platform; status: "ok" | "needs" | "no_profile" | "error"; source: string | null;
   url: string | null; needs?: string; error?: string; fetchedAt: string;
-  profile: { name: string | null; followers: number | null; posts: number | null; views: number | null; likes: number | null; following?: number | null; impressions?: number | null; reach?: number | null; comments?: number | null; handle?: string | null; avatar?: string | null };
+  profile: { name: string | null; followers: number | null; posts: number | null; views: number | null; likes: number | null; following?: number | null; impressions?: number | null; reach?: number | null; comments?: number | null; handle?: string | null; avatar?: string | null; link?: string | null };
   /** "connected" = the client's own account through Composio (private analytics); "public" = public numbers only */
   mode?: "connected" | "token" | "public";
   posts: SocialPost[]; rankings?: SocialRanking[]; history: SocialPoint[]; cost: number;
@@ -362,7 +362,7 @@ async function viaComposio(ctx: Ctx, p: Platform, acc: SocialConnection, url: st
   const views = t.views ?? t.impressions ?? sumLast(st.series.views ?? st.series.impressions ?? st.series.video_views, 28);
   return {
     source: "Composio (connected)",
-    profile: { name: st.name, handle: st.handle ?? null, avatar: st.avatar ?? null, followers: st.followers, following: st.following, posts: st.posts, views, likes: t.likes ?? null, impressions: t.impressions ?? sumLast(st.series.impressions, 28), reach: t.reach ?? null, comments: t.comments ?? null },
+    profile: { name: st.name, handle: st.handle ?? null, avatar: st.avatar ?? null, link: st.link ?? null, followers: st.followers, following: st.following, posts: st.posts, views, likes: t.likes ?? null, impressions: t.impressions ?? sumLast(st.series.impressions, 28), reach: t.reach ?? null, comments: t.comments ?? null },
     posts: st.recent, series: st.series, totals: st.totals, demographics: st.demographics, notes: st.notes, ids: st.ids,
   };
 }

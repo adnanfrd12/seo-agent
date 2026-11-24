@@ -14,6 +14,8 @@ export interface ComposioRead {
   name: string | null; followers: number | null; following: number | null; posts: number | null;
   /** the connected login's @username and profile picture URL, where the platform returns them */
   handle?: string | null; avatar?: string | null;
+  /** the account's own profile URL when the platform returns one (e.g. a Facebook Page without a username) */
+  link?: string | null;
   /** totals over the last 28 days, as returned by the platform (non-additive metrics like reach included) */
   totals: Partial<Record<MetricKey, number>>;
   series: SocialSeries;
@@ -95,7 +97,7 @@ export async function readComposio(clientId: string, p: Platform, connectedAccou
     out.ids.page_id = pageId;
     try { const meUser = await run("FACEBOOK_GET_CURRENT_USER", { fields: "id" }); const uid = pickStr(meUser, ["id"]); if (uid) out.ids.user_id = uid; } catch (e) { if (e instanceof ProviderRateLimitError) throw e; }
     out.name = pickStr(page, ["name"]); out.followers = n(page.followers_count) ?? n(page.fan_count);
-    out.handle = pickStr(page, ["username"]); out.avatar = pickStr(page.picture, ["url"]);
+    out.handle = pickStr(page, ["username"]); out.avatar = pickStr(page.picture, ["url"]); out.link = pickStr(page, ["link"]);
     const daily = await soft("FACEBOOK_GET_PAGE_INSIGHTS", { page_id: pageId, period: "day", since: String(now - 90 * DAY_S), until: String(now),
       metrics: "page_follows,page_daily_follows_unique,page_daily_unfollows_unique,page_media_view,page_post_engagements,page_video_views,page_total_actions" }, "Page insights");
     const map: Record<string, MetricKey> = { page_follows: "followers", page_daily_follows_unique: "new_followers", page_daily_unfollows_unique: "unfollows", page_media_view: "views", page_post_engagements: "engagement", page_video_views: "video_views", page_total_actions: "clicks" };
@@ -184,11 +186,22 @@ export async function readComposio(clientId: string, p: Platform, connectedAccou
 
   else if (p === "linkedin") {
     let org = ctx.linkedinOrgId;
+    // the page the login administers: its name, vanity name (URL) and logo label the connected account
+    let info: unknown = null;
+    try { info = await run("LINKEDIN_GET_COMPANY_INFO", { role: "ADMINISTRATOR", state: "APPROVED", count: 10 }); }
+    catch (e) { if (e instanceof ProviderRateLimitError || !org) throw e; }
+    const infoOrg = info ? JSON.stringify(info).match(/urn:li:organization:(\d+)/)?.[1] ?? (pick(info, ["id"]) != null ? String(pick(info, ["id"])) : null) : null;
     if (!org) {
-      const info = await run("LINKEDIN_GET_COMPANY_INFO", { role: "ADMINISTRATOR", state: "APPROVED", count: 10 });
-      org = JSON.stringify(info).match(/urn:li:organization:(\d+)/)?.[1] ?? (pick(info, ["id"]) != null ? String(pick(info, ["id"])) : null);
+      org = infoOrg;
       if (!org) throw new Error("The connected LinkedIn login isn't an admin of a company page.");
+    }
+    if (info && infoOrg === String(org)) {
       out.name = pickStr(info, ["localizedName", "name", "vanityName"]); out.handle = pickStr(info, ["vanityName"]);
+      const logo = JSON.stringify(info).match(/urn:li:(?:image|digitalmediaAsset):[A-Za-z0-9_-]+/)?.[0];
+      if (logo) {
+        try { out.avatar = pickStr(await run("LINKEDIN_GET_IMAGE", { image_urn: logo.replace(":digitalmediaAsset:", ":image:") }), ["downloadUrl", "download_url", "url"]); }
+        catch (e) { if (e instanceof ProviderRateLimitError) throw e; /* logo is optional */ }
+      }
     }
     const urn = `urn:li:organization:${org}`;
     out.ids.org_id = String(org);

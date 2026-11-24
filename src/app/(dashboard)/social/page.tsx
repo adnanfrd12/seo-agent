@@ -62,7 +62,7 @@ export default async function SocialPage({ searchParams }: { searchParams: Promi
   const connectRows = PLATFORMS.map((p) => {
     const c = conns.find((x) => x.platform === p);
     return { platform: p, state: c?.status === "ACTIVE" ? "connected" as const : c ? "pending" as const : "none" as const, ready: readyMap[p], note: readyMap[p] ? null : setupNote(p), lastSync: c?.status === "ACTIVE" ? rows[p]?.fetchedAt ?? null : null,
-      account: c?.status === "ACTIVE" && rows[p]?.mode === "connected" ? { handle: rows[p]!.profile.handle ?? null, name: rows[p]!.profile.name, avatar: rows[p]!.profile.avatar ?? null, url: accountUrl(p, rows[p]!.profile.handle) } : null };
+      account: c?.status === "ACTIVE" && rows[p]?.mode === "connected" ? { handle: rows[p]!.profile.handle ?? null, name: rows[p]!.profile.name, avatar: rows[p]!.profile.avatar ?? null, url: accountUrl(p, rows[p]!.profile.handle) ?? rows[p]!.profile.link ?? null } : null };
   });
 
   // combined figures (only what can be added up)
@@ -211,7 +211,7 @@ function PlatformSection({ p, f, row, url, connected, ready, canEdit, token, cur
   }
   const postsShown = row ? (f?.postsIn.length ? f.postsIn : row.posts) : [];
   // a connected section shows the logged-in account; the saved profile link only when it is a different account
-  const own = connected && row?.mode === "connected" ? accountUrl(p, row.profile.handle) : null;
+  const own = connected && row?.mode === "connected" ? accountUrl(p, row.profile.handle) ?? row.profile.link ?? null : null;
   const link = connected ? own : url;
   const norm = (u: string) => u.replace(/^https?:\/\/(www\.)?/, "").replace(/\/$/, "").toLowerCase();
   const savedDiffers = connected && url && (!own || norm(url) !== norm(own)) ? url : null;
