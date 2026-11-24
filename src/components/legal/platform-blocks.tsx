@@ -93,12 +93,13 @@ export function RevokeList() {
 /** /platforms: one card per platform. */
 export function PlatformCard({ p }: { p: PlatformEntry }) {
   return (
-    <section id={slug(p)} aria-labelledby={`${slug(p)}-h`} className="scroll-mt-8 rounded-2xl border border-[#F1ECE7] bg-white p-5 shadow-sm sm:p-7">
-      <div className="flex flex-wrap items-baseline justify-between gap-2">
-        <h2 id={`${slug(p)}-h`} className="text-xl font-semibold tracking-tight text-[#1f1f25]">{p.name} <span className="text-base font-normal text-[#6b6b76]">· {p.provider}</span></h2>
-        <span className="rounded-full bg-[#FFF3EB] px-2.5 py-0.5 text-xs font-semibold text-[#9A3412]">Read-only · {METHOD[p.connection]}</span>
+    <section id={slug(p)} aria-labelledby={`${slug(p)}-h`} className="grid scroll-mt-28 gap-6 border-t border-[#17120E]/12 py-12 lg:grid-cols-[minmax(0,4fr)_minmax(0,8fr)] lg:gap-16">
+      <div>
+        <h2 id={`${slug(p)}-h`} className="font-[family-name:var(--font-public-serif)] text-[2rem] font-normal leading-tight tracking-[-0.01em] text-[#17120E]">{p.name}</h2>
+        <p className="mt-1 text-[15px] text-[#6B635C]">{p.provider}</p>
+        <span className="mt-4 inline-block rounded-full border border-[#E8452C]/25 px-3 py-1 text-xs font-semibold text-[#9A3412]">Read-only · {METHOD[p.connection]}</span>
       </div>
-      <div className="mt-3 space-y-3 text-[15px] leading-7 text-[#3a3a42]">
+      <div className="max-w-[760px] space-y-4 text-[17px] leading-[1.7] text-[#3A332D]">
         <p><strong className="text-[#1f1f25]">Connection:</strong> {p.method}</p>
         <div><strong className="text-[#1f1f25]">Data we access</strong><ul className="list-disc pl-5">{p.dataAccessed.map((d) => <li key={d}>{d}</li>)}</ul></div>
         <p><strong className="text-[#1f1f25]">Why:</strong> {p.purpose}</p>

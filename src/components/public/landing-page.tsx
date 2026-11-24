@@ -1,23 +1,14 @@
 import Link from "next/link";
 import { ArrowRight, ArrowUpRight, Check } from "lucide-react";
-import { BRAND_NAME, BrandMark } from "@/components/brand/brand-mark";
+import { BRAND_NAME } from "@/components/brand/brand-mark";
 import { AnalyticsIcon, BusinessProfileIcon } from "@/components/brand/google-icons";
-import { FOOTER_LINKS } from "@/components/legal/site-footer";
 import { BingIcon, ClarityIcon, SearchConsoleIcon } from "@/components/login/login-icons";
 import { LoginPreview } from "@/components/login/login-preview";
 import { accessMailto, SITE } from "@/config/platforms";
 import { publicFonts } from "./fonts";
 import styles from "./landing.module.css";
+import { COLUMN, PublicFooter, PublicNav, SERIF } from "./site-chrome";
 
-const COLUMN = "mx-auto w-full max-w-[1240px] px-5 sm:px-8";
-const SERIF = "font-[family-name:var(--font-public-serif)] font-normal";
-
-const NAV = [
-  { label: "Platform", href: "#platform" },
-  { label: "AI insights", href: "#ai" },
-  { label: "Integrations", href: "#integrations" },
-  { label: "About", href: "#about" },
-];
 
 const CAPABILITIES = [
   { n: "01", title: "SEO analytics", text: "Search Console queries, pages, positions and indexing, Google Analytics traffic and leads, Bing and Clarity — joined up, with history, alerts and cannibalisation checks." },
@@ -45,21 +36,7 @@ const WINS = [
 export function LandingPage() {
   return (
     <div className={`${styles.page} ${publicFonts} flex-1 bg-[#FBF8F4] font-[family-name:var(--font-public-sans)] text-[17px] text-[#17120E]`}>
-      {/* header */}
-      <header className="sticky top-0 z-30 border-b border-[#17120E]/[0.07] bg-[#FBF8F4]/85 backdrop-blur-md">
-        <nav aria-label="Main" className={`${COLUMN} flex h-[68px] items-center justify-between gap-6`}>
-          <Link href="/" className="flex items-center gap-2.5 rounded-lg outline-none focus-visible:ring-4 focus-visible:ring-[#F26A1B]/25">
-            <BrandMark className="h-7" />
-            <span className="text-[19px] font-semibold tracking-[-0.01em]">{BRAND_NAME}</span>
-          </Link>
-          <ul className="hidden items-center gap-8 text-[15px] text-[#4A423B] md:flex">
-            {NAV.map((l) => <li key={l.href}><a href={l.href} className="rounded outline-none hover:text-[#17120E] focus-visible:ring-2 focus-visible:ring-[#F26A1B]">{l.label}</a></li>)}
-          </ul>
-          <Link href="/login" className="inline-flex items-center gap-2 rounded-lg bg-[#17120E] px-5 py-2.5 text-[15px] font-semibold text-white outline-none transition hover:bg-[#2A221B] focus-visible:ring-4 focus-visible:ring-[#F26A1B]/30">
-            Sign in <ArrowRight className="size-4" aria-hidden />
-          </Link>
-        </nav>
-      </header>
+      <PublicNav home />
 
       <main>
         {/* hero */}
@@ -202,34 +179,7 @@ export function LandingPage() {
         </section>
       </main>
 
-      {/* footer */}
-      <footer className="bg-[#17120E] text-white/60">
-        <div className={`${COLUMN} grid gap-10 py-14 md:grid-cols-[minmax(0,1.4fr)_minmax(0,1fr)_minmax(0,1fr)]`}>
-          <div>
-            <div className="flex items-center gap-2.5 text-white">
-              <BrandMark className="h-7" />
-              <span className="text-[19px] font-semibold tracking-[-0.01em]">{BRAND_NAME}</span>
-            </div>
-            <p className="mt-4 max-w-[340px] text-[15px] leading-relaxed">Operated by {SITE.operator}<br />{SITE.address}</p>
-          </div>
-          <nav aria-label="Product">
-            <p className="text-xs font-semibold uppercase tracking-[0.16em] text-white/40">Product</p>
-            <ul className="mt-4 space-y-2.5 text-[15px]">
-              {NAV.map((l) => <li key={l.href}><a href={l.href} className="hover:text-white">{l.label}</a></li>)}
-              <li><Link href="/login" className="hover:text-white">Sign in</Link></li>
-            </ul>
-          </nav>
-          <nav aria-label="Legal">
-            <p className="text-xs font-semibold uppercase tracking-[0.16em] text-white/40">Legal &amp; contact</p>
-            <ul className="mt-4 space-y-2.5 text-[15px]">
-              {FOOTER_LINKS.map((l) => (
-                <li key={l.href}>{l.href.startsWith("mailto:") ? <a href={l.href} className="hover:text-white">{l.label}</a> : <Link href={l.href} className="hover:text-white">{l.label}</Link>}</li>
-              ))}
-            </ul>
-          </nav>
-        </div>
-        <div className={`${COLUMN} border-t border-white/10 py-6 text-[13px] text-white/40`}>© 2026 {SITE.operator}. All rights reserved.</div>
-      </footer>
+      <PublicFooter home />
     </div>
   );
 }

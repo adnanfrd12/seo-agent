@@ -2,8 +2,8 @@ import type { Metadata } from "next";
 import { headers } from "next/headers";
 import Link from "next/link";
 import { SITE } from "@/config/platforms";
-import { A, LEGAL_UPDATED, PublicHeader } from "@/components/legal/legal-page";
-import { SiteFooter } from "@/components/legal/site-footer";
+import { A, LEGAL_UPDATED } from "@/components/legal/legal-page";
+import { COLUMN, PageIntro, PublicShell } from "@/components/public/site-chrome";
 import { CODE_RE } from "@/lib/compliance/signatures";
 import { allowLookup } from "@/lib/compliance/rate-limit";
 
@@ -42,25 +42,24 @@ export default async function DeletionStatusPage({ searchParams }: { searchParam
   const result = code ? await lookup(code) : null;
   const tone = { ok: "border-[#BBE5C8] bg-[#F0FAF3] text-[#14532D]", info: "border-[#F3E3D6] bg-[#FFF8F2] text-[#6b4a32]", bad: "border-[#F7D4CC] bg-[#FDF1EE] text-[#9F1239]" };
   return (
-    <div className="flex min-h-dvh flex-col bg-[#FBF8F5] text-[#1f1f25]">
-      <PublicHeader />
-      <main className="mx-auto w-full max-w-2xl flex-1 px-4 py-10 sm:px-6 lg:py-16">
-        <p className="text-xs font-semibold uppercase tracking-wider text-[#C2410C]">Your data</p>
-        <h1 className="mt-1 text-3xl font-bold tracking-tight sm:text-4xl">Deletion request status</h1>
-        <p className="mt-2 text-sm text-[#6b6b76]">Last updated: {LEGAL_UPDATED}</p>
-        <p className="mt-6 text-[15px] leading-7 text-[#3a3a42]">Enter the confirmation code you received (for example from Facebook, Instagram or Threads after asking for your data to be deleted).</p>
+    <PublicShell>
+      <PageIntro eyebrow="Your data" title="Deletion request status" updated={LEGAL_UPDATED}>
+        <p>Enter the confirmation code you received (for example from Facebook, Instagram or Threads after asking for your data to be deleted).</p>
+      </PageIntro>
+      <main className={`${COLUMN} pb-24 pt-12`}>
+        <div className="max-w-[760px]">
         <form method="get" action="/data-deletion/status" className="mt-5 flex flex-col gap-2 sm:flex-row">
           <label htmlFor="code" className="sr-only">Confirmation code</label>
           <input id="code" name="code" defaultValue={code} required maxLength={40} autoComplete="off" spellCheck={false} placeholder="Confirmation code"
-            className="min-w-0 flex-1 rounded-xl border border-[#E7E2DD] bg-white px-4 py-3 font-mono text-[15px] uppercase tracking-wider outline-none focus-visible:border-[#F26A1B] focus-visible:ring-4 focus-visible:ring-[#F26A1B]/20" />
-          <button type="submit" className="rounded-xl bg-gradient-to-r from-[#F26A1B] to-[#E8452C] px-6 py-3 font-semibold text-white outline-none focus-visible:ring-4 focus-visible:ring-[#F26A1B]/30">Check status</button>
+            className="min-w-0 flex-1 rounded-lg border border-[#E2DAD2] bg-white px-4 py-3 font-mono text-[15px] uppercase tracking-wider outline-none focus-visible:border-[#F26A1B] focus-visible:ring-4 focus-visible:ring-[#F26A1B]/20" />
+          <button type="submit" className="rounded-lg bg-[#17120E] px-6 py-3 font-semibold text-white hover:bg-[#2A221B] outline-none focus-visible:ring-4 focus-visible:ring-[#F26A1B]/30">Check status</button>
         </form>
         <div aria-live="polite">
           {result && <p role="status" className={`mt-5 rounded-xl border p-4 text-[15px] ${tone[result.tone]}`}>{result.text}</p>}
         </div>
-        <p className="mt-8 text-[15px] leading-7 text-[#3a3a42]">How deletion works: <Link href="/data-deletion" className={A}>Data Deletion</Link> · <Link href="/privacy" className={A}>Privacy Policy</Link></p>
+        <p className="mt-8 text-[17px] leading-7 text-[#3A332D]">How deletion works: <Link href="/data-deletion" className={A}>Data Deletion</Link> · <Link href="/privacy" className={A}>Privacy Policy</Link></p>
+        </div>
       </main>
-      <SiteFooter />
-    </div>
+    </PublicShell>
   );
 }
