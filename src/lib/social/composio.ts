@@ -1,5 +1,6 @@
 import "server-only";
 import { composio } from "@/lib/composio/client";
+import { platformBySocial } from "@/config/platforms";
 import { PLATFORM_INFO, PLATFORMS, type Platform } from "./platforms";
 
 /**
@@ -54,7 +55,9 @@ async function authConfigFor(p: Platform): Promise<string> {
   const found = list.items.find((a) => a.status === "ENABLED" && (a.toolkit?.slug ?? TOOLKIT[p]) === TOOLKIT[p]);
   if (found) return found.id;
   if (!MANAGED.has(p)) throw new SetupNeeded(setupNote(p));
-  const created = await composio().authConfigs.create(TOOLKIT[p], { type: "use_composio_managed_auth", name: `${TOOLKIT[p]}-social-analytics` });
+  // read-only: only the scopes listed in the platform registry (src/config/platforms.ts), never Composio's broader defaults
+  const scopes = platformBySocial(p)?.scopes.map((x) => x.scope) ?? [];
+  const created = await composio().authConfigs.create(TOOLKIT[p], { type: "use_composio_managed_auth", name: `${TOOLKIT[p]}-social-analytics-readonly`, ...(scopes.length ? { credentials: { scopes } } : {}) });
   return created.id;
 }
 
