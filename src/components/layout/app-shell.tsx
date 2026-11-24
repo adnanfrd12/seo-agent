@@ -71,7 +71,7 @@ function NavList({ collapsed, onNavigate }: { collapsed: boolean; onNavigate?: (
                       <ChevronDown className={cn("size-3.5 shrink-0 text-muted transition-transform", !open && "-rotate-90")} aria-hidden />
                     </Link>
                     {open && (
-                      <ul className="ml-[17px] mt-px space-y-px border-l border-hairline pl-2">
+                      <ul className="ml-[17px] mt-px space-y-px pl-2">
                         {children.map((c) => {
                           // a sub-tab also stays highlighted on its own sub-pages (e.g. one audit under "All audits")
                           const on = pathname === c.href || (c.href !== href && pathname.startsWith(`${c.href}/`));
