@@ -22,7 +22,7 @@ export const SITE = {
   operatorPrivacy: "https://www.waheedzen.com/legal/privacy/",
   appUrl: "https://seoinsights.waheedzen.com",
   appDomain: "waheedzen.com",
-  legalUpdated: "November 23, 2026",
+  legalUpdated: "November 24, 2026",
   /** where Disconnect lives in the app (audited) */
   disconnectPath: "Integrations for Google Analytics, Search Console, Business Profile, Bing Webmaster Tools and Microsoft Clarity, or Social media → Connect social accounts for social platforms",
   /** backups: Supabase daily backups kept 7 days on the Pro plan (PITR not enabled); logs: Vercel runtime logs */
@@ -81,7 +81,7 @@ const COMPOSIO_NOTE = "Connected through Composio. Redirect URIs = every Composi
 
 export const PLATFORMS: PlatformEntry[] = [
   {
-    id: "google_signin", name: "Sign in with Google", provider: "Google", status: "live", connection: "oauth",
+    id: "google_signin", name: "Sign in with Google", provider: "Google", status: "planned", connection: "oauth",
     method: "Google sign-in (OpenID Connect) through our authentication provider, Supabase Auth.",
     scopes: [
       { scope: "openid", reason: "Confirm who you are when you sign in." },
@@ -326,7 +326,6 @@ export const PROCESSORS: Processor[] = [
   { name: "Composio", purpose: "Runs the OAuth sign-in for connected platforms and stores their access tokens; executes read-only API calls", data: "Access tokens and the read-only data returned by connected Google and social accounts", url: "https://composio.dev/privacy" },
   { name: "DataForSEO", purpose: "Keyword, search result, backlink, competitor, business listing and site audit data", data: "Domains, URLs, keywords, business names and locations (no personal account data)", url: "https://dataforseo.com/privacy-policy" },
   { name: "Anthropic", purpose: "AI-generated insights, summaries, recommendations and PDF import", data: "Aggregated metrics, search queries, page URLs and titles, social account statistics and uploaded report text (no passwords, tokens or payment details)", url: "https://www.anthropic.com/legal/privacy" },
-  { name: "Google (Sign in with Google)", purpose: "Optional sign-in", data: "Name, email address and profile picture", url: "https://policies.google.com/privacy" },
   { name: "Resend", purpose: "Optional alert emails to workspace owners and admins", data: "Recipient email address and alert text", url: "https://resend.com/legal/privacy-policy" },
   { name: "Local Brand Manager", purpose: "Business Profile metrics, keywords, reviews and geogrids for locations the agency manages there", data: "Location IDs and the metrics returned (no personal account data)", url: "https://localbrandmanager.com/" },
   { name: "SEOSignalX", purpose: "Saved SEO audits (E-E-A-T, semantic, speed, robots.txt, crawl) for the client's website", data: "The website's domain; audit results are read back", url: "https://seosignalx.com/" },

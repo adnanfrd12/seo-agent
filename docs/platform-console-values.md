@@ -32,17 +32,6 @@ Deauthorize, delete, uninstall and webhook URLs must point to **SEO Insights**, 
 - Authorized domain: waheedzen.com (verify it in Google Search Console under the same Google account).
 - Scopes: list exactly the scopes below. Demo video: sign in at the homepage, open Integrations, show the consent panel, connect, and show each scope's data in use (Search Console pages, Analytics pages, Business Profile page, Social → YouTube).
 
-### Sign in with Google (`google_signin`, live)
-
-- Connection: Google sign-in (OpenID Connect) through our authentication provider, Supabase Auth.
-- Redirect URI: `https://<supabase-project-ref>.supabase.co/auth/v1/callback` (Supabase Auth → Google provider)
-- Console notes: Supabase Auth → Providers → Google. Authorized redirect URI in Google Cloud = https://<supabase-project>.supabase.co/auth/v1/callback.
-- Scopes to request (reviewer justification):
-  - `openid`: Confirm who you are when you sign in.
-  - `email`: Match your Google email to the invitation for your SEO Insights account.
-  - `profile`: Show your name and picture in the app.
-- Revoke steps shown to users: Google Account → Security → Your connections to third-party apps & services (myaccount.google.com/connections) → SEO Insights → Delete all connections / Remove access
-
 ### Google Search Console (`google_search_console`, live)
 
 - Connection: Google's official sign-in (OAuth 2.0), run by our connection partner Composio.

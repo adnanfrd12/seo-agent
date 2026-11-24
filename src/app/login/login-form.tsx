@@ -4,8 +4,6 @@ import { useState, useSyncExternalStore } from "react";
 import { useRouter } from "next/navigation";
 import { ArrowRight, Eye, EyeOff, Lock, Mail } from "lucide-react";
 import { BRAND_NAME, BrandMark } from "@/components/brand/brand-mark";
-import { GoogleG } from "@/components/brand/google-icons";
-import { accessMailto } from "@/config/platforms";
 import { createClient } from "@/lib/supabase/client";
 
 /** "Remember me" only remembers the email address on this device. Sessions persist either way. */
@@ -39,7 +37,7 @@ export function LoginForm({ next, initialError }: { next: string; initialError: 
   const [password, setPassword] = useState("");
   const [show, setShow] = useState(false);
   const [notice, setNotice] = useState<Notice>(initialError ? { kind: "error", text: initialError } : null);
-  const [busy, setBusy] = useState<null | "password" | "google" | "reset">(null);
+  const [busy, setBusy] = useState<null | "password" | "reset">(null);
 
   async function onSubmit(e: React.FormEvent) {
     e.preventDefault();
@@ -53,33 +51,6 @@ export function LoginForm({ next, initialError }: { next: string; initialError: 
     writeRemembered(remember ? email : null);
     router.replace(next);
     router.refresh();
-  }
-
-  async function onGoogle() {
-    setBusy("google");
-    setNotice(null);
-    // Ask the auth server first whether Google is switched on: if it isn't, Supabase would show a raw JSON error page.
-    try {
-      const res = await fetch(`${process.env.NEXT_PUBLIC_SUPABASE_URL}/auth/v1/settings`, {
-        headers: { apikey: process.env.NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY! },
-      });
-      const settings = (await res.json()) as { external?: Record<string, boolean> };
-      if (settings.external && settings.external.google === false) {
-        setBusy(null);
-        return setNotice({
-          kind: "info",
-          text: "Google sign-in isn't enabled for this workspace yet. Please sign in with your email and password.",
-        });
-      }
-    } catch { /* settings unavailable: let Supabase handle it below */ }
-
-    const redirectTo = `${window.location.origin}/auth/callback?next=${encodeURIComponent(next)}`;
-    const { error } = await createClient().auth.signInWithOAuth({ provider: "google", options: { redirectTo } });
-    if (error) {
-      setBusy(null);
-      setNotice({ kind: "error", text: error.message });
-    }
-    // on success the browser is already navigating to Google
   }
 
   async function onForgot() {
@@ -100,8 +71,6 @@ export function LoginForm({ next, initialError }: { next: string; initialError: 
     });
   }
 
-  const requestAccess = accessMailto;
-
   return (
     <div className="relative w-full rounded-[28px] border border-[#F0EBE6] bg-white p-6 shadow-[0_30px_80px_-30px_rgba(120,60,20,0.25),0_8px_24px_-12px_rgba(0,0,0,0.08)] sm:p-9">
       <div className="flex flex-col items-center text-center">
@@ -112,23 +81,9 @@ export function LoginForm({ next, initialError }: { next: string; initialError: 
         <p className="mt-1.5 text-[10px] font-semibold uppercase tracking-[0.28em] text-[#8a8a94]">SEO Analytics Platform</p>
       </div>
 
-      <h1 className="mt-7 text-center text-[28px] font-bold tracking-tight text-[#16161a]">Welcome Back</h1>
-      <p className="mx-auto mt-2 max-w-[19rem] text-center text-[15px] leading-relaxed text-[#6b6b76]">
-        Sign in to your account to view your SEO performance and reports.
-      </p>
+      <h1 className="sr-only">Sign in to {BRAND_NAME}</h1>
 
-      <button type="button" onClick={onGoogle} disabled={busy !== null}
-        className="group mt-7 flex w-full items-center justify-center gap-3 rounded-xl border border-[#E7E2DD] bg-white py-3 text-[15px] font-semibold text-[#16161a] outline-none transition hover:border-[#D9D2CB] hover:bg-[#FCFAF8] focus-visible:ring-4 focus-visible:ring-[#F26A1B]/20 disabled:opacity-60">
-        <GoogleG />
-        {/* Google sign-in branding: the standard G mark on the left, Google's own wording, no extra icons */}
-        {busy === "google" ? "Connecting to Google…" : "Continue with Google"}
-      </button>
-
-      <div className="my-5 flex items-center gap-4 text-xs font-semibold text-[#9a9aa5]" aria-hidden>
-        <span className="h-px flex-1 bg-[#EEE9E4]" /> OR <span className="h-px flex-1 bg-[#EEE9E4]" />
-      </div>
-
-      <form onSubmit={onSubmit} className="space-y-4">
+      <form onSubmit={onSubmit} className="mt-8 space-y-4">
         <div>
           <label htmlFor="email" className="mb-1.5 block text-sm font-semibold text-[#16161a]">Email address</label>
           <div className="relative">
@@ -182,21 +137,7 @@ export function LoginForm({ next, initialError }: { next: string; initialError: 
         </button>
       </form>
 
-      <div className="my-6 flex items-center gap-4 text-sm text-[#8a8a94]">
-        <span className="h-px flex-1 bg-[#EEE9E4]" aria-hidden /> New to {BRAND_NAME}? <span className="h-px flex-1 bg-[#EEE9E4]" aria-hidden />
-      </div>
-
-      <a href={requestAccess} aria-describedby="access-note"
-        className="flex w-full items-center justify-center rounded-xl border-[1.5px] border-[#F26A1B] bg-white py-3 text-[15px] font-semibold text-[#E8552A] outline-none transition hover:bg-[#FFF5EE] focus-visible:ring-4 focus-visible:ring-[#F26A1B]/20">
-        Create an account
-      </a>
-      <p id="access-note" className="mt-2.5 text-center text-xs text-[#8a8a94]">
-        Accounts are set up by invitation. This opens an email to request access.
-      </p>
-      <p className="mt-3 text-center text-xs text-[#6b6b76]">
-        {BRAND_NAME} is an invite-only analytics platform operated by Waheed Zen LLC for its clients.
-      </p>
-      <p className="mt-4 text-center text-xs text-[#8a8a94]">
+      <p className="mt-6 text-center text-xs text-[#8a8a94]">
         By signing in, you agree to our{" "}
         <a href="/terms" className="font-medium text-[#E8552A] hover:underline">Terms and Conditions</a> and{" "}
         <a href="/privacy" className="font-medium text-[#E8552A] hover:underline">Privacy Policy</a>.

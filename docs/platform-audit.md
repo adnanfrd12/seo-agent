@@ -39,7 +39,7 @@ Composio redirect URLs: every live config uses `https://backend.composio.dev/api
 
 | Registry id | Status | Connection | Code | Data stored | Disconnect (UI path) |
 |---|---|---|---|---|---|
-| google_signin | live | Supabase Auth Google OAuth (openid, email, profile) | `login-form.tsx` | `auth.users`, `profiles` (name, avatar) | n/a (user account deletion) |
+| google_signin | planned (button removed from sign-in page, Nov 24 2026) | Supabase Auth Google OAuth (openid, email, profile) | `login-form.tsx` | `auth.users`, `profiles` (name, avatar) | n/a (user account deletion) |
 | google_search_console | live | Composio, managed | `src/lib/composio/gsc.ts`, `src/lib/sync/gsc.ts`, `src/lib/gscx/*` | `gsc_*_metrics`, `gsc_query_page_metrics` (via `integration_resources`), `dfs_cache` endpoint `gscx` | Integrations → Search Console → Disconnect |
 | google_analytics | live | Composio, managed | `src/lib/composio/ga4.ts`, `src/lib/sync/ga4.ts`, `src/lib/ga4x/*` | `ga4_*_metrics`, `ga4_cube_metrics`, `dfs_cache` endpoint `ga4x` | Integrations → Google Analytics → Disconnect |
 | google_business_profile | live | Direct OAuth with our Google client (business.manage, openid, email) | `src/lib/google/*`, `src/app/api/integrations/gbp/*` | `integration_secrets` (encrypted refresh token), `gbp_daily_metrics`, `gbp_keyword_metrics`, `gbp_reviews` | Integrations → Business Profile → Disconnect (revokes at Google) |

@@ -17,7 +17,7 @@ const sections: LegalSection[] = [
     <p>SEO Insights is an invite-only platform that Waheed Zen LLC uses to report on search, website, business-listing and social media performance for its client businesses. Team members and client users are invited; there is no public sign-up. Every connection to a third-party platform is <strong>read-only</strong>: we never post, comment, message, follow, upload or change anything on any connected account.</p>
   </> },
   { id: "information-we-collect", title: "Information we collect", body: <>
-    <p><strong>Account information:</strong> name, email, role, the business (workspace) you belong to and sign-in details. With Sign in with Google we receive your name, email and profile picture.</p>
+    <p><strong>Account information:</strong> name, email, role, the business (workspace) you belong to and sign-in details.</p>
     <p><strong>Connected account data:</strong> when an authorized person connects a business account through the platform&apos;s official sign-in (OAuth) or an API key, we receive only the read-only data listed for that platform:</p>
     <PrivacyPlatforms />
     <p><strong>Market and search data:</strong> keyword volumes, search results, competitor and backlink data from DataForSEO. It concerns search terms and websites, not individuals.</p>
