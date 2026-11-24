@@ -1,4 +1,5 @@
 import { after } from "next/server";
+import { AiScreenTools } from "@/components/aiqw/screen-tools";
 import { CircleAlert, CircleX, ExternalLink, Info, KeyRound, Link2Off } from "lucide-react";
 import { ShareDonut, StackedTimeBars, CompareBars } from "@/components/charts/analytics-charts";
 import { MultiLine } from "@/components/charts/ai-charts";
@@ -163,6 +164,7 @@ export default async function SocialPage({ searchParams }: { searchParams: Promi
       </section>
 
       {canEdit && <div className="mt-8"><SocialSettings profiles={social.profiles} tokens={tokens} linkedinOrgId={typeof social.settings.linkedin_org_id === "string" ? social.settings.linkedin_org_id : null} /></div>}
+      <AiScreenTools screen="social" />
     </>
   );
 }

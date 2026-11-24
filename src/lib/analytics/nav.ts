@@ -1,6 +1,6 @@
 import {
   BarChart3, CalendarCheck, Globe, Link2, ListOrdered, SearchCheck, Swords, CalendarRange, FileUp, History, LayoutDashboard, Lightbulb, MapPin, MousePointerClick, Plug,
-  Bot, GraduationCap, MessagesSquare, Newspaper, Radar, ScanSearch, Search, Settings, Share2, ShieldCheck, Sparkles, Star, TrendingUp, Wrench, type LucideIcon,
+  Bot, GraduationCap, MessagesSquare, Newspaper, Radar, ScanSearch, Search, Settings, Share2, ShieldCheck, Sparkles, Star, TrendingUp, Wrench, Zap, type LucideIcon,
 } from "lucide-react";
 
 /** `children` are sub-tabs shown under the item; the sidebar lets them be opened and closed. */
@@ -97,6 +97,18 @@ export const NAV: NavGroup[] = [
   {
     title: "AI Intelligence",
     items: [
+      {
+        href: "/ai-quick-wins", label: "AI Quick Wins", icon: Zap,
+        children: [
+          { href: "/ai-quick-wins", label: "Quick wins" },
+          { href: "/ai-quick-wins/keywords", label: "Keywords (GSC + DataForSEO)", group: "Data" },
+          { href: "/ai-quick-wins/sources", label: "Data sources" },
+          { href: "/ai-quick-wins/candidates", label: "Candidates (debug)" },
+          { href: "/ai-quick-wins/runs", label: "Runs and spend", group: "Admin" },
+          { href: "/ai-quick-wins/settings", label: "AI and data settings" },
+          { href: "/ai-quick-wins/how-it-works", label: "How it works" },
+        ],
+      },
       { href: "/coach", label: "SEO Coach", icon: GraduationCap },
       { href: "/insights", label: "AI SEO Insights", icon: Sparkles },
       { href: "/opportunities", label: "SEO Opportunities", icon: Lightbulb },

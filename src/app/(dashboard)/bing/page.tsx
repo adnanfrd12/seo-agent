@@ -1,4 +1,5 @@
 import { Columns } from "@/components/charts/ai-charts";
+import { AiScreenTools } from "@/components/aiqw/screen-tools";
 import { KeywordLink } from "@/components/research/keyword-link";
 import { PositionScatter, ShareDonut } from "@/components/charts/analytics-charts";
 import { MetricTrend } from "@/components/charts/metric-trend";
@@ -314,6 +315,7 @@ export default async function BingPage({ searchParams }: { searchParams: Promise
           );
         })}
       </div>
+      <AiScreenTools screen="bing" />
     </>
   );
 }

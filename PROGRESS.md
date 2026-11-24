@@ -1,0 +1,23 @@
+# Quick wins engine: progress
+
+Sidebar: **AI Intelligence → AI Quick Wins** (`/ai-quick-wins`). Code: `src/lib/aiqw/*`, `src/components/aiqw/*`, `src/app/(dashboard)/ai-quick-wins/*`, `src/app/api/ai/ask`, `src/app/api/cron/quick-wins`.
+To continue in a new session: "Continue from PHASE N of the quick wins engine prompt" and read this file first.
+
+| Phase | State | Notes |
+|---|---|---|
+| 1. Credentials and clients | Done | `ANTHROPIC_API_KEY` (server env, official `@anthropic-ai/sdk`), DataForSEO login reused (`src/lib/dataforseo/client.ts`, retries, per-client spend in `dfs_spend`, 24 h cache in `dfs_cache`). Settings page **AI and data** (`/ai-quick-wins/settings`): model (Opus 5.5 default, Sonnet 5.5), effort, monthly Claude budget, DataForSEO limit, nightly on/off, DataForSEO features, location/language, banned words, business profile, email recipients. **Test connections** shows green/red for every source, the DataForSEO login and a Claude "ok" request. |
+| 2. DataForSEO data | Done | `src/lib/aiqw/dfs.ts`: Labs keyword overview (volume, CPC, competition, KD, intent, 12-month trend, SERP features) for the top 300 Search Console queries, live SERP (top 10, our position, features, People Also Ask, AI Overview, local pack) for the top 20 opportunities in Deep runs; competitor keyword gaps, backlink gaps, Business Profile and reviews reuse the existing caches. **Keywords** screen (`/ai-quick-wins/keywords`) shows Search Console metrics beside DataForSEO data. |
+| 3. Candidate builder | Done | `candidates.ts` (Search Console and GA4 rules, keyword gap, volume-weighted striking distance, SERP feature, AI Overview, local pack, backlink gap, reviews, crawl: duplicate titles, missing meta/H1, slow pages, broken links) + `platforms.ts` (Business Profile actions drop, profile searches not on the site, unanswered reviews, Bing striking distance and crawl problems, Clarity frustration, social cadence and broken logins, SEOSignalX failed checks). Caps: 150 whole site, 40 per screen, all for a page. Debug view: `/ai-quick-wins/candidates`. |
+| 4. Claude call | Done | `claude.ts`: chunks of 12 (same page together), concurrency 6 with the first chunk writing the prompt cache, `messages.parse` + `zodOutputFormat(QuickWinsSchema)`, `output_config.effort`, no thinking params; retry once on unparsed JSON, split on `max_tokens`, skip on `refusal`. Message Batches for nightly (`custom_id = runId:chunk`, results read by custom_id). Cost and tokens logged per call. |
+| 5. Validation, ranking, storage | Done | `validate.ts` (candidate id, page in inventory, numbers in "why" must be in the candidate's data, title 50–60 / meta 140–160 ±5, banned words; one repair call, then drop and log). Score = gain (leads ×10) × confidence ÷ effort. Stored in `dfs_cache` endpoint `aiqw` (`items`, `run:<id>`, `candidates:last`, `batch:pending`) so no migration is needed; statuses, owner, baseline carried by key; diff new / still open / resolved by the data / not repeated. |
+| 6. UI | Done | Quick wins page (Generate panel with scope, every data source, depth; live run progress with timed steps; summary tiles and top 5; what changed; cards with sources, evidence, steps, copy, status, owner, regenerate, 28-day result). Bottom of every GA4 and Search Console screen and of Business Profile, Bing, Clarity, Social and SEOSignalX: this screen's quick wins, **Quick wins for this screen**, **Ask Claude** (streamed, answers only from the screen's data, lists the data used). Analyze one page = scope "One page" + Deep. Import data on the settings page. How it works and Data sources pages (no Build prompt tab, as requested). |
+| 7. Schedule, email, guardrails | Done (cron) | `/api/cron/quick-wins?phase=submit` 07:00 UTC and `?phase=collect` 11:00 UTC (`vercel.json`); morning email through Resend when `RESEND_API_KEY` + `ALERT_EMAIL_FROM` are set; monthly Claude budget and DataForSEO limit checked before every run; Runs and spend page is the audit log. Nightly needs "Nightly run" switched on per client. |
+
+## Verified on ledsandsign (Nov 24, 2026)
+- Whole-site Standard run: 77 candidates from 25 rules → 8 chunks → 58 quick wins kept, 27 merged or skipped, 2 repaired, 1 rejected; 84.8k input / 63.7k output tokens, 21.2k read from cache; $1.53; 203 s.
+- Ask Claude on Search Console → Queries answered from the screen's data, quoting its numbers.
+
+## Open items
+- Hourly crons (a per-client nightly time) need a Vercel plan that allows them; the nightly run is fixed at 02:00 US Central.
+- The morning email needs `RESEND_API_KEY` and `ALERT_EMAIL_FROM` in Vercel.
+- A whole-site run on a very large site can reach the 300-second function limit; chunks not started by 200 s are reported and can be run per screen.

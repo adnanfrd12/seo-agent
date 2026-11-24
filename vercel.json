@@ -16,6 +16,14 @@
     {
       "path": "/api/cron/extras",
       "schedule": "15 8 * * *"
+    },
+    {
+      "path": "/api/cron/quick-wins?phase=submit",
+      "schedule": "0 7 * * *"
+    },
+    {
+      "path": "/api/cron/quick-wins?phase=collect",
+      "schedule": "0 11 * * *"
     }
   ]
 }

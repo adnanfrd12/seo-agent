@@ -1,4 +1,5 @@
 import { ShareDonut, StackedTimeBars } from "@/components/charts/analytics-charts";
+import { AiScreenTools } from "@/components/aiqw/screen-tools";
 import { BarList } from "@/components/charts/bar-list";
 import { MetricTrend } from "@/components/charts/metric-trend";
 import { FilterSelect } from "@/components/dashboard/filter-select";
@@ -262,6 +263,7 @@ export default async function BusinessProfilePage({ searchParams }: { searchPara
       )}
 
       {more}
+      <AiScreenTools screen="business-profile" />
     </>
   );
 }

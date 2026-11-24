@@ -1,4 +1,6 @@
 import Link from "next/link";
+import { AiScreenTools } from "@/components/aiqw/screen-tools";
+import { screenForPath } from "@/lib/aiqw/screens";
 import { TabHeader } from "@/components/dashboard/tab-header";
 import { EmptyState } from "@/components/dashboard/page-header";
 import { FilterSelect } from "@/components/dashboard/filter-select";
@@ -60,6 +62,7 @@ export async function Ga4xScreen({ sp, path, title, description, users, children
         <p className="mb-4 rounded-lg border border-warn/40 bg-warn-soft px-3 py-2 text-xs text-warn">Some GA4 reports failed on the last sync and show as empty: {Object.entries(g.meta.errors).map(([k, e]) => `${k} (${e.slice(0, 90)})`).join("; ")}.</p>
       )}
       {await children(v)}
+      <AiScreenTools screen={screenForPath(path)} />
     </>
   );
 }

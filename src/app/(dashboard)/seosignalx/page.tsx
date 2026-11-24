@@ -1,4 +1,5 @@
 import Link from "next/link";
+import { AiScreenTools } from "@/components/aiqw/screen-tools";
 import { Activity, Bot, FileCode2, Gauge, ShieldCheck, Sparkles, Wrench } from "lucide-react";
 import { Card, Empty, Pill, ScoreCard, ScoreRing, SxHeader } from "@/components/seosignalx/ui";
 import { SxSync } from "@/components/seosignalx/sync";
@@ -100,6 +101,7 @@ export default async function SeoSignalXDashboard() {
           )}
         </Card>
       </div>
+      <AiScreenTools screen="seosignalx" />
     </>
   );
 }

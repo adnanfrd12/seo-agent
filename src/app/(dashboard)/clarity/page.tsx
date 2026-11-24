@@ -1,4 +1,5 @@
 import Link from "next/link";
+import { AiScreenTools } from "@/components/aiqw/screen-tools";
 import { after } from "next/server";
 import { IssueRecordings, type IssueSummary } from "@/components/clarity/issue-recordings";
 import { ISSUES, RECORDINGS_ENDPOINT, refreshRecordingsFor, type RecordingSet } from "@/lib/clarity/recordings";
@@ -253,6 +254,7 @@ export default async function ClarityPage() {
           { label: "Device", render: (r) => r.device ?? "—" },
         ]} />
       )}
+      <AiScreenTools screen="clarity" />
     </div>
   );
 }
