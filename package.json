@@ -7,7 +7,7 @@
     "build": "next build",
     "start": "next start",
     "lint": "eslint",
-    "test": "tsx --tsconfig tests/tsconfig.test.json --test tests/unit.test.mts"
+    "test": "tsx --tsconfig tests/tsconfig.test.json --test tests/unit.test.mts tests/compliance.test.mts"
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^0.137.0",
