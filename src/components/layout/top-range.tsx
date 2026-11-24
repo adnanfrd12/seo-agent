@@ -3,7 +3,8 @@
 import { useEffect, useRef, useState } from "react";
 import Link from "next/link";
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
-import { CalendarDays, Check, ChevronDown } from "lucide-react";
+import { CalendarDays, Check, ChevronDown, Loader2 } from "lucide-react";
+import { NAV_START_EVENT } from "./nav-progress";
 import { resolveRange } from "@/lib/analytics/range";
 import { isRangePath } from "@/lib/analytics/range-paths";
 import { cn } from "@/lib/utils";
@@ -29,6 +30,13 @@ export function TopRange({ timeZone, defaultDays }: { timeZone: string; defaultD
   const router = useRouter();
   const [open, setOpen] = useState(false);
   const root = useRef<HTMLDivElement>(null);
+  // the URL the picker was used on: while it is still the URL, the new range is loading
+  const [from, setFrom] = useState<string | null>(null);
+  const now = sp.toString();
+  // the new URL arrived: done (reset during render, so a later return to the old URL doesn't show it again)
+  if (from !== null && from !== now) setFrom(null);
+  const loading = from !== null && from === now;
+  const go = (target: string) => { if (target !== (now ? `${path}?${now}` : path)) setFrom(now); setOpen(false); };
 
   useEffect(() => {
     if (!open) return;
@@ -63,10 +71,10 @@ export function TopRange({ timeZone, defaultDays }: { timeZone: string; defaultD
   return (
     <div ref={root} className="relative">
       <button
-        onClick={() => setOpen((v) => !v)} aria-haspopup="dialog" aria-expanded={open}
+        onClick={() => setOpen((v) => !v)} aria-haspopup="dialog" aria-expanded={open} aria-busy={loading}
         className="inline-flex h-8 items-center gap-2 rounded-md border border-border-strong bg-surface px-2.5 text-[13px] font-medium outline-none transition-colors hover:bg-surface-muted focus-visible:ring-2 focus-visible:ring-accent"
       >
-        <CalendarDays className="size-3.5 text-muted" aria-hidden />
+        {loading ? <Loader2 className="size-3.5 animate-spin text-accent" aria-label="Loading the new range" /> : <CalendarDays className="size-3.5 text-muted" aria-hidden />}
         <span className="whitespace-nowrap">{label}</span>
         {compare && <span className="hidden whitespace-nowrap font-normal text-muted sm:inline">vs previous</span>}
         <ChevronDown className="size-3.5 text-muted" aria-hidden />
@@ -77,7 +85,7 @@ export function TopRange({ timeZone, defaultDays }: { timeZone: string; defaultD
           <ul className="space-y-0.5">
             {PRESETS.map((p) => (
               <li key={p.id}>
-                <Link href={href({ range: p.id, start: null, end: null })} onClick={() => setOpen(false)}
+                <Link href={href({ range: p.id, start: null, end: null })} onClick={() => go(href({ range: p.id, start: null, end: null }))}
                   className={cn("flex items-center justify-between rounded-md px-2.5 py-1.5 text-[13px] hover:bg-surface-muted", range.preset === p.id && "font-medium")}>
                   {p.label}{range.preset === p.id && <Check className="size-3.5 text-accent" aria-hidden />}
                 </Link>
@@ -91,7 +99,8 @@ export function TopRange({ timeZone, defaultDays }: { timeZone: string; defaultD
               const f = new FormData(e.currentTarget);
               const start = String(f.get("start") ?? ""), end = String(f.get("end") ?? "");
               if (!start || !end) return;
-              setOpen(false);
+              go(href({ range: null, start, end }));
+              window.dispatchEvent(new Event(NAV_START_EVENT));
               router.push(href({ range: null, start, end }));
             }}
           >
@@ -106,7 +115,7 @@ export function TopRange({ timeZone, defaultDays }: { timeZone: string; defaultD
             </div>
             <button className="h-8 w-full rounded-md border border-border-strong text-[13px] font-medium hover:bg-surface-muted">Apply</button>
           </form>
-          <Link href={href({ compare: compare ? null : "1" })} onClick={() => setOpen(false)} role="switch" aria-checked={compare}
+          <Link href={href({ compare: compare ? null : "1" })} onClick={() => go(href({ compare: compare ? null : "1" }))} role="switch" aria-checked={compare}
             className="mt-1.5 flex items-center justify-between rounded-md border-t border-hairline px-2.5 pb-1.5 pt-2.5 text-[13px] hover:bg-surface-muted">
             Compare with previous period
             <span className={cn("relative h-4 w-7 rounded-full transition-colors", compare ? "bg-accent" : "bg-border-strong")}>

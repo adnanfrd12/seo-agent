@@ -1,6 +1,7 @@
 {
   "version": "0.0.1",
   "configurations": [
-    { "name": "seo-agent-dev", "runtimeExecutable": "npm", "runtimeArgs": ["run", "dev"], "port": 3000 }
+    { "name": "seo-agent-dev", "runtimeExecutable": "npm", "runtimeArgs": ["run", "dev"], "port": 3000 },
+    { "name": "seo-agent-prod", "runtimeExecutable": "npm", "runtimeArgs": ["run", "start"], "port": 3000 }
   ]
 }

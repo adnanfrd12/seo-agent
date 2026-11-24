@@ -2,6 +2,7 @@ import { revalidatePath } from "@/lib/revalidate";
 import { Suspense } from "react";
 import { after } from "next/server";
 import { RangeMemory } from "@/components/layout/range-memory";
+import { NavProgress } from "@/components/layout/nav-progress";
 import { touchClient } from "@/lib/activity";
 import { memo } from "@/lib/memo";
 import { createAdminClient } from "@/lib/supabase/admin";
@@ -59,7 +60,7 @@ export default async function DashboardLayout({ children }: { children: React.Re
       sidebarTop={<SidebarClient client={client} clients={clients} lastSyncedAt={lastSync?.last_synced_at ?? null} />}
       header={<HeaderContent client={client} user={user} lastSyncedAt={lastSync?.last_synced_at ?? null} />}
     >
-      <Suspense fallback={null}><RangeMemory /></Suspense>
+      <Suspense fallback={null}><RangeMemory /><NavProgress /></Suspense>
       {children}
     </AppShell>
   );

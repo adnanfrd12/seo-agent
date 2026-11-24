@@ -7,6 +7,8 @@ import { ChevronDown, Menu, PanelLeftClose, PanelLeftOpen, X } from "lucide-reac
 import { BrandMark, BRAND_NAME } from "@/components/brand/brand-mark";
 import { SiteFooter } from "@/components/legal/site-footer";
 import { NAV } from "@/lib/analytics/nav";
+import { isRangePath } from "@/lib/analytics/range-paths";
+import { RANGE_EVENT, savedRangeQuery } from "./range-memory";
 import { cn } from "@/lib/utils";
 
 function activeItem(pathname: string) {
@@ -33,10 +35,19 @@ function setOpen(href: string, open: boolean) {
 }
 const subscribeOpen = (f: () => void) => { openListeners.add(f); return () => openListeners.delete(f); };
 
+/*
+ * Date-driven pages opened without a range are redirected by the proxy to the range the user last picked. Putting
+ * that range on the sidebar links directly saves the redirect round trip on every click (same page, same range).
+ */
+const readRange = () => { try { return savedRangeQuery(document.cookie); } catch { return ""; } };
+const subscribeRange = (f: () => void) => { window.addEventListener(RANGE_EVENT, f); return () => window.removeEventListener(RANGE_EVENT, f); };
+
 function NavList({ collapsed, onNavigate }: { collapsed: boolean; onNavigate?: () => void }) {
   const pathname = usePathname();
   const openRaw = useSyncExternalStore(subscribeOpen, readOpen, () => "{}");
   const openMap = (() => { try { return JSON.parse(openRaw) as Record<string, string>; } catch { return {}; } })();
+  const rangeQs = useSyncExternalStore(subscribeRange, readRange, () => "");
+  const to = (path: string) => (rangeQs && isRangePath(path) ? `${path}?${rangeQs}` : path);
   return (
     <nav aria-label="Main" className={cn("pb-6", collapsed ? "px-2" : "px-3")}>
       {NAV.map((group, gi) => (
@@ -54,7 +65,7 @@ function NavList({ collapsed, onNavigate }: { collapsed: boolean; onNavigate?: (
                     <div className="flex items-center gap-0.5">
                       {/* the name opens its sub-tabs right away (as the arrow does) and goes to the section's page;
                           on phones the menu stays open so a sub-tab can be picked next */}
-                      <Link href={href} onClick={() => { if (!open) setOpen(href, true); }} aria-expanded={open}
+                      <Link href={to(href)} onClick={() => { if (!open) setOpen(href, true); }} aria-expanded={open}
                         className={cn("relative flex h-8 min-w-0 flex-1 items-center gap-2.5 rounded-md px-2.5 text-[13px] outline-none transition-colors focus-visible:ring-2 focus-visible:ring-accent",
                           active ? "font-medium text-foreground" : "text-secondary hover:bg-surface-muted hover:text-foreground")}>
                         <Icon className={cn("size-4 shrink-0", active ? "text-foreground" : "text-muted")} aria-hidden />
@@ -73,7 +84,7 @@ function NavList({ collapsed, onNavigate }: { collapsed: boolean; onNavigate?: (
                           return (
                             <li key={c.href}>
                               {c.group && <p className="mb-0.5 mt-2 px-2.5 text-[10px] font-semibold uppercase tracking-[0.08em] text-faint">{c.group}</p>}
-                              <Link href={c.href} onClick={onNavigate} aria-current={on ? "page" : undefined}
+                              <Link href={to(c.href)} onClick={onNavigate} aria-current={on ? "page" : undefined}
                                 className={cn("relative flex h-7 items-center rounded-md px-2.5 text-[12.5px] outline-none transition-colors focus-visible:ring-2 focus-visible:ring-accent",
                                   on ? "bg-surface-muted font-medium text-foreground" : "text-secondary hover:bg-surface-muted hover:text-foreground")}>
                                 {on && <span className="absolute inset-y-1.5 left-0 w-0.5 rounded-full bg-accent" aria-hidden />}
@@ -90,7 +101,7 @@ function NavList({ collapsed, onNavigate }: { collapsed: boolean; onNavigate?: (
               return (
                 <li key={href}>
                   <Link
-                    href={href} onClick={onNavigate} aria-current={active ? "page" : undefined} title={collapsed ? label : undefined}
+                    href={to(href)} onClick={onNavigate} aria-current={active ? "page" : undefined} title={collapsed ? label : undefined}
                     className={cn(
                       "relative flex h-8 items-center gap-2.5 rounded-md px-2.5 text-[13px] outline-none transition-colors focus-visible:ring-2 focus-visible:ring-accent",
                       active ? "bg-surface-muted font-medium text-foreground" : "text-secondary hover:bg-surface-muted hover:text-foreground",
