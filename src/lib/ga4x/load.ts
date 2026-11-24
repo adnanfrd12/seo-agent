@@ -51,11 +51,23 @@ export async function ga4xPage(sp: SearchParams, opts: { users?: boolean } = {})
     clientNap(admin, client.id).catch(() => null),
   ]);
   const overrides = (settings.ga4_lead_map ?? {}) as Record<string, string>;
+  const { area, areaSource } = await serviceArea(admin, client.id, settings, nap, cubes);
+  const qualified = first(sp.leads) !== "all";
+  const users = opts.users ? await rangeUsers(admin, client.id, t.ctx, t.resource.id, period).catch(() => null) : null;
+  const g = new G(meta, cubes, period, { overrides, qualified, serviceArea: area, users });
+  // quick wins always use the last 30 days of qualified leads
+  const p30: Period = { start: addDays(meta.end, -29), end: meta.end, days: 30, pstart: addDays(meta.end, -59), pend: addDays(meta.end, -30) };
+  const wins = quickWins(new G(meta, cubes, p30, { overrides, qualified: true, serviceArea: area, users: null }));
+  return { state: "ok", clientName: client.name, clientId: client.id, g, wins, period, qualified, preset: r.preset, areaSource, propertyChoices: t.choices.map((c) => ({ id: c.id, name: c.display_name ?? c.external_id })), ctx: t.ctx };
+}
+
+/** The service area used for "local" leads: saved on Lead setup, else the business city, its Business Profile area and its state's cities. */
+async function serviceArea(admin: ReturnType<typeof createAdminClient>, clientId: string, settings: Record<string, unknown>, nap: Awaited<ReturnType<typeof clientNap>> | null, cubes: Awaited<ReturnType<typeof loadCubes>>) {
   // service area: the cities saved on Lead setup, else the business city and its Business Profile service area, else its state
   let area = Array.isArray(settings.ga4_service_area) ? (settings.ga4_service_area as string[]) : [];
   let areaSource = "Saved on Lead setup";
   if (!area.length) {
-    const { data: gbp } = await admin.from("integration_resources").select("metadata").eq("client_id", client.id).eq("provider", "gbp").eq("is_selected", true).limit(1).maybeSingle();
+    const { data: gbp } = await admin.from("integration_resources").select("metadata").eq("client_id", clientId).eq("provider", "gbp").eq("is_selected", true).limit(1).maybeSingle();
     const places = ((((gbp?.metadata as Record<string, unknown> | null)?.lbm_location as Record<string, unknown> | undefined)?.service_area as { places?: { place_infos?: { name?: string }[] } } | undefined)?.places?.place_infos ?? [])
       .map((p) => String(p.name ?? "").split(",")[0].trim()).filter(Boolean);
     area = [...new Set([nap?.city, ...places].filter(Boolean) as string[])];
@@ -67,11 +79,27 @@ export async function ga4xPage(sp: SearchParams, opts: { users?: boolean } = {})
       area = [...new Set(area)];
     }
   }
-  const qualified = first(sp.leads) !== "all";
-  const users = opts.users ? await rangeUsers(admin, client.id, t.ctx, t.resource.id, period).catch(() => null) : null;
-  const g = new G(meta, cubes, period, { overrides, qualified, serviceArea: area, users });
-  // quick wins always use the last 30 days of qualified leads
+  return { area, areaSource };
+}
+
+/**
+ * Session-free: the last 30 days of GA4 (qualified leads) for one client and its rule-based quick wins. Used by the
+ * AI quick wins engine and the nightly run. Returns null when GA4 isn't connected.
+ */
+export async function ga4WinsFor(admin: ReturnType<typeof createAdminClient>, clientId: string) {
+  const t = await ga4xTarget(admin, clientId, null);
+  if (!t?.ctx) return null;
+  let meta = await loadMeta(admin, clientId, t.resource.id);
+  if (!meta || isStale(meta)) meta = (await syncGa4x(admin, clientId, t.resource.id).catch(() => null)) ?? meta;
+  if (!meta) return null;
+  const [cubes, settings, nap] = await Promise.all([
+    loadCubes(admin, clientId, t.resource.id, ALL),
+    admin.from("clients").select("settings").eq("id", clientId).maybeSingle().then((x) => ((x.data?.settings ?? {}) as Record<string, unknown>)),
+    clientNap(admin, clientId).catch(() => null),
+  ]);
+  const overrides = (settings.ga4_lead_map ?? {}) as Record<string, string>;
+  const { area } = await serviceArea(admin, clientId, settings, nap, cubes);
   const p30: Period = { start: addDays(meta.end, -29), end: meta.end, days: 30, pstart: addDays(meta.end, -59), pend: addDays(meta.end, -30) };
-  const wins = quickWins(new G(meta, cubes, p30, { overrides, qualified: true, serviceArea: area, users: null }));
-  return { state: "ok", clientName: client.name, clientId: client.id, g, wins, period, qualified, preset: r.preset, areaSource, propertyChoices: t.choices.map((c) => ({ id: c.id, name: c.display_name ?? c.external_id })), ctx: t.ctx };
+  const g = new G(meta, cubes, p30, { overrides, qualified: true, serviceArea: area, users: null });
+  return { g, wins: quickWins(g), meta };
 }

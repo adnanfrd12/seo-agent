@@ -100,3 +100,23 @@ export async function gscPage(sp: SearchParams): Promise<GscView | null> {
   const wins = gscQuickWins(new G(meta, cubes, p28, s, inv, insp, sitemaps ?? []));
   return { state: "ok", clientName: client.name, clientId: client.id, g, wins, period, settingsSource: src, ctx: t.ctx };
 }
+
+/**
+ * Session-free: the last 28 days of Search Console for one client (from the synced cubes) and its rule-based quick
+ * wins. Used by the AI quick wins engine and the nightly run. Returns null when Search Console isn't connected.
+ */
+export async function gscWinsFor(admin: ReturnType<typeof createAdminClient>, clientId: string) {
+  const t = await gscxTarget(admin, clientId, null);
+  if (!t?.ctx) return null;
+  let meta = await loadOne<GscMeta>(admin, clientId, t.resource.id, "meta");
+  if (!meta || isStale(meta)) meta = (await syncGscx(admin, clientId, t.resource.id, { inventory: false }).catch(() => null)) ?? meta;
+  if (!meta) return null;
+  const [cubes, inv, insp, sitemaps] = await Promise.all([
+    loadCubes(admin, clientId, t.resource.id, ALL), loadOne<InventoryRow[]>(admin, clientId, t.resource.id, "inventory"),
+    loadOne<InspState>(admin, clientId, t.resource.id, "insp"), loadOne<SitemapInfo[]>(admin, clientId, t.resource.id, "sitemaps"),
+  ]);
+  const { s } = await settingsFor(admin, clientId, inv ?? [], cubes.q.rows);
+  const p28: Period = { start: addDays(meta.end, -27), end: meta.end, days: 28, pstart: addDays(meta.end, -55), pend: addDays(meta.end, -28) };
+  const g = new G(meta, cubes, p28, s, inv, insp, sitemaps ?? []);
+  return { g, wins: gscQuickWins(g), inv: inv ?? [], site: t.resource.external_id, meta };
+}
