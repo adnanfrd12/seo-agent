@@ -168,18 +168,24 @@ export function SocialConnect({ rows, canEdit }: { rows: ConnectRow[]; canEdit: 
 }
 
 /** The connected login: profile picture (or its initial) and @username, linked to the profile when known. */
-function AccountChip({ platform, account }: { platform: Platform; account: NonNullable<ConnectRow["account"]> }) {
+/** Profile picture of a connected account; its initial when there is no picture or the platform link has expired. */
+export function AccountAvatar({ src, label, size = 28, ring }: { src: string | null | undefined; label: string; size?: number; ring?: string }) {
   const [broken, setBroken] = useState(false);
+  const style = { width: size, height: size, ...(ring ? { boxShadow: `0 0 0 2px var(--surface), 0 0 0 3.5px ${ring}` } : {}) };
+  return src && !broken
+    // eslint-disable-next-line @next/next/no-img-element -- platform CDN URL that changes; no optimisation needed for a small avatar
+    ? <img src={src} alt="" width={size} height={size} referrerPolicy="no-referrer" onError={() => setBroken(true)} style={style} className="shrink-0 rounded-full border border-border object-cover" />
+    : <span aria-hidden style={{ ...style, fontSize: Math.round(size * 0.42) }} className="grid shrink-0 place-items-center rounded-full bg-surface-muted font-semibold uppercase text-secondary">{label.replace(/^@/, "").slice(0, 1)}</span>;
+}
+
+function AccountChip({ platform, account }: { platform: Platform; account: NonNullable<ConnectRow["account"]> }) {
   const handle = account.handle?.replace(/^@/, "") ?? null;
   const label = handle ? `@${handle}` : account.name!;
   const sub = handle && account.name && account.name.replace(/^@/, "") !== handle ? account.name : null;
   const href = account.url;
   const body = (
     <>
-      {account.avatar && !broken
-        // eslint-disable-next-line @next/next/no-img-element -- platform CDN URL that changes; no optimisation needed for a 28px avatar
-        ? <img src={account.avatar} alt="" width={28} height={28} referrerPolicy="no-referrer" onError={() => setBroken(true)} className="size-7 shrink-0 rounded-full border border-border object-cover" />
-        : <span aria-hidden className="grid size-7 shrink-0 place-items-center rounded-full bg-surface-muted text-xs font-semibold uppercase text-secondary">{label.replace(/^@/, "").slice(0, 1)}</span>}
+      <AccountAvatar src={account.avatar} label={label} />
       <span className="min-w-0">
         <span className="block truncate text-[13px] font-medium">{label}</span>
         {sub && <span className="block truncate text-[11px] text-muted">{sub}</span>}

@@ -8,7 +8,7 @@ import { MetricTrend, type MetricOption } from "@/components/charts/metric-trend
 import { KpiCard, StatCard } from "@/components/dashboard/kpi-card";
 import { TabHeader } from "@/components/dashboard/tab-header";
 import { ResearchTable } from "@/components/research/research-table";
-import { ConnectOne, DisconnectOne, SocialConnect, SocialRefresh, SocialSettings } from "@/components/research/social-controls";
+import { AccountAvatar, ConnectOne, DisconnectOne, SocialConnect, SocialRefresh, SocialSettings } from "@/components/research/social-controls";
 import { resolveRange } from "@/lib/analytics/range";
 import { researchPage } from "@/lib/dataforseo/view";
 import { revalidatePath } from "@/lib/revalidate";
@@ -219,14 +219,13 @@ function PlatformSection({ p, f, row, url, connected, ready, canEdit, token, cur
   return (
     <section id={`social-${p}`} aria-label={info.label} className="scroll-mt-16 rounded-[12px] border border-border bg-surface">
       <header className="flex flex-wrap items-start justify-between gap-3 border-b border-hairline px-4 py-3 sm:px-5">
+        <div className="flex min-w-0 items-start gap-3">
+          {connected && (row?.profile.avatar || row?.profile.handle || row?.profile.name)
+            ? <span className="mt-0.5"><AccountAvatar src={row.profile.avatar} label={row.profile.handle ?? row.profile.name ?? info.label} size={40} ring={platformColor(p)} /></span>
+            : <span className="mt-[7px] size-2.5 shrink-0 rounded-full" style={{ background: platformColor(p) }} aria-hidden />}
         <div className="min-w-0">
           <div className="flex flex-wrap items-center gap-2">
-            <span className="size-2.5 rounded-full" style={{ background: platformColor(p) }} aria-hidden />
             <h3 className="text-[15px] font-semibold">{info.label}</h3>{badge}
-            {row?.profile.avatar && connected && (
-              // eslint-disable-next-line @next/next/no-img-element -- platform CDN picture, 20px
-              <img src={row.profile.avatar} alt="" width={20} height={20} referrerPolicy="no-referrer" className="size-5 rounded-full border border-border object-cover" />
-            )}
             {row?.profile.handle && connected ? <span className="text-xs text-muted">@{row.profile.handle.replace(/^@/, "")}{row.profile.name && row.profile.name.replace(/^@/, "") !== row.profile.handle.replace(/^@/, "") ? ` · ${row.profile.name}` : ""}</span>
               : row?.profile.name && <span className="text-xs text-muted">{row.profile.name}</span>}
           </div>
@@ -236,6 +235,7 @@ function PlatformSection({ p, f, row, url, connected, ready, canEdit, token, cur
             {row?.source && <span>{row.source}</span>}
             {row && <span>Read {dateLabel(row.fetchedAt.slice(0, 10))}</span>}
           </p>
+        </div>
         </div>
         {canEdit && ready && (hasData || connected) && <ConnectOne platform={p} label={connected ? "Reconnect" : "Connect"} />}
       </header>
