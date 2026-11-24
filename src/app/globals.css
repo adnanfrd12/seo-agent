@@ -108,6 +108,14 @@ body {
   -webkit-font-smoothing: antialiased;
   font-feature-settings: "cv11", "ss01";
 }
+/* signed-in dashboard: IBM Plex Sans text, Space Grotesk headings, IBM Plex Mono code (also covers dialogs and popovers) */
+html:has(.dash-fonts) {
+  --font-geist-sans: var(--font-dash-sans);
+  --font-geist-mono: var(--font-dash-mono);
+}
+html:has(.dash-fonts) body { font-feature-settings: normal; }
+html:has(.dash-fonts) :is(h1, h2, h3) { font-family: var(--font-dash-display), var(--font-dash-sans), system-ui, sans-serif; }
+
 /* numbers line up in every table and metric */
 td, th, .tabular-nums { font-variant-numeric: tabular-nums; }
 :focus-visible { outline-color: var(--accent); }

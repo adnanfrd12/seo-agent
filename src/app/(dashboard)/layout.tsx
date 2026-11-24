@@ -26,6 +26,7 @@ export default async function DashboardLayout({ children }: { children: React.Re
   if (!client) {
     return (
       <main className="flex min-h-screen items-center justify-center p-4">
+        <span hidden className="dash-fonts" />
         <form action={createFirstClient} className="w-full max-w-sm space-y-4 rounded-[10px] border border-border bg-surface p-6">
           <h1 className="text-xl font-semibold">Create your client</h1>
           <p className="text-sm text-muted">Name the client whose analytics you will track.</p>
@@ -56,6 +57,8 @@ export default async function DashboardLayout({ children }: { children: React.Re
     .maybeSingle()).data);
 
   return (
+    <>
+    <span hidden className="dash-fonts" />
     <AppShell
       sidebarTop={<SidebarClient client={client} clients={clients} lastSyncedAt={lastSync?.last_synced_at ?? null} />}
       header={<HeaderContent client={client} user={user} lastSyncedAt={lastSync?.last_synced_at ?? null} />}
@@ -63,5 +66,6 @@ export default async function DashboardLayout({ children }: { children: React.Re
       <Suspense fallback={null}><RangeMemory /><NavProgress /></Suspense>
       {children}
     </AppShell>
+    </>
   );
 }
