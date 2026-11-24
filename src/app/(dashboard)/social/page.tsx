@@ -61,7 +61,8 @@ export default async function SocialPage({ searchParams }: { searchParams: Promi
 
   const connectRows = PLATFORMS.map((p) => {
     const c = conns.find((x) => x.platform === p);
-    return { platform: p, state: c?.status === "ACTIVE" ? "connected" as const : c ? "pending" as const : "none" as const, ready: readyMap[p], note: readyMap[p] ? null : setupNote(p), lastSync: c?.status === "ACTIVE" ? rows[p]?.fetchedAt ?? null : null };
+    return { platform: p, state: c?.status === "ACTIVE" ? "connected" as const : c ? "pending" as const : "none" as const, ready: readyMap[p], note: readyMap[p] ? null : setupNote(p), lastSync: c?.status === "ACTIVE" ? rows[p]?.fetchedAt ?? null : null,
+      account: c?.status === "ACTIVE" && rows[p]?.mode === "connected" ? { handle: rows[p]!.profile.handle ?? null, name: rows[p]!.profile.name, avatar: rows[p]!.profile.avatar ?? null, url: social.profiles[p] ?? null } : null };
   });
 
   // combined figures (only what can be added up)

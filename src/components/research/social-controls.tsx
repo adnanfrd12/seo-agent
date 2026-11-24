@@ -84,7 +84,11 @@ export function SocialSettings({ profiles, tokens, linkedinOrgId }: { profiles: 
   );
 }
 
-export interface ConnectRow { platform: Platform; state: "connected" | "pending" | "none"; ready: boolean; note: string | null; lastSync?: string | null }
+export interface ConnectRow {
+  platform: Platform; state: "connected" | "pending" | "none"; ready: boolean; note: string | null; lastSync?: string | null;
+  /** who is logged in, from the last read (null until the first read finishes) */
+  account?: { handle: string | null; name: string | null; avatar: string | null; url: string | null } | null;
+}
 
 /** One Connect button per platform: the owner logs in on the platform's own page through Composio (official OAuth). */
 export function SocialConnect({ rows, canEdit }: { rows: ConnectRow[]; canEdit: boolean }) {
@@ -134,6 +138,7 @@ export function SocialConnect({ rows, canEdit }: { rows: ConnectRow[]; canEdit: 
                 : r.state === "pending" ? <span className="rounded bg-warn/15 px-1.5 py-0.5 text-[11px] text-warn">Login not finished</span>
                 : <span className="text-[11px] text-faint">Not connected</span>}
             </div>
+            {r.state === "connected" && r.account && (r.account.handle || r.account.name) && <AccountChip platform={r.platform} account={r.account} />}
             {r.ready ? (
               <div className="flex flex-wrap gap-1.5">
                 <button className={`${small} bg-accent text-accent-foreground hover:opacity-90`} disabled={pending} onClick={() => setConsent({ p: r.platform, copy: false })} aria-expanded={consent?.p === r.platform}>
@@ -160,6 +165,30 @@ export function SocialConnect({ rows, canEdit }: { rows: ConnectRow[]; canEdit: 
       {msg && <p role={msg.ok ? "status" : "alert"} className={`mt-2 text-sm ${msg.ok ? "text-positive" : "text-negative"}`}>{msg.text}</p>}
     </div>
   );
+}
+
+/** The connected login: profile picture (or its initial) and @username, linked to the profile when known. */
+function AccountChip({ platform, account }: { platform: Platform; account: NonNullable<ConnectRow["account"]> }) {
+  const [broken, setBroken] = useState(false);
+  const handle = account.handle?.replace(/^@/, "") ?? null;
+  const label = handle ? `@${handle}` : account.name!;
+  const sub = handle && account.name && account.name.replace(/^@/, "") !== handle ? account.name : null;
+  const href = account.url ?? (handle && platform === "threads" ? `https://www.threads.com/@${handle}` : handle && platform === "instagram" ? `https://www.instagram.com/${handle}/` : null);
+  const body = (
+    <>
+      {account.avatar && !broken
+        // eslint-disable-next-line @next/next/no-img-element -- platform CDN URL that changes; no optimisation needed for a 28px avatar
+        ? <img src={account.avatar} alt="" width={28} height={28} referrerPolicy="no-referrer" onError={() => setBroken(true)} className="size-7 shrink-0 rounded-full border border-border object-cover" />
+        : <span aria-hidden className="grid size-7 shrink-0 place-items-center rounded-full bg-surface-muted text-xs font-semibold uppercase text-secondary">{label.replace(/^@/, "").slice(0, 1)}</span>}
+      <span className="min-w-0">
+        <span className="block truncate text-[13px] font-medium">{label}</span>
+        {sub && <span className="block truncate text-[11px] text-muted">{sub}</span>}
+      </span>
+    </>
+  );
+  return href
+    ? <a href={href} target="_blank" rel="noopener noreferrer" title={`Connected ${PLATFORM_INFO[platform].label} account`} className="flex min-w-0 items-center gap-2 rounded-md outline-none hover:underline focus-visible:ring-2 focus-visible:ring-accent">{body}</a>
+    : <div className="flex min-w-0 items-center gap-2" title={`Connected ${PLATFORM_INFO[platform].label} account`}>{body}</div>;
 }
 
 /** Compact Connect button for one platform's section (same Composio login as the panel above). */

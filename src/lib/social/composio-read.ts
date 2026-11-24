@@ -12,6 +12,8 @@ import { findArray, pick, pickStr } from "./treg";
  */
 export interface ComposioRead {
   name: string | null; followers: number | null; following: number | null; posts: number | null;
+  /** the connected login's @username and profile picture URL, where the platform returns them */
+  handle?: string | null; avatar?: string | null;
   /** totals over the last 28 days, as returned by the platform (non-additive metrics like reach included) */
   totals: Partial<Record<MetricKey, number>>;
   series: SocialSeries;
@@ -107,11 +109,12 @@ export async function readComposio(clientId: string, p: Platform, connectedAccou
   }
 
   else if (p === "instagram") {
-    const me = (await run("INSTAGRAM_GET_USER_INFO", { ig_user_id: "me", fields: "id,username,name,followers_count,follows_count,media_count" })) as Record<string, unknown>;
+    const me = (await run("INSTAGRAM_GET_USER_INFO", { ig_user_id: "me", fields: "id,username,name,followers_count,follows_count,media_count,profile_picture_url" })) as Record<string, unknown>;
     const ig = pickStr(me, ["id"]) ?? undefined;
     if (ig) out.ids.user_id = ig;
     sameAccount(p, ctx.url, [pickStr(me, ["username"])]);
     out.name = pickStr(me, ["username", "name"]); out.followers = pick(me, ["followers_count"]); out.following = pick(me, ["follows_count"]); out.posts = pick(me, ["media_count"]);
+    out.handle = pickStr(me, ["username"]); out.avatar = pickStr(me, ["profile_picture_url"]);
     // daily reach and follower change: Instagram serves at most 30 days per call
     for (let w = 0; w < 3; w++) {
       const until = now - w * 30 * DAY_S, since = until - 30 * DAY_S;
@@ -135,10 +138,11 @@ export async function readComposio(clientId: string, p: Platform, connectedAccou
   }
 
   else if (p === "threads") {
-    const me = await run("THREADS_GET_MY_PROFILE", { user_id: "me" });
+    const me = await run("THREADS_GET_MY_PROFILE", { user_id: "me", fields: ["id", "username", "name", "threads_profile_picture_url"] });
     { const tid = pickStr(me, ["id"]); if (tid) out.ids.user_id = tid; }
     sameAccount(p, ctx.url, [pickStr(me, ["username"])]);
     out.name = pickStr(me, ["username", "name"]);
+    out.handle = pickStr(me, ["username"]); out.avatar = pickStr(me, ["threads_profile_picture_url"]);
     const fol = await soft("THREADS_GET_PROFILE_INSIGHTS", { user_id: "me", metrics: ["followers_count"] }, "Follower count");
     const fm = graphMetrics(fol).find((m) => m.name === "followers_count");
     out.followers = fm?.total ?? fm?.values.at(-1)?.value ?? (fol ? pick(fol, ["followers_count"]) : null);
