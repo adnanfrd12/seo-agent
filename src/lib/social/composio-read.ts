@@ -268,7 +268,8 @@ export async function readComposio(clientId: string, p: Platform, connectedAccou
     const ch = await run("YOUTUBE_GET_CHANNEL_STATISTICS", { mine: true, part: "snippet,statistics" });
     const item = findArray(ch, ["items", "channels"])[0] ?? (ch as Record<string, unknown>);
     { const cid = pickStr(item, ["id"]); if (cid) out.ids.channel_id = cid; }
-    out.handle = pickStr(item, ["customUrl"]); out.avatar = pickStr((item.snippet as Record<string, unknown> | undefined)?.thumbnails, ["url"]);
+    out.handle = pickStr(item, ["customUrl"]); const thumbs = (item.snippet as Record<string, unknown> | undefined)?.thumbnails as Record<string, unknown> | undefined;
+    out.avatar = pickStr(thumbs?.medium, ["url"]) ?? pickStr(thumbs?.high, ["url"]) ?? pickStr(thumbs, ["url"]); // 240px, sharp at any card size
     out.name = pickStr(item, ["title"]); out.followers = pick(item, ["subscriberCount"]); out.posts = pick(item, ["videoCount"]);
     const lv = pick(item, ["viewCount"]); if (lv != null) out.totals.lifetime_views = lv;
     const startDate = iso(Date.now() - 90 * 86_400_000), endDate = iso(Date.now() - 86_400_000);
