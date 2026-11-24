@@ -83,4 +83,16 @@ export function handleOf(url: string | null | undefined): string | null {
   } catch { return null; }
 }
 
+/** Profile URL of a connected account from its @username (null when the platform gives no username). */
+export function accountUrl(p: Platform, handle: string | null | undefined): string | null {
+  const h = handle?.trim().replace(/^@/, "");
+  if (!h) return null;
+  const e = encodeURIComponent(h);
+  return {
+    youtube: `https://www.youtube.com/@${e}`, facebook: `https://www.facebook.com/${e}`, instagram: `https://www.instagram.com/${e}/`,
+    tiktok: `https://www.tiktok.com/@${e}`, x: `https://x.com/${e}`, linkedin: `https://www.linkedin.com/company/${e}/`,
+    threads: `https://www.threads.com/@${e}`, pinterest: `https://www.pinterest.com/${e}/`,
+  }[p];
+}
+
 export type SocialProfiles = Partial<Record<Platform, string>>;

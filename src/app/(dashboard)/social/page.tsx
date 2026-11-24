@@ -16,7 +16,7 @@ import { composioReadyMap, setupNote, socialConnections, type SocialConnection }
 import { clientSocial, loadSocial, refreshSocial, tokenState, type SocialRow } from "@/lib/social/fetch";
 import { METRICS, postEngagement, type MetricKey } from "@/lib/social/metrics";
 import { combine, dailyMetrics, staleConnected, figures, followerSeries, platformColor, previousOf, seriesBy, withPrevious, type Period, type PlatformFigures } from "@/lib/social/overview";
-import { PLATFORM_INFO, PLATFORMS, type Platform } from "@/lib/social/platforms";
+import { accountUrl, PLATFORM_INFO, PLATFORMS, type Platform } from "@/lib/social/platforms";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { createClient } from "@/lib/supabase/server";
 
@@ -62,7 +62,7 @@ export default async function SocialPage({ searchParams }: { searchParams: Promi
   const connectRows = PLATFORMS.map((p) => {
     const c = conns.find((x) => x.platform === p);
     return { platform: p, state: c?.status === "ACTIVE" ? "connected" as const : c ? "pending" as const : "none" as const, ready: readyMap[p], note: readyMap[p] ? null : setupNote(p), lastSync: c?.status === "ACTIVE" ? rows[p]?.fetchedAt ?? null : null,
-      account: c?.status === "ACTIVE" && rows[p]?.mode === "connected" ? { handle: rows[p]!.profile.handle ?? null, name: rows[p]!.profile.name, avatar: rows[p]!.profile.avatar ?? null, url: social.profiles[p] ?? null } : null };
+      account: c?.status === "ACTIVE" && rows[p]?.mode === "connected" ? { handle: rows[p]!.profile.handle ?? null, name: rows[p]!.profile.name, avatar: rows[p]!.profile.avatar ?? null, url: accountUrl(p, rows[p]!.profile.handle) } : null };
   });
 
   // combined figures (only what can be added up)
@@ -210,6 +210,11 @@ function PlatformSection({ p, f, row, url, connected, ready, canEdit, token, cur
     if (!metrics.length && !Object.keys(row!.totals ?? {}).length && row!.profile.views != null) tiles.push({ label: "Views", value: nf(row!.profile.views), sub: "Latest read" });
   }
   const postsShown = row ? (f?.postsIn.length ? f.postsIn : row.posts) : [];
+  // a connected section shows the logged-in account; the saved profile link only when it is a different account
+  const own = connected && row?.mode === "connected" ? accountUrl(p, row.profile.handle) : null;
+  const link = connected ? own : url;
+  const norm = (u: string) => u.replace(/^https?:\/\/(www\.)?/, "").replace(/\/$/, "").toLowerCase();
+  const savedDiffers = connected && url && (!own || norm(url) !== norm(own)) ? url : null;
 
   return (
     <section id={`social-${p}`} aria-label={info.label} className="scroll-mt-16 rounded-[12px] border border-border bg-surface">
@@ -218,10 +223,16 @@ function PlatformSection({ p, f, row, url, connected, ready, canEdit, token, cur
           <div className="flex flex-wrap items-center gap-2">
             <span className="size-2.5 rounded-full" style={{ background: platformColor(p) }} aria-hidden />
             <h3 className="text-[15px] font-semibold">{info.label}</h3>{badge}
-            {row?.profile.name && <span className="text-xs text-muted">{row.profile.name}</span>}
+            {row?.profile.avatar && connected && (
+              // eslint-disable-next-line @next/next/no-img-element -- platform CDN picture, 20px
+              <img src={row.profile.avatar} alt="" width={20} height={20} referrerPolicy="no-referrer" className="size-5 rounded-full border border-border object-cover" />
+            )}
+            {row?.profile.handle && connected ? <span className="text-xs text-muted">@{row.profile.handle.replace(/^@/, "")}{row.profile.name && row.profile.name.replace(/^@/, "") !== row.profile.handle.replace(/^@/, "") ? ` · ${row.profile.name}` : ""}</span>
+              : row?.profile.name && <span className="text-xs text-muted">{row.profile.name}</span>}
           </div>
           <p className="mt-0.5 flex flex-wrap gap-x-3 text-xs text-muted">
-            {url && <a href={url} target="_blank" rel="noreferrer" className="inline-flex items-center gap-1 hover:underline">{url.replace(/^https?:\/\/(www\.)?/, "").replace(/\/$/, "")}<ExternalLink className="size-3" aria-hidden /></a>}
+            {link && <a href={link} target="_blank" rel="noreferrer" className="inline-flex items-center gap-1 hover:underline">{link.replace(/^https?:\/\/(www\.)?/, "").replace(/\/$/, "")}<ExternalLink className="size-3" aria-hidden /></a>}
+            {savedDiffers && <span title="The profile link saved in Social settings points to another account than the one connected">Saved link: {savedDiffers.replace(/^https?:\/\/(www\.)?/, "").replace(/\/$/, "")}</span>}
             {row?.source && <span>{row.source}</span>}
             {row && <span>Read {dateLabel(row.fetchedAt.slice(0, 10))}</span>}
           </p>

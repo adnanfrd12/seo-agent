@@ -399,7 +399,7 @@ export async function refreshPlatform(ctx: Ctx, p: Platform, social?: Awaited<Re
   const prev = await previous(ctx.admin, ctx.clientId, p);
   const url = s.profiles[p] ?? null;
   const now = new Date().toISOString();
-  const base: SocialRow = { platform: p, status: "ok", source: null, url, fetchedAt: now, profile: prev?.profile ?? { name: null, followers: null, posts: null, views: null, likes: null }, posts: prev?.posts ?? [], rankings: prev?.rankings, history: prev?.history ?? [], cost: 0, series: prev?.series, totals: prev?.totals, demographics: prev?.demographics, notes: prev?.notes };
+  const base: SocialRow = { platform: p, status: "ok", mode: prev?.mode, source: null, url, fetchedAt: now, profile: prev?.profile ?? { name: null, followers: null, posts: null, views: null, likes: null }, posts: prev?.posts ?? [], rankings: prev?.rankings, history: prev?.history ?? [], cost: 0, series: prev?.series, totals: prev?.totals, demographics: prev?.demographics, notes: prev?.notes };
   let row: SocialRow;
   if (!url && p !== "instagram" && !acc) row = { ...base, status: "no_profile" };
   else {

@@ -173,7 +173,7 @@ function AccountChip({ platform, account }: { platform: Platform; account: NonNu
   const handle = account.handle?.replace(/^@/, "") ?? null;
   const label = handle ? `@${handle}` : account.name!;
   const sub = handle && account.name && account.name.replace(/^@/, "") !== handle ? account.name : null;
-  const href = account.url ?? (handle && platform === "threads" ? `https://www.threads.com/@${handle}` : handle && platform === "instagram" ? `https://www.instagram.com/${handle}/` : null);
+  const href = account.url;
   const body = (
     <>
       {account.avatar && !broken
