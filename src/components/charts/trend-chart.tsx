@@ -2,7 +2,7 @@
 
 import { useId, useState } from "react";
 import {
-  Area, Bar, CartesianGrid, ComposedChart, Line, ResponsiveContainer, Tooltip, XAxis, YAxis,
+  Area, Bar, CartesianGrid, ComposedChart, Line, ReferenceArea, ResponsiveContainer, Tooltip, XAxis, YAxis,
 } from "recharts";
 import { ChartTypeToggle, type ChartKind } from "./chart-type-toggle";
 
@@ -32,7 +32,7 @@ const shortDate = (iso: string) =>
  */
 export function TrendChart({
   title, data, format = "int", seriesLabel, previousLabel = "Previous period", reverseY = false, toolbar, source,
-  variant, color = "var(--series)", compact = false,
+  variant, color = "var(--series)", compact = false, marker,
 }: {
   title: string;
   data: TrendPoint[];
@@ -50,6 +50,8 @@ export function TrendChart({
   color?: string;
   /** static rendering for print/PDF: no Table toggle, shorter plot */
   compact?: boolean;
+  /** shade the days from this date to the end, e.g. recent days that may still change */
+  marker?: { from: string; label: string };
 }) {
   const [table, setTable] = useState(false);
   const id = useId();
@@ -90,6 +92,11 @@ export function TrendChart({
           <li className="flex items-center gap-1.5">
             <span className="inline-block w-4 border-t-2 border-dashed border-series-prev" aria-hidden /> {previousLabel}
           </li>
+          {marker && (
+            <li className="flex items-center gap-1.5">
+              <span className="inline-block h-2.5 w-3 rounded-sm bg-surface-muted ring-1 ring-border" aria-hidden /> {marker.label}
+            </li>
+          )}
         </ul>
       )}
 
@@ -127,6 +134,9 @@ export function TrendChart({
                 </linearGradient>
               </defs>
               <CartesianGrid stroke="var(--hairline)" vertical={false} />
+              {marker && data.some((d) => d.date >= marker.from) && (
+                <ReferenceArea x1={marker.from} x2={data[data.length - 1].date} fill="var(--surface-muted)" fillOpacity={0.9} ifOverflow="extendDomain" />
+              )}
               <XAxis
                 dataKey="date" tickFormatter={shortDate} tick={{ fill: "var(--faint)", fontSize: 11 }}
                 tickLine={false} axisLine={false} minTickGap={40} tickMargin={8}

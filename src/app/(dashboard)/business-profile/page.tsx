@@ -1,7 +1,7 @@
 import { ShareDonut, StackedTimeBars } from "@/components/charts/analytics-charts";
 import { AiScreenTools } from "@/components/aiqw/screen-tools";
-import { BarList } from "@/components/charts/bar-list";
 import { MetricTrend } from "@/components/charts/metric-trend";
+import { TrendChart, type TrendPoint } from "@/components/charts/trend-chart";
 import { FilterSelect } from "@/components/dashboard/filter-select";
 import { KpiCard } from "@/components/dashboard/kpi-card";
 import { EmptyState } from "@/components/dashboard/page-header";
@@ -15,7 +15,10 @@ import { resolveRange } from "@/lib/analytics/range";
 import { resourceOptions, resourceScope } from "@/lib/analytics/resource-scope";
 import { dailySeries, type TrendData } from "@/lib/analytics/trend";
 import { first, type SearchParams } from "@/lib/analytics/url";
+import { ExternalLink, MapPin } from "lucide-react";
+import { shiftDays } from "@/lib/analytics/range";
 import { LbmSections } from "./lbm-sections";
+import { ViewsByWhere } from "./views-by-where";
 
 const PATH = "/business-profile";
 
@@ -57,7 +60,8 @@ export default async function BusinessProfilePage({ searchParams }: { searchPara
   const args = { p_client_id: client.id, p_start: range.start, p_end: range.end };
   const [summary, trend, locations, conn] = await Promise.all([
     supabase.rpc("get_gbp_summary", { ...args, p_resource_id: scope.gbpPick?.id ?? null }),
-    supabase.rpc("get_analytics_trends", { ...args, p_provider: "gbp", p_granularity: "day", p_compare: compare }),
+    // always with the previous period: the actions chart compares against it; the other charts only when asked
+    supabase.rpc("get_analytics_trends", { ...args, p_provider: "gbp", p_granularity: "day", p_compare: true }),
     supabase.rpc("get_gbp_locations", args),
     supabase.from("integration_connections").select("last_synced_at, last_error, status").eq("client_id", client.id).in("provider", ["gbp", "lbm"])
       .eq("status", "connected").order("last_synced_at", { ascending: false, nullsFirst: false }).limit(1).maybeSingle(),
@@ -94,7 +98,11 @@ export default async function BusinessProfilePage({ searchParams }: { searchPara
     );
   }
   const s = summary.data as Summary;
-  const t = trend.data as TrendData;
+  const tAll = trend.data as TrendData;
+  // Google reports a few days late: charts stop at the last reported day instead of dropping to zero after it
+  const lastDay = tAll.current.length ? tAll.current[tAll.current.length - 1].date : null;
+  const shown = { start: range.start, end: lastDay && lastDay < range.end ? lastDay : range.end };
+  const t: TrendData = compare ? tAll : { current: tAll.current, previous: [] };
   const locs = (locations.data ?? []) as LocationRow[];
 
   if (!s.current.has_data) {
@@ -125,29 +133,32 @@ export default async function BusinessProfilePage({ searchParams }: { searchPara
     movement("Direction requests", pick(cur, "direction_requests"), pick(prev, "direction_requests"), { fmt: fmtInt, minBase: 5 }),
     Boolean(impressions) && mobileShare >= 0.6 && { tone: "info" as const, title: `${Math.round(mobileShare * 100)}% of profile views are on phones`, detail: "Most of your local customers are on the move.", action: "Make sure the call button, hours and address are correct, and the website loads fast on mobile." },
   ]);
+  // actions first (as the "Actions" card leads the row), then where the profile was seen
   const kpis: { label: string; k: string; hint?: string }[] = [
+    { label: "Call button clicks", k: "call_clicks", hint: "Clicks on the call button. Not the same as completed calls." },
+    { label: "Website clicks", k: "website_clicks" },
+    { label: "Direction requests", k: "direction_requests" },
     { label: "Profile views", k: "impressions", hint: "Times the profile was shown on Google Search and Maps (unique viewers per day)." },
     { label: "Search views", k: "impressions_search" },
     { label: "Maps views", k: "impressions_maps" },
-    { label: "Website clicks", k: "website_clicks" },
-    { label: "Call button clicks", k: "call_clicks", hint: "Clicks on the call button. Not the same as completed calls." },
-    { label: "Direction requests", k: "direction_requests" },
   ];
   const extras: { label: string; k: string; hint?: string }[] = [
     { label: "Bookings", k: "bookings" }, { label: "Messaging clicks", k: "messaging_clicks" }, { label: "Message conversations", k: "conversations" },
     { label: "Menu clicks", k: "food_menu_clicks" },
   ].filter((m) => pick(cur, m.k));
   const b = s.breakdown;
-  const split = [
-    { label: "Mobile · Search", value: toNum(b?.mobile_search) ?? 0 },
-    { label: "Mobile · Maps", value: toNum(b?.mobile_maps) ?? 0 },
-    { label: "Desktop · Search", value: toNum(b?.desktop_search) ?? 0 },
-    { label: "Desktop · Maps", value: toNum(b?.desktop_maps) ?? 0 },
-  ].sort((x, y) => y.value - x.value);
-  const totalSplit = split.reduce((a, x) => a + x.value, 0);
-  const [web, calls, dirs] = ["website_clicks", "call_clicks", "direction_requests"].map((k) => dailySeries(t, k, range));
+  const [web, calls, dirs] = ["website_clicks", "call_clicks", "direction_requests"].map((k) => dailySeries(t, k, shown));
   const actionDays = web.map((p, i) => ({ date: p.date, website_clicks: p.value ?? 0, call_clicks: calls[i]?.value ?? 0, direction_requests: dirs[i]?.value ?? 0 }));
   const dayCount = actionDays.length;
+  // actions per day, current against previous, through the last day Google has reported
+  const sumActions = (r: Record<string, unknown> | undefined) => r ? (toNum(r.website_clicks) ?? 0) + (toNum(r.call_clicks) ?? 0) + (toNum(r.direction_requests) ?? 0) : 0;
+  const curBy = new Map(tAll.current.map((r) => [r.date, r])), prevBy = new Map(tAll.previous.map((r) => [r.date, r]));
+  const actionsPerDay: TrendPoint[] = [];
+  if (lastDay) for (let d = range.start; d <= lastDay && d <= range.end; d = shiftDays(d, 1)) {
+    actionsPerDay.push({ date: d, value: sumActions(curBy.get(d)), previous: tAll.previous.length ? sumActions(prevBy.get(d)) : null });
+  }
+  const recentFrom = lastDay ? shiftDays(lastDay, -2) : null; // the latest three days
+  const asOf = (iso: string) => new Date(`${iso}T00:00:00Z`).toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric", timeZone: "UTC" });
   const picked = s.locations.find((l) => l.id === scope.gbpPick?.id) ?? (s.locations.length === 1 ? s.locations[0] : null);
 
   return (
@@ -156,9 +167,27 @@ export default async function BusinessProfilePage({ searchParams }: { searchPara
       <RangeSelector path={PATH} sp={sp} range={range} />
       {filters}
 
+      {(picked?.metadata?.address || lastDay) && (
+        <div className="mb-4 flex flex-wrap items-center justify-between gap-x-4 gap-y-2 rounded-[10px] border border-border bg-surface px-4 py-2.5 text-sm">
+          {picked?.metadata?.address ? (
+            <p className="flex min-w-0 items-center gap-2">
+              <MapPin className="size-4 shrink-0 text-muted" aria-hidden />
+              <span className="truncate">{picked.metadata.address}</span>
+              {picked.metadata.maps_uri?.startsWith("https://") && (
+                <a href={picked.metadata.maps_uri} target="_blank" rel="noopener noreferrer" aria-label="Open on Google Maps" className="shrink-0 text-muted hover:text-foreground"><ExternalLink className="size-3.5" /></a>
+              )}
+              {picked.metadata.category && <span className="hidden shrink-0 rounded-md bg-surface-muted px-1.5 py-0.5 text-[11px] text-secondary sm:inline">{picked.metadata.category}</span>}
+            </p>
+          ) : <span />}
+          {lastDay && <p className="text-xs text-muted">Data through {asOf(lastDay)} · Google reports Business Profile data a few days late</p>}
+        </div>
+      )}
+
       <Highlights items={hl} />
 
-      <section aria-label="Key metrics" className="grid grid-cols-2 gap-3 lg:grid-cols-3">
+      <section aria-label="Key metrics" className="grid grid-cols-2 gap-3 lg:grid-cols-4">
+        <KpiCard label="Actions" source="GBP" format={fmtInt} hint="Website clicks, call button clicks and direction requests from the profile, added up."
+          value={actions} previous={prev?.has_data ? (pick(prev, "call_clicks") ?? 0) + (pick(prev, "website_clicks") ?? 0) + (pick(prev, "direction_requests") ?? 0) : null} />
         {[...kpis, ...extras].map((m) => (
           <KpiCard key={m.k} label={m.label} hint={m.hint} source="GBP" format={fmtInt}
             value={pick(cur, m.k)} previous={pick(prev, m.k)} mom={pick(mom, m.k)} yoy={pick(yoy, m.k)} />
@@ -169,16 +198,21 @@ export default async function BusinessProfilePage({ searchParams }: { searchPara
         {impressions ? ` · ${fmtPercent(actions / impressions, 2)} of profile views` : ""}
       </p>
 
-      <div className="mt-6 grid gap-4 lg:grid-cols-2">
+      <div className="mt-6">
+        <TrendChart title="Actions per day" source="GBP" seriesLabel="Actions" variant="line" color="var(--foreground)" data={actionsPerDay}
+          marker={recentFrom ? { from: recentFrom, label: "Latest days, may still change" } : undefined} />
+      </div>
+
+      <div className="mt-4 grid gap-4 lg:grid-cols-2">
         <MetricTrend title="Visibility" source="GBP" options={[
-          { key: "impressions", label: "All views", data: dailySeries(t, "impressions", range) },
-          { key: "impressions_search", label: "Search", data: dailySeries(t, "impressions_search", range) },
-          { key: "impressions_maps", label: "Maps", data: dailySeries(t, "impressions_maps", range) },
+          { key: "impressions", label: "All views", data: dailySeries(t, "impressions", shown) },
+          { key: "impressions_search", label: "Search", data: dailySeries(t, "impressions_search", shown) },
+          { key: "impressions_maps", label: "Maps", data: dailySeries(t, "impressions_maps", shown) },
         ]} />
         <MetricTrend title="Customer actions" source="GBP" options={[
-          { key: "website_clicks", label: "Website", data: dailySeries(t, "website_clicks", range) },
-          { key: "call_clicks", label: "Calls", data: dailySeries(t, "call_clicks", range) },
-          { key: "direction_requests", label: "Directions", data: dailySeries(t, "direction_requests", range) },
+          { key: "website_clicks", label: "Website", data: dailySeries(t, "website_clicks", shown) },
+          { key: "call_clicks", label: "Calls", data: dailySeries(t, "call_clicks", shown) },
+          { key: "direction_requests", label: "Directions", data: dailySeries(t, "direction_requests", shown) },
         ]} />
       </div>
 
@@ -189,8 +223,7 @@ export default async function BusinessProfilePage({ searchParams }: { searchPara
       </div>
 
       <div className="mt-6 grid grid-cols-1 gap-4 lg:grid-cols-2">
-        <BarList title="Where people saw the profile" valueLabel="Views"
-          items={split.map((x) => ({ ...x, detail: totalSplit ? fmtPercent(x.value / totalSplit, 1) : undefined }))} />
+        <ViewsByWhere split={{ mobile_maps: toNum(b?.mobile_maps) ?? 0, desktop_maps: toNum(b?.desktop_maps) ?? 0, mobile_search: toNum(b?.mobile_search) ?? 0, desktop_search: toNum(b?.desktop_search) ?? 0 }} />
         <ShareDonut title="What people did next" sub="Website, call and direction actions in this period" centerLabel="actions" keepOrder
           items={[{ label: "Website", value: pick(cur, "website_clicks") ?? 0 }, { label: "Calls", value: pick(cur, "call_clicks") ?? 0 }, { label: "Directions", value: pick(cur, "direction_requests") ?? 0 }]} />
       </div>
