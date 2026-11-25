@@ -7,6 +7,7 @@ import { ConnectClarity, ReviewForm } from "../clarity/clarity-forms";
 import { LbmPanel } from "./lbm-panel";
 import { LbmBulkSetup } from "./lbm-bulk";
 import { BingPanel } from "./bing-panel";
+import { ClaudeCard } from "./claude-card";
 import { DataForSeoCard } from "./dataforseo-card";
 import { ScheduledJobs } from "./scheduled-jobs";
 import { PROVIDER_META, type ProviderId } from "@/lib/integrations/providers";
@@ -99,6 +100,7 @@ export default async function IntegrationsPage({
       {fresh.length > 0 && <div className="mt-4"><Freshness title="Data freshness" sub="Time since each connected source last synced · Search Console and Business Profile data itself lags a few days" rows={fresh} /></div>}
       {canEdit && <ScheduledJobs />}
       <DataForSeoCard canEdit={canEdit} clientId={client.id} />
+      <ClaudeCard canEdit={canEdit} clientId={client.id} timezone={client.timezone} />
       <section className="mt-4 rounded-[10px] border border-border bg-surface p-5" aria-labelledby="bing-title">
         <div className="flex flex-wrap items-start justify-between gap-3">
           <div>
