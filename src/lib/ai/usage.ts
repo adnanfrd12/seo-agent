@@ -1,6 +1,8 @@
 import "server-only";
 import type { SupabaseClient } from "@supabase/supabase-js";
 import { todayIn } from "@/lib/analytics/range";
+import { readSettings } from "@/lib/aiqw/settings";
+import { claudeMonthSpend } from "@/lib/aiqw/store";
 
 /**
  * Claude spend for one client, from every place the dashboard records it: Nova messages, roadmap generations,
@@ -15,6 +17,13 @@ const dayIn = (iso: string, tz: string) => new Intl.DateTimeFormat("en-CA", { ti
 
 export type UsageFeature = "blog_geo" | "toolkit_content" | "toolkit_brief" | "toolkit_comparison";
 const FEATURE_LABEL: Record<string, string> = { blog_geo: "Blog post reading", toolkit_content: "SEO Toolkit", toolkit_brief: "SEO Toolkit", toolkit_comparison: "SEO Toolkit" };
+
+/** The client's monthly Claude budget (AI settings) and what is left of it this month (UTC). */
+export async function claudeBudget(admin: SupabaseClient, clientId: string) {
+  const [{ data }, spent] = await Promise.all([admin.from("clients").select("settings").eq("id", clientId).maybeSingle(), claudeMonthSpend(admin, clientId)]);
+  const budget = readSettings(((data?.settings ?? {}) as Record<string, unknown>).ai_qw).monthlyBudget;
+  return { budget, spent, left: Math.max(0, budget - spent) };
+}
 
 /** Logs one run's Claude cost (features without a run table of their own). Never throws: a failed log must not fail the run. */
 export async function recordClaudeUse(admin: SupabaseClient, clientId: string, feature: UsageFeature, model: string, cost: number, calls = 1) {

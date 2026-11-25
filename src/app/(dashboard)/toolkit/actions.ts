@@ -3,7 +3,7 @@
 import { revalidatePath } from "@/lib/revalidate";
 import { getSession } from "@/lib/analytics/client-context";
 import { aiErrorMessage } from "@/lib/ai/claude";
-import { recordClaudeUse } from "@/lib/ai/usage";
+import { claudeBudget, recordClaudeUse } from "@/lib/ai/usage";
 import { BudgetError } from "@/lib/dataforseo/budget";
 import { DfsError } from "@/lib/dataforseo/client";
 import { resolveTarget } from "@/lib/dataforseo/research";
@@ -32,6 +32,11 @@ export async function runToolkit(slug: ToolSlug, input: string): Promise<Result>
   const value = (input ?? "").slice(0, 300).trim();
   try {
     let message: string;
+    // the AI tools count toward the client's monthly Claude budget
+    if (slug === "seo-content" || slug === "seo-content-brief" || slug === "seo-competitor-pages") {
+      const b = await claudeBudget(admin, client.id);
+      if (b.left <= 0) return { ok: false, error: `The monthly Claude budget ($${b.budget}) is used up. An owner can raise it in AI Quick Wins → Settings.` };
+    }
     switch (slug) {
       case "seo-page": {
         const url = ownUrl(value, target.domain);

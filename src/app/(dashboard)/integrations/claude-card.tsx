@@ -55,7 +55,7 @@ export async function ClaudeCard({ canEdit, clientId, timezone }: { canEdit: boo
               <div>
                 <p className="flex items-baseline justify-between gap-3"><span className="font-medium">Monthly budget</span><span className="tabular-nums text-secondary">{usd(budgetUsed)} of {usd(budget)} used</span></p>
                 <div className="mt-1.5 h-1.5 overflow-hidden rounded-full bg-surface-muted"><div className={pct >= 90 ? "h-full rounded-full bg-negative" : "h-full rounded-full bg-accent"} style={{ width: `${pct}%` }} /></div>
-                <p className="mt-1 text-xs text-muted">Nova and AI runs stop when the budget is used up. Change the model, effort and budget in <Link href="/ai-quick-wins/settings" className="text-foreground underline decoration-border-strong underline-offset-2 hover:decoration-foreground">AI and data settings</Link>.</p>
+                <p className="mt-1 text-xs text-muted">When it&apos;s used up, Nova, AI runs, the toolkit&apos;s AI tools and blog post reading pause until next month. Change the model, effort and budget in <Link href="/ai-quick-wins/settings" className="text-foreground underline decoration-border-strong underline-offset-2 hover:decoration-foreground">AI and data settings</Link>.</p>
               </div>
               <div>
                 <p className="font-medium">By feature</p>
@@ -76,7 +76,7 @@ export async function ClaudeCard({ canEdit, clientId, timezone }: { canEdit: boo
               keys={[{ key: "cost", label: "Claude", color: "var(--series)" }]}
               columns={usage.perDay.map((d) => ({ label: new Date(`${d.day}T00:00:00Z`).toLocaleDateString("en-US", { month: "short", day: "numeric", timeZone: "UTC" }), values: { cost: d.cost } }))} />
           </div>
-          <p className="mt-3 text-xs text-muted">Every Claude feature records its own cost when it runs: Nova, the roadmap, AI quick wins, insights, strategy, SEO Coach, PDF report reading, blog post reading and the SEO Toolkit. Blog and toolkit costs are recorded from Nov 25, 2026. The monthly budget limits Nova and the AI runs; blog reading and the toolkit have their own per-run limits.</p>
+          <p className="mt-3 text-xs text-muted">Every Claude feature records its own cost when it runs: Nova, the roadmap, AI quick wins, insights, strategy, SEO Coach, PDF report reading, blog post reading and the SEO Toolkit. Blog and toolkit costs are recorded from Nov 25, 2026. All of it counts toward the monthly budget.</p>
         </>
       )}
     </section>

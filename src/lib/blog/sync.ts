@@ -1,7 +1,7 @@
 import "server-only";
 import type { SupabaseClient } from "@supabase/supabase-js";
 import { aiErrorMessage } from "@/lib/ai/claude";
-import { recordClaudeUse } from "@/lib/ai/usage";
+import { claudeBudget, recordClaudeUse } from "@/lib/ai/usage";
 import { loadAudit } from "@/lib/dataforseo/audit";
 import { localIdentity } from "@/lib/dataforseo/local";
 import { resolveTarget } from "@/lib/dataforseo/research";
@@ -52,6 +52,14 @@ type SyncOpts = { deadline?: number; force?: boolean; geo?: boolean; maxCost?: n
 
 export async function syncBlog(admin: SupabaseClient, clientId: string, opts: SyncOpts = {}): Promise<BlogRun> {
   const run: BlogRun = { source: null, listed: 0, fetched: 0, removed: 0, geoRead: 0, geoPending: 0, cost: 0, errors: [], stopped: null };
+  // reading posts with Claude counts toward the client's monthly Claude budget: never spend more than is left
+  if (opts.geo !== false && process.env.ANTHROPIC_API_KEY) {
+    const b = await claudeBudget(admin, clientId).catch(() => null);
+    if (b && b.left <= 0) {
+      opts = { ...opts, geo: false };
+      run.errors.push(`Reading posts with AI is paused: the monthly Claude budget ($${b.budget}) is used up. Posts still sync; raise the budget in AI Quick Wins → Settings.`);
+    } else if (b) opts = { ...opts, maxCost: Math.min(opts.maxCost ?? RUN_COST_LIMIT, b.left) };
+  }
   try {
     return await syncInto(run, admin, clientId, opts);
   } finally {
