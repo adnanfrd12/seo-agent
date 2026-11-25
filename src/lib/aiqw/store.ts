@@ -37,7 +37,7 @@ export async function listRuns(admin: SupabaseClient, clientId: string, limit = 
 /** A run still in progress (started less than 6 minutes ago: older "running" rows were cut off by the function limit). */
 export const activeRun = (runs: RunState[]) => runs.find((r) => r.status === "running" && Date.now() - Date.parse(r.startedAt) < 6 * 60_000) ?? null;
 
-/** Claude spend this calendar month (UTC) for one client: logged runs plus "Ask Claude" answers. */
+/** Claude spend this calendar month (UTC) for one client: logged runs plus Nova answers and roadmap generations. */
 export async function claudeMonthSpend(admin: SupabaseClient, clientId: string): Promise<number> {
   const since = new Date(); since.setUTCDate(1); since.setUTCHours(0, 0, 0, 0);
   const month = since.toISOString().slice(0, 7);
@@ -45,7 +45,7 @@ export async function claudeMonthSpend(admin: SupabaseClient, clientId: string):
   return (data ?? []).filter((r) => !String(r.params_hash).startsWith("run:") || String((r.data as RunState).startedAt ?? "") >= since.toISOString()).reduce((a, r) => a + Number(r.cost ?? 0), 0);
 }
 
-/** Adds one "Ask Claude" answer's cost to this month's total (one row per month: questions and cost). */
+/** Adds one Nova answer's or roadmap generation's cost to this month's total (one row per month: calls and cost). */
 export async function recordAskCost(admin: SupabaseClient, clientId: string, cost: number) {
   const key = `ask:${new Date().toISOString().slice(0, 7)}`;
   const cur = await get<{ questions: number; cost: number }>(admin, clientId, key);

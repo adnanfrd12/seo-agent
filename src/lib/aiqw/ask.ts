@@ -10,7 +10,7 @@ import { loadItems } from "./store";
 import { SOCIAL_SOURCES } from "./types";
 
 /**
- * "💬 Ask Claude": the data a screen shows, trimmed to the top rows, as JSON blocks. Built on the server from the
+ * Nova's "Ask about this page" (and its per-source data views): the data a screen shows, trimmed to the top rows, as JSON blocks. Built on the server from the
  * stored data (never from what the browser sends), aggregated only: no personal data, no tokens.
  */
 export interface DataBlock { name: string; source: string; rows: unknown }
@@ -74,10 +74,3 @@ export async function screenData(admin: SupabaseClient, clientId: string, screen
   if (items.length) out.push({ name: `Open quick wins for ${screenLabel(screen)}`, source: "Quick wins engine", rows: items.slice(0, 10).map((w) => ({ rank: w.rank, title: w.title, page: w.page_url, gain: `${w.computed_gain} ${w.gain_unit}`, effort: w.effort })) });
   return out;
 }
-
-export const ASK_SYSTEM = `You answer questions about one business's website, search, analytics, local and social performance inside its reporting portal.
-Rules:
-- Answer only from the data blocks provided with the question. Quote the numbers you use, with their period.
-- If the data can't answer the question, say so plainly and name the data that would be needed.
-- Never invent numbers, pages, queries or causes; when you suggest a likely cause, say it is a hypothesis and what would confirm it.
-- Be brief: a direct answer first, then up to 5 short bullet points. Plain language for a business owner.`;

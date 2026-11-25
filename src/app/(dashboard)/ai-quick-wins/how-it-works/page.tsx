@@ -25,7 +25,7 @@ const BUTTONS = [
   { b: "✨ Generate quick wins", where: "AI Quick Wins page. Whole site, all sources. Shows the last run and what changed since (new, resolved, still open).", href: "/ai-quick-wins" },
   { b: "✨ Quick wins for this screen", where: "Bottom of the GA4 and Search Console screens. Re-runs only that screen's rules, so it's fast and cheap." },
   { b: "✨ Analyze this page", where: "Scope “One page” with Deep depth: one page, all sources, today's Google results for its top queries through DataForSEO.", href: "/ai-quick-wins" },
-  { b: "💬 Ask Claude", where: "Bottom of the GA4 and Search Console screens. Claude answers from the screen's data, which is sent with the question, and quotes the numbers." },
+  { b: "✨ Ask Nova about this page", where: "Nova, bottom right of every dashboard page. “Ask about this page” reads the data that screen shows and answers from it, quoting the numbers." },
   { b: "⏰ Nightly run", where: "AI and data settings. Every night with the Message Batches API (half price), ready for the morning email.", href: "/ai-quick-wins/settings" },
   { b: "⬇ Import data", where: "AI and data settings. Re-syncs Search Console and GA4 and queues Bing, Clarity and Business Profile, then offers to regenerate.", href: "/ai-quick-wins/settings" },
 ];

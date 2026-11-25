@@ -28,7 +28,7 @@ export interface Brief {
   items: EvidenceItem[];
 }
 
-/** Detailed views Claude can request. `screen` reuses the per-screen data blocks the "Ask Claude" feature uses. */
+/** Detailed views Claude can request. `screen` reuses the per-screen data blocks behind each screen's AI quick wins. */
 export const DATA_VIEWS: { key: string; label: string; screen?: string; evidence?: RegExp }[] = [
   { key: "search_console_overview", label: "Search Console totals, top queries and top pages (28 days vs previous)", screen: "gsc:overview" },
   { key: "search_console_queries", label: "Search Console queries in detail", screen: "gsc:queries" },
