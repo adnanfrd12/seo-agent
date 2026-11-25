@@ -51,7 +51,7 @@ export function findArray(v: unknown, keys: string[], depth = 0): Record<string,
 
 export interface TregProfile {
   name: string | null; followers: number | null; following: number | null; posts: number | null; likes: number | null;
-  recent: { id: string; title: string; url: string | null; date: string | null; views: number | null; likes: number | null; comments: number | null; shares: number | null }[];
+  recent: { id: string; title: string; text?: string | null; image?: string | null; url: string | null; date: string | null; views: number | null; likes: number | null; comments: number | null; shares: number | null }[];
   cost: number;
 }
 
@@ -79,6 +79,8 @@ export async function tregProfile(p: Platform, url: string): Promise<TregProfile
   const posts = findArray(j, ["posts", "items", "threads", "videos", "tweets"]).slice(0, 20).map((x, i) => ({
     id: String(x.id ?? x.code ?? x.url ?? i),
     title: String(pickStr(x, ["text", "caption", "title", "description"]) ?? "").slice(0, 160),
+    text: pickStr(x, ["text", "caption", "description", "title"])?.slice(0, 1200) ?? null,
+    image: pickStr(x, ["thumbnail_url", "thumbnail", "display_url", "image_url", "cover_image_url", "cover", "media_url"]),
     url: pickStr(x, ["url", "permalink", "link"]),
     date: (pickStr(x, ["time", "timestamp", "date", "created_at", "taken_at"]) ?? "").slice(0, 10) || null,
     views: pick(x, ["views", "plays", "play_count", "view_count"]),

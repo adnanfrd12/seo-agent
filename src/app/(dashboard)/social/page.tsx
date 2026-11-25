@@ -16,7 +16,8 @@ import { composioReadyMap, setupNote, socialConnections, type SocialConnection }
 import { clientSocial, loadSocial, refreshSocial, tokenState, type SocialRow } from "@/lib/social/fetch";
 import { METRICS, postEngagement, type MetricKey } from "@/lib/social/metrics";
 import { combine, dailyMetrics, staleConnected, figures, followerSeries, platformColor, previousOf, seriesBy, withPrevious, type Period, type PlatformFigures } from "@/lib/social/overview";
-import { accountUrl, PLATFORM_INFO, PLATFORMS, type Platform } from "@/lib/social/platforms";
+import { accountUrl, handleOf, PLATFORM_INFO, PLATFORMS, type Platform } from "@/lib/social/platforms";
+import { SocialPostGrid } from "@/components/research/social-posts";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { createClient } from "@/lib/supabase/server";
 
@@ -267,6 +268,10 @@ function PlatformSection({ p, f, row, url, connected, ready, canEdit, token, cur
               <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-3">
                 {row!.demographics!.map((d) => <BarList key={d.dimension} title={d.dimension} valueLabel={d.dimension.includes("%") ? "%" : "Count"} items={d.items.map((i) => ({ label: i.label, value: i.value }))} limit={6} />)}
               </div>
+            )}
+            {(row!.posts.length ?? 0) > 0 && (
+              <SocialPostGrid platform={p} posts={row!.posts}
+                account={{ handle: row!.profile.handle ?? handleOf(connected ? null : url), name: row!.profile.name, avatar: row!.profile.avatar ?? null }} />
             )}
             {postsShown.length > 0 && (
               <ResearchTable title={f?.postsIn.length ? `${info.label} content in this period` : `Latest ${info.label} content`} csvName={`social-${p}-${clientId}`} searchKeys={["title"]}

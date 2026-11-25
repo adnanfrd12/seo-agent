@@ -41,6 +41,10 @@ export const METRICS: Record<MetricKey, MetricInfo> = {
 export interface SocialPost {
   id: string; title: string; url: string | null; date: string | null; type?: string | null;
   views: number | null; likes: number | null; comments: number | null; shares: number | null;
+  /** the post's picture, video thumbnail or cover (platform CDN; some links expire and are renewed on each read) */
+  image?: string | null;
+  /** the full caption / text (title is a short version for tables) */
+  text?: string | null;
 }
 export type SocialSeries = Partial<Record<MetricKey, { date: string; value: number }[]>>;
 export interface SocialDemo { dimension: string; items: { label: string; value: number }[] }

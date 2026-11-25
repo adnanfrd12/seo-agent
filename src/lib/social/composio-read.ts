@@ -27,6 +27,7 @@ export interface ComposioRead {
 }
 
 const DAY_S = 86_400;
+const body = (v: unknown) => (typeof v === "string" && v.trim() ? v.trim().slice(0, 1200) : null);
 const unwrap = (d: unknown): unknown => (d && typeof d === "object" && "response_data" in d ? (d as { response_data: unknown }).response_data : d);
 const n = (v: unknown) => (typeof v === "number" && Number.isFinite(v) ? v : typeof v === "string" && /^-?\d+(\.\d+)?$/.test(v.trim()) ? Number(v) : null);
 const iso = (ms: number) => new Date(ms).toISOString().slice(0, 10);
@@ -46,7 +47,7 @@ function graphMetrics(data: unknown): { name: string; values: { date: string | n
   return findArray(data, ["data", "metrics", "insights"]).map((m) => ({
     name: String(m.name ?? m.metric ?? ""),
     values: (Array.isArray(m.values) ? (m.values as Record<string, unknown>[]) : []).map((v) => ({ date: graphDay(v.end_time), value: n(v.value) })),
-    total: n((m.total_value as Record<string, unknown> | undefined)?.value),
+    total: n((m.total_value as Record<string, unknown> | undefined)?.value) ?? n(m.value),
     breakdown: findArray(m.total_value, ["breakdowns"]),
   }));
 }
@@ -91,8 +92,8 @@ export async function readComposio(clientId: string, p: Platform, connectedAccou
     const r = graphMetrics(reach).find((m) => m.name === "page_total_media_view_unique");
     const rv = r?.values.at(-1)?.value ?? r?.total ?? null;
     if (rv != null) out.totals.reach = rv;
-    const posts = findArray(await soft("FACEBOOK_GET_PAGE_POSTS", { page_id: pageId, limit: 50, fields: "id,message,created_time,permalink_url,status_type,shares,reactions.summary(total_count).limit(0),comments.summary(total_count).limit(0)" }, "Page posts"), ["data", "posts"]);
-    out.recent = posts.map((x) => ({ id: String(x.id), title: String(x.message ?? "").slice(0, 160), url: pickStr(x, ["permalink_url"]), date: day(x.created_time), type: pickStr(x, ["status_type"]),
+    const posts = findArray(await soft("FACEBOOK_GET_PAGE_POSTS", { page_id: pageId, limit: 50, fields: "id,message,created_time,permalink_url,status_type,full_picture,shares,reactions.summary(total_count).limit(0),comments.summary(total_count).limit(0)" }, "Page posts"), ["data", "posts"]);
+    out.recent = posts.map((x) => ({ id: String(x.id), title: String(x.message ?? "").slice(0, 160), text: body(x.message), image: pickStr(x, ["full_picture"]), url: pickStr(x, ["permalink_url"]), date: day(x.created_time), type: pickStr(x, ["status_type"]),
       views: null, likes: pick(x.reactions, ["total_count"]), comments: pick(x.comments, ["total_count"]), shares: pick(x.shares, ["count"]) }));
   }
 
@@ -120,8 +121,8 @@ export async function readComposio(clientId: string, p: Platform, connectedAccou
       else if (dim === "age" && d) notes.push("Follower demographics appear once the account has 100 or more followers.");
       if (!items.length) break;
     }
-    const media = findArray(await soft("INSTAGRAM_GET_IG_USER_MEDIA", { ig_user_id: "me", limit: 50, fields: "id,caption,media_type,media_product_type,permalink,timestamp,like_count,comments_count" }, "Posts"), ["data", "media"]);
-    out.recent = media.map((x) => ({ id: String(x.id), title: String(x.caption ?? "").slice(0, 160), url: pickStr(x, ["permalink"]), date: day(x.timestamp), type: pickStr(x, ["media_product_type", "media_type"]), views: null, likes: n(x.like_count), comments: n(x.comments_count), shares: null }));
+    const media = findArray(await soft("INSTAGRAM_GET_IG_USER_MEDIA", { ig_user_id: "me", limit: 50, fields: "id,caption,media_type,media_product_type,media_url,thumbnail_url,permalink,timestamp,like_count,comments_count" }, "Posts"), ["data", "media"]);
+    out.recent = media.map((x) => ({ id: String(x.id), title: String(x.caption ?? "").slice(0, 160), text: body(x.caption), image: pickStr(x, ["thumbnail_url"]) ?? (x.media_type === "VIDEO" ? null : pickStr(x, ["media_url"])), url: pickStr(x, ["permalink"]), date: day(x.timestamp), type: pickStr(x, ["media_product_type", "media_type"]), views: null, likes: n(x.like_count), comments: n(x.comments_count), shares: null }));
   }
 
   else if (p === "threads") {
@@ -143,12 +144,12 @@ export async function readComposio(clientId: string, p: Platform, connectedAccou
       if (!items.length) { if (d) notes.push("Threads follower demographics need at least 100 followers."); break; }
       out.demographics.push({ dimension: `Followers by ${dim}`, items: items.sort((a, b) => b.value - a.value).slice(0, 12) });
     }
-    const posts = findArray(await soft("THREADS_LIST_MY_POSTS", { user_id: "me", limit: 25 }, "Posts"), ["data", "posts", "threads"]);
+    const posts = findArray(await soft("THREADS_LIST_MY_POSTS", { user_id: "me", limit: 25, fields: ["id", "text", "timestamp", "media_type", "permalink", "media_url", "thumbnail_url"] }, "Posts"), ["data", "items", "posts", "threads"]);
     out.recent = [];
     for (const x of posts.slice(0, 25)) {
       const ins = out.recent.length < 12 ? await soft("THREADS_GET_POST_INSIGHTS", { post_id: String(x.id), media_id: String(x.id), metrics: ["views", "likes", "replies", "reposts", "quotes"] }, "Post insights") : null;
       const g = (k: string) => { const m = graphMetrics(ins).find((y) => y.name === k); return m?.total ?? m?.values[0]?.value ?? null; };
-      out.recent.push({ id: String(x.id), title: String(x.text ?? "").slice(0, 160), url: pickStr(x, ["permalink"]), date: day(x.timestamp), type: pickStr(x, ["media_type"]),
+      out.recent.push({ id: String(x.id), title: String(x.text ?? "").slice(0, 160), text: body(x.text), image: pickStr(x, ["thumbnail_url"]) ?? (x.media_type === "VIDEO" ? null : pickStr(x, ["media_url"])), url: pickStr(x, ["permalink"]), date: day(x.timestamp), type: pickStr(x, ["media_type"]),
         views: g("views"), likes: g("likes"), comments: g("replies"), shares: ins ? (g("reposts") ?? 0) + (g("quotes") ?? 0) : null });
     }
     out.posts = posts.length || null;
@@ -161,8 +162,13 @@ export async function readComposio(clientId: string, p: Platform, connectedAccou
     if (id) out.ids.user_id = id;
     out.name = pickStr(u, ["name", "username"]); out.followers = pick(u, ["followers_count"]); out.following = pick(u, ["following_count"]); out.posts = pick(u, ["tweet_count"]);
     out.handle = username; out.avatar = pickStr(u, ["profile_image_url"])?.replace("_normal.", "_400x400.") ?? null;
-    const tweets = id ? findArray(await soft("TWITTER_GET_USER_POSTS", { id, max_results: 50, exclude: ["replies", "retweets"], tweet_fields: ["public_metrics", "created_at"] }, "Posts"), ["data", "tweets"]) : [];
-    out.recent = tweets.map((t) => ({ id: String(t.id), title: String(t.text ?? "").slice(0, 160), url: username ? `https://x.com/${username}/status/${t.id}` : null, date: day(t.created_at),
+    const tl = id ? await soft("TWITTER_GET_USER_POSTS", { id, max_results: 50, exclude: ["replies", "retweets"], tweet_fields: ["public_metrics", "created_at", "attachments"],
+      expansions: ["attachments.media_keys"], media_fields: ["url", "preview_image_url", "type"] }, "Posts") : null;
+    const tweets = findArray(tl, ["data", "tweets"]);
+    // pictures come back once, under includes.media, keyed by media_key
+    const pics = new Map(findArray((tl as Record<string, unknown> | null)?.includes ?? tl, ["media"]).map((m) => [String(m.media_key), pickStr(m, ["url", "preview_image_url"])]));
+    const picOf = (t: Record<string, unknown>) => { const keys = (t.attachments as { media_keys?: unknown[] } | undefined)?.media_keys ?? []; for (const k of keys) { const u = pics.get(String(k)); if (u) return u; } return null; };
+    out.recent = tweets.map((t) => ({ id: String(t.id), title: String(t.text ?? "").slice(0, 160), text: body(t.text), image: picOf(t), url: username ? `https://x.com/${username}/status/${t.id}` : null, date: day(t.created_at),
       views: pick(t, ["impression_count"]), likes: pick(t, ["like_count"]), comments: pick(t, ["reply_count"]), shares: (pick(t, ["retweet_count"]) ?? 0) + (pick(t, ["quote_count"]) ?? 0) }));
     if (tweets.length && tweets.every((t) => pick(t, ["impression_count"]) == null)) notes.push("X didn't return impression counts for these posts.");
   }
@@ -218,7 +224,7 @@ export async function readComposio(clientId: string, p: Platform, connectedAccou
     let cursor: unknown, pages = 0;
     do {
       const r = await soft("TIKTOK_LIST_VIDEOS", { max_count: 20, ...(cursor ? { cursor } : {}) }, "Videos");
-      for (const v of findArray(r, ["videos"])) out.recent.push({ id: String(v.id), title: String(v.title ?? v.video_description ?? "").slice(0, 160), url: pickStr(v, ["share_url"]), date: day(v.create_time), type: "video", views: n(v.view_count), likes: n(v.like_count), comments: n(v.comment_count), shares: n(v.share_count) });
+      for (const v of findArray(r, ["videos"])) out.recent.push({ id: String(v.id), title: String(v.title ?? v.video_description ?? "").slice(0, 160), text: body(v.video_description ?? v.title), image: pickStr(v, ["cover_image_url"]), url: pickStr(v, ["share_url"]), date: day(v.create_time), type: "video", views: n(v.view_count), likes: n(v.like_count), comments: n(v.comment_count), shares: n(v.share_count) });
       cursor = r && pick(r, ["has_more"]) !== 0 && (r as Record<string, unknown>) ? pick(r, ["cursor"]) : null;
       if (r && JSON.stringify(r).includes('"has_more":false')) cursor = null;
     } while (cursor && ++pages < 3);
@@ -241,7 +247,9 @@ export async function readComposio(clientId: string, p: Platform, connectedAccou
     const pins = findArray(await soft("PINTEREST_LIST_PINS", { page_size: 50, include_metrics: true }, "Pins"), ["items", "pins", "data"]);
     out.recent = pins.map((x) => {
       const m = ((x.pin_metrics as Record<string, unknown> | undefined)?.["90d"] ?? (x.pin_metrics as Record<string, unknown> | undefined)?.lifetime_metrics ?? {}) as Record<string, unknown>;
-      return { id: String(x.id), title: String(x.title ?? x.description ?? "").slice(0, 160), url: `https://www.pinterest.com/pin/${x.id}/`, date: day(x.created_at), type: pickStr(x, ["creative_type"]),
+      const media = (x.media ?? {}) as Record<string, unknown>, imgs = (media.images ?? {}) as Record<string, unknown>;
+      const image = pickStr(imgs["600x"], ["url"]) ?? pickStr(imgs["1200x"], ["url"]) ?? pickStr(media, ["cover_image_url"]) ?? pickStr(imgs, ["url"]);
+      return { id: String(x.id), title: String(x.title ?? x.description ?? "").slice(0, 160), text: body([x.title, x.description].filter(Boolean).join("\n")), image, url: `https://www.pinterest.com/pin/${x.id}/`, date: day(x.created_at), type: pickStr(x, ["creative_type"]),
         views: n(m.impression), likes: n(m.save), comments: n(m.reaction) ?? n(m.comment), shares: n(m.outbound_click) ?? n(m.pin_click) };
     });
   }
@@ -270,8 +278,13 @@ export async function readComposio(clientId: string, p: Platform, connectedAccou
     if (co.length) out.demographics.push({ dimension: "Views by country", items: co.map((r) => ({ label: String(r.country), value: n(r.views) ?? 0 })).filter((i) => i.value > 0) });
     const vids = ytRows(await soft("YOUTUBE_QUERY_ANALYTICS", { ids: "channel==MINE", startDate, endDate, dimensions: "video", metrics: "views,likes,comments,shares,estimatedMinutesWatched", sort: "-views", maxResults: 25 }, "Top videos"));
     const known = new Map(ctx.knownPosts.map((x) => [x.id, x]));
-    out.recent = vids.map((r) => { const id = String(r.video); const k = known.get(id);
-      return { id, title: k?.title || `Video ${id}`, url: `https://www.youtube.com/watch?v=${id}`, date: k?.date ?? null, type: "video", views: n(r.views), likes: n(r.likes), comments: n(r.comments), shares: n(r.shares) }; });
+    const ids = vids.map((r) => String(r.video)).filter(Boolean);
+    const details = new Map(ids.length ? findArray(await soft("YOUTUBE_GET_VIDEO_DETAILS_BATCH", { id: ids, parts: ["snippet"] }, "Video titles"), ["items", "videos"]).map((v) => [String(v.id), (v.snippet ?? v) as Record<string, unknown>]) : []);
+    out.recent = vids.map((r) => { const id = String(r.video); const k = known.get(id); const s = details.get(id);
+      const thumbs = (s?.thumbnails ?? {}) as Record<string, unknown>;
+      return { id, title: pickStr(s, ["title"]) ?? (k?.title || `Video ${id}`), text: body(s?.description), url: `https://www.youtube.com/watch?v=${id}`, date: day(s?.publishedAt) ?? k?.date ?? null, type: "video",
+        image: pickStr(thumbs.high, ["url"]) ?? pickStr(thumbs.medium, ["url"]) ?? `https://i.ytimg.com/vi/${id}/hqdefault.jpg`,
+        views: n(r.views), likes: n(r.likes), comments: n(r.comments), shares: n(r.shares) }; });
     if (vids.length) notes.push("Video numbers are for the last 90 days (YouTube Analytics).");
   }
 
