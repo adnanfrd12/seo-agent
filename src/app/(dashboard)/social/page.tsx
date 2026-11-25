@@ -8,7 +8,7 @@ import { MetricTrend, type MetricOption } from "@/components/charts/metric-trend
 import { KpiCard, StatCard } from "@/components/dashboard/kpi-card";
 import { TabHeader } from "@/components/dashboard/tab-header";
 import { ResearchTable } from "@/components/research/research-table";
-import { AccountAvatar, ConnectOne, DisconnectOne, SocialConnect, SocialRefresh, SocialSettings } from "@/components/research/social-controls";
+import { AccountAvatar, ConnectedMark, ConnectOne, DisconnectOne, SocialConnect, SocialRefresh, SocialSettings } from "@/components/research/social-controls";
 import { resolveRange } from "@/lib/analytics/range";
 import { researchPage } from "@/lib/dataforseo/view";
 import { revalidatePath } from "@/lib/revalidate";
@@ -181,7 +181,7 @@ function PlatformSection({ p, f, row, url, connected, ready, canEdit, token, cur
 }) {
   const info = PLATFORM_INFO[p];
   const hasData = Boolean(row && (row.status === "ok" || row.history.length > 0));
-  const badge = connected ? <span className="rounded-md bg-positive/15 px-1.5 py-0.5 text-[11px] font-medium text-positive">Connected</span>
+  const badge = connected ? <ConnectedMark />
     : row?.mode === "public" ? <span className="rounded-md bg-surface-muted px-1.5 py-0.5 text-[11px] text-secondary">Public numbers</span>
     : <span className="rounded-md bg-surface-muted px-1.5 py-0.5 text-[11px] text-muted">Not connected</span>;
 

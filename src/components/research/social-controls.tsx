@@ -210,11 +210,16 @@ export function SocialConnect({ rows, canEdit }: { rows: ConnectRow[]; canEdit: 
   );
 }
 
+/** The Integrations page's "connected" mark: green check and text, no pill. */
+export function ConnectedMark({ className }: { className?: string }) {
+  return <span className={cn("inline-flex items-center gap-1 text-[13px] font-medium text-positive", className)}><CircleCheck className="size-4" aria-hidden /> Connected</span>;
+}
+
 function StatusPill({ r }: { r: ConnectRow }) {
+  if (r.state === "connected") return <ConnectedMark />;
   const planned = platformBySocial(r.platform)?.status === "planned";
   const [text, tone, dot] =
-    r.state === "connected" ? ["Connected", "bg-positive-soft text-positive", "bg-positive"]
-    : r.state === "pending" ? ["Login not finished", "bg-warn-soft text-warn", "bg-warn"]
+    r.state === "pending" ? ["Login not finished", "bg-warn-soft text-warn", "bg-warn"]
     : r.ready ? ["Not connected", "bg-surface-muted text-muted", "bg-faint"]
     : planned ? ["Coming soon", "bg-surface-muted text-muted", null]
     : ["Setup needed", "bg-surface-muted text-muted", null];
