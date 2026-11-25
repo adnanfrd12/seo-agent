@@ -5,6 +5,7 @@ import { revalidatePath } from "@/lib/revalidate";
 import { z } from "zod";
 import { aiErrorMessage } from "@/lib/ai/claude";
 import { extractReport } from "@/lib/ai/extract-report";
+import { budgetMessage, claudeBudget } from "@/lib/ai/usage";
 import { getSession } from "@/lib/analytics/client-context";
 import { createAdminClient } from "@/lib/supabase/admin";
 
@@ -25,6 +26,9 @@ export async function createImportUpload(fileName: string, size: number): Promis
   if (!/\.pdf$/i.test(fileName)) return { ok: false, error: "Only PDF files can be imported." };
   const { client, allowed } = await requireAdmin();
   if (!allowed) return { ok: false, error: "Only owners and admins can import reports." };
+  // reading the PDF with AI counts toward the monthly Claude budget: stop before the upload when it's used up
+  const budget = await claudeBudget(createAdminClient(), client.id);
+  if (budget.left <= 0) return { ok: false, error: budgetMessage(budget.budget) };
   const path = `${client.id}/${randomUUID()}.pdf`;
   const { data, error } = await createAdminClient().storage.from(BUCKET).createSignedUploadUrl(path);
   if (error || !data) return { ok: false, error: "Upload isn't available (has migration 20261021000011 been applied?)." };
@@ -37,6 +41,11 @@ export async function processImport(path: string, fileName: string): Promise<Res
   if (!allowed) return { ok: false, error: "Only owners and admins can import reports." };
   if (!path.startsWith(`${client.id}/`) || !/^[0-9a-f-]+\/[0-9a-f-]+\.pdf$/.test(path)) return { ok: false, error: "Invalid upload." };
   const admin = createAdminClient();
+  const budget = await claudeBudget(admin, client.id);
+  if (budget.left <= 0) {
+    await admin.storage.from(BUCKET).remove([path]);
+    return { ok: false, error: budgetMessage(budget.budget) };
+  }
   const { data: blob, error: dlErr } = await admin.storage.from(BUCKET).download(path);
   if (dlErr || !blob) return { ok: false, error: "The uploaded file wasn't found." };
   const buf = Buffer.from(await blob.arrayBuffer());

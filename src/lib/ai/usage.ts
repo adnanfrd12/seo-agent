@@ -25,6 +25,8 @@ export async function claudeBudget(admin: SupabaseClient, clientId: string) {
   return { budget, spent, left: Math.max(0, budget - spent) };
 }
 
+export const budgetMessage = (budget: number) => `The monthly Claude budget ($${budget}) is used up. An owner can raise it in AI Quick Wins → Settings.`;
+
 /** Logs one run's Claude cost (features without a run table of their own). Never throws: a failed log must not fail the run. */
 export async function recordClaudeUse(admin: SupabaseClient, clientId: string, feature: UsageFeature, model: string, cost: number, calls = 1) {
   if (!(cost > 0)) return;

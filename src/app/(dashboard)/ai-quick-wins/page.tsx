@@ -24,7 +24,10 @@ export default async function AiQuickWinsPage() {
     admin.from("dfs_cache").select("params_hash, data").eq("client_id", client.id).eq("endpoint", "gscx").like("params_hash", "%:inventory").limit(1).maybeSingle(),
   ]);
   const canEdit = ["owner", "admin"].includes(client.role);
-  const pages = [...new Set([...((inv.data?.data as { url: string }[] | null) ?? []).map((r) => pathOf(r.url)).filter((p) => p.startsWith("/") && !p.includes("#")), ...items.map((w) => w.page_url).filter((p) => p.startsWith("/"))])].sort();
+  // pages as quick wins name them: a path, or host + path for http:// and www. variants (pathOf keeps those apart),
+  // so a one-page run can be pointed at any page a quick win can be about
+  const isPage = (p: string) => (p.startsWith("/") || /^(https?:\/\/)?[a-z0-9.-]+\.[a-z]{2,}\//i.test(p)) && !p.includes("#");
+  const pages = [...new Set([...((inv.data?.data as { url: string }[] | null) ?? []).map((r) => pathOf(r.url)), ...items.map((w) => w.page_url)].filter(isPage))].sort();
   const done = runs.filter((r) => r.status === "done" || r.status === "failed");
   const last = done[0] ?? null;
   const active = activeRun(runs)?.id ?? null;

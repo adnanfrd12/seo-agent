@@ -6,6 +6,7 @@ import { createAdminClient } from "@/lib/supabase/admin";
 import { loadReportData } from "@/lib/report/data";
 import { AI_MODEL, aiErrorMessage, anthropic, costUsd } from "./claude";
 import { buildEvidence, evidenceText } from "./evidence";
+import { budgetMessage, claudeBudget } from "./usage";
 import { insightsSchema, strategySchema, type InsightsOutput, type StrategyOutput } from "./schemas";
 
 export type RunKind = "insights" | "strategy";
@@ -66,6 +67,10 @@ export async function runAnalysis(
     const watched = evidence.items.filter((i) => /^(ga4|gsc|bing|gbp|dfs)\./.test(i.id));
     if (before.size > 0 && watched.length > 0 && watched.every((i) => before.get(i.id) === i.value)) return { ok: true, runId: "", kept: 0, dropped: 0, skipped: true };
   }
+
+  // insights and strategy count toward the client's monthly Claude budget: don't start when it's used up
+  const budget = await claudeBudget(admin, clientId);
+  if (budget.left <= 0) return { ok: false, error: budgetMessage(budget.budget) };
 
   // titles of what was recommended recently, so the model builds on it instead of repeating it
   const { data: prior } = await admin.from("analytics_insights").select("title, implementation_status").eq("client_id", clientId).order("created_at", { ascending: false }).limit(24);

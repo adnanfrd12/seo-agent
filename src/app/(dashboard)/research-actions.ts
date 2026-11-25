@@ -18,6 +18,8 @@ const fail = (e: unknown): { ok: false; error: string } => ({
   error: e instanceof BudgetError || e instanceof DfsError ? e.message : "Something went wrong. Nothing was charged twice; try again.",
 });
 const usd = (n: number) => `$${n.toFixed(2)}`;
+/** dfs_cache endpoints that stay when the research website or market changes (see saveResearchTarget). */
+const KEEP_ON_TARGET_CHANGE = ["aiqw", "roadmap_lock", "gscx", "ga4x", "clarity_recordings", "gbp_posts", "gbp_profile", "reviews", "reviews_task", "reviews_platform", "maps_grid", "seosignalx", "social"];
 
 async function admin() {
   const { client } = await getSession();
@@ -57,9 +59,13 @@ export async function saveResearchTarget(input: { domain: string; location: numb
     client_id: a.client.id, domain: domain.data, location_code: market.code, language_code: market.lang, auto_refresh: Boolean(input.autoRefresh), competitors,
   }, { onConflict: "client_id" });
   if (error) return { ok: false, error: "Could not save (has migration 20261028000016 been applied?)." };
-  // a different domain or market makes stored answers meaningless: drop them so nothing stale is shown
+  // a different domain or market makes stored research answers meaningless: drop them so nothing stale is shown.
+  // Rows that don't depend on the research website or market are kept: AI quick wins runs (they also hold the
+  // monthly Claude spend), SEO Coach answers, Search Console / GA4 report caches, Clarity recordings, Business
+  // Profile data (profile, posts, reviews, map grids), platform reviews, SEOSignalX, social stats and the roadmap lock.
   if (old && (old.domain !== domain.data || old.location_code !== market.code)) {
-    await a.db.from("dfs_cache").delete().eq("client_id", a.client.id);
+    await a.db.from("dfs_cache").delete().eq("client_id", a.client.id)
+      .not("endpoint", "in", `(${KEEP_ON_TARGET_CHANGE.join(",")})`).not("endpoint", "like", "coach_%");
     await a.db.from("dfs_snapshots").delete().eq("client_id", a.client.id);
   }
   refresh();

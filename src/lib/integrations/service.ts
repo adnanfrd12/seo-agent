@@ -177,20 +177,24 @@ export async function completeConnect(clientId: string, provider: ProviderId): P
 /** Step 6-8: save the chosen resources (RLS enforces admin) and queue the initial import. */
 export async function selectResources(clientId: string, provider: ProviderId, resourceIds: string[]) {
   const supabase = await createClient();
+  // Only this provider's own connection: Business Profile locations added through Local Brand Manager are also
+  // stored as "gbp" resources (on the LBM connection), and saving the Google selection must not untrack them.
+  const { data: conn } = await supabase.from("integration_connections").select("id").eq("client_id", clientId).eq("provider", provider).maybeSingle();
+  const scoped = <Q extends { eq: (c: string, v: string) => Q }>(q: Q) => (conn ? q.eq("connection_id", conn.id) : q);
 
-  const { error: clearErr } = await supabase
+  const { error: clearErr } = await scoped(supabase
     .from("integration_resources")
     .update({ is_selected: false })
     .eq("client_id", clientId)
-    .eq("provider", provider);
+    .eq("provider", provider));
   if (clearErr) throw new HttpError(403, "Not allowed to change selection");
 
   if (resourceIds.length > 0) {
-    const { data, error } = await supabase
+    const { data, error } = await scoped(supabase
       .from("integration_resources")
       .update({ is_selected: true })
       .eq("client_id", clientId)
-      .eq("provider", provider)
+      .eq("provider", provider))
       .in("id", resourceIds)
       .select("id");
     if (error || (data?.length ?? 0) !== resourceIds.length) {

@@ -10,6 +10,7 @@ import { gridRivals, loadLocal, reviewStats } from "@/lib/dataforseo/local";
 import { loadReportData } from "@/lib/report/data";
 import { aiErrorMessage, anthropic } from "./claude";
 import { buildEvidence, evidenceText, type EvidenceItem } from "./evidence";
+import { budgetMessage, claudeBudget } from "./usage";
 import { loadAi } from "./visibility";
 
 /**
@@ -121,6 +122,9 @@ export async function generateCoach<M extends CoachMode>(admin: SupabaseClient, 
   let ev;
   try { ev = await coachEvidence(admin, clientId, range); } catch { return { ok: false, error: "Could not load this site's data. Apply the latest database migrations and try again." }; }
   if (ev.items.length < 5) return { ok: false, error: "Not enough connected data yet. Connect and sync Search Console or Google Analytics first." };
+  // counts toward the client's monthly Claude budget: don't start when it's used up
+  const budget = await claudeBudget(admin, clientId);
+  if (budget.left <= 0) return { ok: false, error: budgetMessage(budget.budget) };
   try {
     const res = await anthropic().beta.messages.parse({
       model: COACH_MODEL, max_tokens: 8000, betas: ["server-side-fallback-2026-07-01"], fallbacks: "default",
