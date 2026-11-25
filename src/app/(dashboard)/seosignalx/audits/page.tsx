@@ -9,7 +9,7 @@ export const maxDuration = 120;
 export default async function AllAuditsPage() {
   const v = await sxPage();
   if (!v) return null;
-  const header = <SxHeader title="All audits" description="Every audit SEOSignalX has saved for this website. Audits SEOSignalX adds later (e.g. Security) appear here by themselves after the next sync." project={v.bundle?.project?.name} />;
+  const header = <SxHeader title="All audits" description="Every audit SEOSignalX has saved for this website." project={v.bundle?.project?.name} />;
   if (!v.bundle?.project) return <>{header}<Empty title="No SEOSignalX project for this client" body="SEOSignalX has no project for this client's website." /></>;
   const s = scores(v.bundle);
   const rows = [
@@ -21,7 +21,7 @@ export default async function AllAuditsPage() {
     <>
       {header}
       {rows.length ? (
-        <Card title={`${rows.length} saved audit${rows.length === 1 ? "" : "s"}`} sub="As saved in SEOSignalX">
+        <Card title={`${rows.length} saved audit${rows.length === 1 ? "" : "s"}`}>
           <ul className="divide-y divide-hairline">
             {rows.map((r) => (
               <li key={r.key}>

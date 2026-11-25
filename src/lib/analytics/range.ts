@@ -59,7 +59,7 @@ export function monthRange(ym: string): { start: string; end: string; days: numb
   return { start: `${y}-${mm}-01`, end: `${y}-${mm}-${String(last).padStart(2, "0")}`, days: last };
 }
 
-export const isMonth = (s: string | undefined): s is string => !!s && /^d{4}-(0[1-9]|1[0-2])$/.test(s);
+export const isMonth = (s: string | undefined): s is string => !!s && /^\d{4}-(0[1-9]|1[0-2])$/.test(s);
 
 export function monthLabel(ym: string) {
   const [y, m] = ym.split("-").map(Number);

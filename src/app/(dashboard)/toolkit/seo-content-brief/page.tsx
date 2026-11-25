@@ -20,7 +20,7 @@ export default async function SeoBriefTool() {
     canEdit ? defaultBriefKeyword(createAdminClient(), client.id).catch(() => null) : null,
   ]);
   const r = stored?.data;
-  const header = <TabHeader source={null} title="Content Brief" description="A writer-ready brief built from what Google ranks today for a keyword: the top results are read and scored, then Claude Sonnet plans sections, word counts, keyword placement and the questions to answer." guide={[
+  const header = <TabHeader source={null} title="Content Brief" description="A writer-ready brief built from what Google ranks for a keyword." guide={[
     { term: "Default keyword", text: "The keyword with the most demand where the site ranks between positions 5 and 30 (Search Console and DataForSEO), the easiest to push onto page one." },
     { term: "Competitor score", text: "0-100 from length (up to 2,000 words), heading depth, question headings and whether the keyword is in the title and H1." },
     { term: "Cost", text: "One Google search via DataForSEO (about $0.002, reused when another tool searched it in the last 14 days) plus Claude Sonnet (about $0.03)." },

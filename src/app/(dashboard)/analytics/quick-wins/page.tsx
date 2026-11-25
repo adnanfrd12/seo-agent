@@ -22,7 +22,7 @@ const EFF = { Low: 1, Medium: 2, High: 3 } as const;
 export default async function QuickWinsPage({ searchParams }: { searchParams: Promise<SearchParams> }) {
   const sp = await searchParams;
   return (
-    <Ga4xScreen sp={sp} path={PATH} title="Quick wins" description="Changes to make on the website and in marketing to get more leads, ranked by extra leads a month for the effort.">
+    <Ga4xScreen sp={sp} path={PATH} title="Quick wins" description="Changes that bring more leads, ranked by gain for the effort.">
       {({ g, wins, clientId }) => {
         const total = Math.round(sum(wins, (w) => w.gain) * 10) / 10;
         const pages = new Set(wins.map((w) => w.page));
@@ -38,25 +38,23 @@ export default async function QuickWinsPage({ searchParams }: { searchParams: Pr
               <Kpi label="Pages affected" value={String(pages.size)} />
               <div className="flex min-w-0 flex-col rounded-[10px] border border-border bg-surface p-3.5"><div className="text-[13px] font-medium">Done</div><QwDone scope={scope} total={wins.length} /></div>
             </Kpis>
-            <Band title="Charts" sub="Hover for details, click any bar, point or bubble for more." />
+            <Band title="Charts" />
             <Grid>
-              <Card title="How we pick these" tech="How this list is built">
-                <p className="max-w-4xl text-sm leading-relaxed text-secondary">Generated from the last 30 days of GA4 data by fixed rules: landing pages with traffic but a low lead rate, blog posts without calls to action, mobile pages with few phone clicks, form abandonment, untracked lead actions, AI assistant traffic, service-area cities that don&apos;t convert, peak call hours, expensive ad campaigns, social traffic sent to the home page, data-quality fixes, pages that don&apos;t engage, and the best page to promote. Gain = extra leads a month if the page reached the target lead rate. Data-quality fixes show a small gain because they make leads measurable rather than adding them. Score = gain × confidence (1 / 0.75 / 0.5) ÷ effort (1 / 2 / 3); the list is ranked by score and rebuilt after every daily sync.</p>
-              </Card>
-              <Card title="What to do first" tech="Impact vs effort" sub="Each bubble is a quick win. Top-left = do first (big gain, little work)." span={7}>
+              <Card title="What to do first" tech="Impact vs effort" sub="Top-left = big gain, little work." span={7}>
                 <Scatter points={wins.map((w) => ({ x: EFF[w.effort] + (w.rank % 5) * 0.06, y: w.gain, s: w.gain, label: `#${w.rank} ${w.title}`, show: w.rank <= 5, c: w.effort === "Low" ? C[2] : w.effort === "Medium" ? C[3] : C[7] }))} xLabel="Effort (1 = low, 3 = high)" yLabel="Extra leads a month" xf="dec1" yf="dec1" quad={[["Do first", 0, 1], ["Plan", 1, 1]]} />
               </Card>
               <Card title="Which kinds of changes pay off most" tech="Gain by type of change" span={5}>
                 <BarList rows={byType.map((r) => ({ label: r.k, value: r.v, color: C[2] }))} f="dec1" />
               </Card>
-              <Card title="Which pages to work on" tech="Gain by page" sub="Where the work pays off most.">
+              <Card title="Which pages to work on" tech="Gain by page">
                 <Treemap items={byPage.slice(0, 16).map((r, i) => ({ label: r.k, value: Math.round(r.v * 10) / 10, color: C[i % C.length] }))} f="dec1" />
               </Card>
-              <Card title="Your to-do list" tech="All quick wins" sub={'Ranked by estimated gain ÷ effort, adjusted for confidence. Tick "Done" as you go; it is saved in this browser.'}>
-                {wins.length ? <QwList wins={wins} scope={scope} /> : <p className="py-6 text-sm text-muted">No quick wins right now: none of the rules found a page or setting holding leads back in the last 30 days.</p>}
+              <Card title="Your to-do list" tech="All quick wins" sub={'Ranked by gain ÷ effort. "Done" ticks are saved in this browser only.'}
+                info="Generated from the last 30 days of GA4 data by fixed rules: landing pages with traffic but a low lead rate, blog posts without calls to action, mobile pages with few phone clicks, form abandonment, untracked lead actions, AI assistant traffic, service-area cities that don't convert, peak call hours, expensive ad campaigns, social traffic sent to the home page, data-quality fixes, pages that don't engage, and the best page to promote. Gain = extra leads a month if the page reached the target lead rate. Data-quality fixes show a small gain because they make leads measurable rather than adding them. Score = gain × confidence (1 / 0.75 / 0.5) ÷ effort (1 / 2 / 3); the list is ranked by score and rebuilt after every daily sync.">
+                {wins.length ? <QwList wins={wins} scope={scope} /> : <p className="py-6 text-sm text-muted">No quick wins right now.</p>}
               </Card>
             </Grid>
-            <Band title="Quick wins by screen" sub="The same tasks that appear at the bottom of each screen." />
+            <Band title="Quick wins by screen" />
             <div className="space-y-4">
               {SCREENS.map(([id, label, href]) => {
                 const list = forScreen(wins, id);

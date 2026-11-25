@@ -45,9 +45,8 @@ export function DataForSeoSettings({ dailyBudget, autoRefresh, defaultBudget }: 
         {value !== defaultBudget && <button type="button" className="pb-1.5 text-xs text-foreground underline decoration-border-strong underline-offset-2 hover:decoration-foreground" onClick={() => setLimit(String(defaultBudget))}>Reset to ${defaultBudget.toFixed(2)}</button>}
       </div>
       {!valid && <p role="alert" className="mt-1 text-xs text-negative">Enter an amount between $0.10 and $100.</p>}
-      <p className="mt-2 text-xs text-muted">
-        No call is made once today&apos;s total reaches this limit (it resets at midnight UTC). Scheduled refreshes use at most 60% of it, and one client at most 40%.
-        Applies to every client, since they share one DataForSEO account.
+      <p className="mt-2 text-xs text-muted" title="No call is made once today's total reaches this limit (it resets at midnight UTC). Scheduled refreshes use at most 60% of it, and one client at most 40%. Applies to every client, since they share one DataForSEO account.">
+        Calls stop at this limit until midnight UTC. Shared by all clients.
       </p>
       {msg && <p role={msg.ok ? "status" : "alert"} className={`mt-1 text-sm ${msg.ok ? "text-positive" : "text-negative"}`}>{msg.text}</p>}
     </div>

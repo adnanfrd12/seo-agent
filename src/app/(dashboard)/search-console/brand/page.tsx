@@ -20,9 +20,9 @@ export default async function BrandPage({ searchParams }: { searchParams: Promis
   const { client } = await getSession();
   const canEdit = !!client && ["owner", "admin"].includes(client.role);
   return (
-    <GscScreen sp={sp} path={PATH} title="Brand" description="People searching the business by name vs finding it by topic, what they add to the name, and reputation checks.">
+    <GscScreen sp={sp} path={PATH} title="Brand" description="Searches for your business name vs by topic, and reputation checks.">
       {({ g, wins, settingsSource }) => {
-        const setForm = <Card title="Brand, competitor, city and service lists" sub="Every brand, competitor, city and service number on these screens comes from these lists (case-insensitive, whole words). Edit them to match the business."><GscSettingsForm initial={g.settings} sources={settingsSource} action={saveGscSettings} disabled={!canEdit} /></Card>;
+        const setForm = <Card title="Brand, competitor, city and service lists" sub="Every Search Console screen uses these lists; edit them to match the business." info="Every brand, competitor, city and service number on these screens comes from these lists (case-insensitive, whole words). Edit them to match the business."><GscSettingsForm initial={g.settings} sources={settingsSource} action={saveGscSettings} disabled={!canEdit} /></Card>;
         if (!g.settings.brand.length) return <><Missing title="No brand terms" why="Brand numbers need the business name and its variants, and none could be found." fix="Add brand terms below (business name, misspellings, domain, owner's name)." /><div className="mt-4"><Grid>{setForm}</Grid></div></>;
         const qc = g.q(), qprev = g.q(true);
         const B = m(qc.filter((x) => g.isBrand(String(x.query)))), N2 = m(qc.filter((x) => !g.isBrand(String(x.query))));
@@ -50,12 +50,12 @@ export default async function BrandPage({ searchParams }: { searchParams: Promis
               <Kpi label="Share from your name" tech="Brand share" value={fmt("pct", B.clicks + N2.clicks ? B.clicks / (B.clicks + N2.clicks) : 0)} />
               <Kpi label="Searches for your name" tech="Brand queries" value={fmt("int", brandQs.length)} cur={brandQs.length} prev={brandQsP.length} />
             </Kpis>
-            <Band title="Charts" sub="Hover for details, click any bar, point or bubble for more." />
+            <Band title="Charts" />
             <Grid>
-              <Card title="People searching your name vs finding you by topic" tech="Brand vs non-brand clicks" sub="Daily. Brand demand is a proxy for word of mouth and offline marketing." span={8}>
+              <Card title="People searching your name vs finding you by topic" tech="Brand vs non-brand clicks" sub="Daily." info="Daily. Brand demand is a proxy for word of mouth and offline marketing." span={8}>
                 <LineChart id="gsc-brand-daily" labels={labels(g)} series={[{ name: "Brand", values: daily(g.isBrand), color: C[4] }, { name: "Non-brand", values: daily((q) => !g.isBrand(q)), color: C[0] }]} />
               </Card>
-              <Card title="What people type along with your business name" tech="What people search with the brand" sub="Words next to the brand name, by impressions." span={4}>
+              <Card title="What people type along with your business name" tech="What people search with the brand" sub="By impressions." info="Words next to the brand name, by impressions." span={4}>
                 <BarList rows={[...mods].sort((a, b) => b[1] - a[1]).slice(0, 10).map(([w, v]) => ({ label: w, value: v, color: C[4] }))} empty="People search the name on its own, with no extra words." />
               </Card>
               <Card title="Where clicks come from: your name, topics, private searches" tech="Clicks: brand, non-brand, hidden" sub="Hidden = anonymized queries that can't be classified." span={5}>
@@ -64,19 +64,19 @@ export default async function BrandPage({ searchParams }: { searchParams: Promis
               <Card title="Words added to your name: this month vs last" tech="Brand modifiers: this period vs last" sub="Impressions." span={7}>
                 <CompareBars color={C[4]} rows={GROUPS.map(([l], i) => ({ label: l, cur: gc[i], prev: gp[i] }))} />
               </Card>
-              <Card title="Clicks from people searching your name, each day" tech="Brand clicks calendar" sub="Daily brand clicks over 90 days. Spikes often follow ads, mailers or events.">
+              <Card title="Clicks from people searching your name, each day" tech="Brand clicks calendar" sub="Last 90 days." info="Daily brand clicks over 90 days. Spikes often follow ads, mailers or events.">
                 <CalHeat values={Array.from({ length: 90 }, (_, i) => bd.get(addDays(s90, i))?.clicks ?? 0)} start={s90} color={C[4]} label="brand clicks" />
               </Card>
             </Grid>
-            <Band title="Tables and lists" sub="The data behind the charts. Filter with the chips, sort any column." />
+            <Band title="Tables and lists" />
             <Grid>
-              <Card title="Questions people ask about your business" tech="Brand questions and trust checks" sub="Brand queries that are questions or reputation checks." span={8}>
+              <Card title="Questions people ask about your business" tech="Brand questions and trust checks" span={8}>
                 <QueryTable rows={trust} site={siteOf(g)} empty="0: nobody searched the business name as a question or a reputation check in this period." />
               </Card>
               <Card title="Misspellings of your business name" tech="Possible misspellings" sub="Queries 1–2 letters away from the brand, not yet in the brand list." span={4}>
                 <Table rows={miss.map((x) => ({ q: x.q, impr: x.impr, d: x.d }))} cols={[{ k: "q", label: "Query", wrap: true }, { k: "impr", label: "Impr.", num: true }, { k: "d", label: "Edit distance", num: true }]} empty="No misspellings found: add any you know to the brand list." />
               </Card>
-              <Card title="Searches for your name where you're not first" tech="Brand queries not at position 1" sub="Brand searches where another page or site may outrank you.">
+              <Card title="Searches for your name where you're not first" tech="Brand queries not at position 1">
                 <QueryTable rows={queryTable(g, g.isBrand).filter((r) => r.pos >= 1.5)} site={siteOf(g)} empty="The site ranks first for every brand search." />
               </Card>
               {setForm}

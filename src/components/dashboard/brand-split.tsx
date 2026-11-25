@@ -56,7 +56,7 @@ export function BrandSplit({ data, terms, canEdit }: { data: BrandSplitData; ter
   return (
     <section className="rise rounded-[10px] border border-border bg-surface p-5" aria-labelledby="brand-h">
       <h2 id="brand-h" className="text-sm font-semibold">Branded vs non-branded search</h2>
-      <p className="mt-0.5 text-xs text-muted">Branded = queries that contain your name. A healthy site keeps winning non-branded searches, because those are customers who didn&apos;t know you yet.</p>
+      <p className="mt-0.5 text-xs text-muted">Branded = queries that contain your name.</p>
       {!data.has_data || totalImpr === 0 ? (
         <p className="mt-4 text-sm text-muted">No query-level data for this period yet.</p>
       ) : (
@@ -77,13 +77,13 @@ export function BrandSplit({ data, terms, canEdit }: { data: BrandSplitData; ter
             {/* stacked, not side by side: the branded list is usually a line or two and would leave a tall blank column */}
             <div className="grid content-start gap-5"><List title="Top non-branded queries" rows={data.top_non_branded} /><List title="Top branded queries" rows={data.top_branded} /></div>
           </div>
-          <p className="mt-3 text-xs text-muted">Based on the queries Search Console reports; rare queries Google hides (anonymised) aren&apos;t included, so shares describe the visible queries.</p>
+          <p className="mt-3 text-xs text-muted" title="Based on the queries Search Console reports; rare queries Google hides (anonymised) aren't included, so shares describe the visible queries.">Excludes rare queries Google anonymises.</p>
         </>
       )}
       <details className="mt-4">
         <summary className="cursor-pointer text-sm font-medium text-accent">Brand terms used {canEdit ? "(edit)" : ""}</summary>
         <div className="mt-2 flex flex-wrap items-end gap-2">
-          <label className="min-w-64 flex-1 text-xs text-muted">Words that identify the brand, comma separated (spaces are ignored, e.g. &quot;ledlightsandsigns&quot;)
+          <label className="min-w-64 flex-1 text-xs text-muted">Brand words, comma separated (spaces are ignored, e.g. &quot;ledlightsandsigns&quot;)
             <input className="mt-1 block w-full rounded-lg border border-border bg-surface px-3 py-1.5 text-sm text-foreground disabled:opacity-60" value={draft} disabled={!canEdit || pending} onChange={(e) => setDraft(e.target.value)} />
           </label>
           {canEdit && <button className="inline-flex items-center gap-1.5 rounded-lg bg-accent px-3 py-1.5 text-sm font-medium text-accent-foreground hover:opacity-90 disabled:opacity-60" disabled={pending || draft.trim() === terms.join(", ")} onClick={save}>{pending && <Loader2 className="size-4 animate-spin" />} Save</button>}

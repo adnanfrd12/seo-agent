@@ -20,7 +20,7 @@ export default async function SeoPageTool() {
   const supabase = await createClient();
   const [stored, target] = await Promise.all([loadTool<PageReport>(supabase, client.id, "seo-page"), resolveTarget(createAdminClient(), client.id)]);
   const r = stored?.data;
-  const header = <TabHeader source={null} title="Page Analyzer" description="A deep on-page review of one URL: title, description, headings, content, links, schema, images, canonical/robots, Lighthouse and the Search Console queries the page gets, scored with prioritised fixes." guide={[
+  const header = <TabHeader source={null} title="Page Analyzer" description="A full on-page review of one URL, scored with prioritised fixes." guide={[
     { term: "Score", text: "Weighted average of eight areas (on-page 20%, content 20%, technical 20%, schema, images, links 10% each, social and speed 5%). Each area starts at 100 and loses the points of its failed checks." },
     { term: "Method", text: "Thresholds from the open-source claude-seo seo-page skill (MIT): title 30-60 characters, description about 150, one H1, images under 200 KB." },
   ]} />;

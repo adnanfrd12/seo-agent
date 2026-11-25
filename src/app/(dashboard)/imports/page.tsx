@@ -51,7 +51,7 @@ export default async function ImportsPage({ searchParams }: { searchParams: Prom
 
   return (
     <div className="space-y-8">
-      <TabHeader source={null} eyebrow="Reporting" title="Import PDF Reports" description="Upload an existing SEO report. Figures are extracted for your review and kept separately from live API data." />
+      <TabHeader source={null} eyebrow="Reporting" title="Import PDF Reports" description="Upload an SEO report and review the figures it contains." />
       {error ? <Unavailable title="Database update needed" body="Apply migration 20261021000011 in Supabase to enable report imports." />
         : !process.env.ANTHROPIC_API_KEY ? <Unavailable title="AI isn't configured" body="Report extraction needs ANTHROPIC_API_KEY." />
         : canEdit ? <UploadForm /> : <p className="text-sm text-muted">Only owners and admins can import reports.</p>}
@@ -91,11 +91,11 @@ export default async function ImportsPage({ searchParams }: { searchParams: Prom
           )}
           {ms.length > 0 && (
             <div className="grid gap-4 md:grid-cols-2">
-              <SplitBar title="Review progress" sub="Figures accepted, rejected or still to review" total={`${tally((m) => m.review_status === "accepted")} of ${ms.length}`} totalLabel="accepted" segments={[
+              <SplitBar title="Review progress" total={`${tally((m) => m.review_status === "accepted")} of ${ms.length}`} totalLabel="accepted" segments={[
                 { label: "Accepted", value: tally((m) => m.review_status === "accepted"), color: "var(--positive)" }, { label: "Rejected", value: tally((m) => m.review_status === "rejected"), color: "var(--negative)" },
                 { label: "To review", value: tally((m) => !["accepted", "rejected"].includes(m.review_status)), color: "var(--cat-other)" },
               ]} />
-              <SplitBar title="Extraction confidence" sub="How sure the extraction is about each figure" segments={[
+              <SplitBar title="Extraction confidence" segments={[
                 { label: "High", value: tally((m) => m.confidence === "high"), color: "var(--series)" }, { label: "Medium", value: tally((m) => m.confidence === "medium"), color: "color-mix(in oklab, var(--series) 55%, var(--surface))" },
                 { label: "Low", value: tally((m) => m.confidence === "low"), color: "color-mix(in oklab, var(--series) 22%, var(--surface))" },
               ]} />
@@ -128,7 +128,7 @@ export default async function ImportsPage({ searchParams }: { searchParams: Prom
                   </tbody>
                 </table>
               )}
-              <p className="mt-2 text-xs text-muted">Other tools may define metrics differently (e.g. sessions vs visits, filters, time zones). Treat differences as a prompt to check definitions, not as errors.</p>
+              <p className="mt-2 text-xs text-muted" title="E.g. sessions vs visits, filters, time zones. Treat differences as a prompt to check definitions, not as errors.">Other tools may define metrics differently.</p>
             </div>
           )}
         </section>

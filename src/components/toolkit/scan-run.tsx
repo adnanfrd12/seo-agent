@@ -30,7 +30,7 @@ export function ScanRun({ canEdit, allowReset = false }: { canEdit: boolean; all
           </button>
         )}
       </div>
-      {pending && <p className="text-xs text-muted">Reading up to 25 key pages, robots.txt, llms.txt and image sizes. One to three minutes.</p>}
+      {pending && <p className="text-xs text-muted">Scanning up to 25 key pages. One to three minutes.</p>}
       {msg && <p role={msg.ok ? "status" : "alert"} className={`max-w-md break-words text-sm ${msg.ok ? "text-positive" : "text-negative"}`}>{msg.text}</p>}
     </div>
   );

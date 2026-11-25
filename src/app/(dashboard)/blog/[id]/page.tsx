@@ -120,7 +120,7 @@ export default async function BlogPostPage({ params }: { params: Promise<{ id: s
             ) : <p className="text-muted">No Google queries for this post in the last 90 days.</p>}
           </div>
         </Panel>
-        <Panel title="Service page" sub="Where the post should send readers who want the service">
+        <Panel title="Service page">
           <div className="space-y-3 text-[13px]">
             {post.target_service
               ? <p><span className="text-muted">Links to: </span><a className={cn("font-medium", link)} href={post.target_service.url} target="_blank" rel="noopener noreferrer">{post.target_service.title}</a>{post.target_service.anchor ? <span className="text-muted"> (anchor &ldquo;{post.target_service.anchor}&rdquo;)</span> : null}</p>

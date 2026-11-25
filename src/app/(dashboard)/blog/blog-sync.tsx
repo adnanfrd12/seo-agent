@@ -45,7 +45,7 @@ export function BlogSync({ dfs, newPosts, allPosts, perPost }: { dfs: boolean; n
                 Keywords for every post<span className="block text-xs text-muted">{allPosts} posts without their own list · about ${(allPosts * perPost).toFixed(2)}</span>
               </button>
               <button type="button" disabled={pending} className={item} onClick={() => go("crawl", crawlBlogNow)}>
-                Find posts with the site crawler<span className="block text-xs text-muted">Adds posts the crawler found that aren&apos;t listed yet · a new crawl is about $0.03</span>
+                Find posts with the site crawler<span className="block text-xs text-muted">Adds missing posts · a new crawl is about $0.03</span>
               </button>
             </div>
           </details>

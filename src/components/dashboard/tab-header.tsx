@@ -58,7 +58,6 @@ export async function TabHeader({ source, eyebrow, title, description, actions, 
             ) : src ? (
               <span className="rounded-md border border-border bg-surface px-2 py-0.5 text-xs font-medium text-secondary">{src}</span>
             ) : null}
-            {status && <span className="text-xs text-muted">Next update {when(status.nextAt)}{status.note ? ` · ${status.note}` : ""}</span>}
           </div>
           {description && <p className="mt-1.5 max-w-3xl text-sm leading-relaxed text-secondary">{description}</p>}
           {status?.error && <Link href="/integrations" className="mt-1.5 inline-block text-xs text-negative underline underline-offset-2">{status.error.slice(0, 120)}</Link>}

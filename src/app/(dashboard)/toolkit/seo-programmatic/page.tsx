@@ -24,7 +24,7 @@ export default async function ProgrammaticPage() {
   const page = await researchPage();
   if (!page) return null;
   const { client, canEdit, cache } = page;
-  const header = <><BackToToolkit /><TabHeader source={null} title="Service x Area Planner" description="A matrix of the website's service pages against the neighbourhoods its blog already targets: which combinations are covered by a post or page, which are gaps worth a page, and the safeguards that keep location pages from becoming thin doorway pages." guide={[
+  const header = <><BackToToolkit /><TabHeader source={null} title="Service x Area Planner" description="Which service and neighbourhood pairs have a page, and which are gaps." guide={[
     { term: "Services", text: "WordPress pages that aren't company, legal or job pages (same rule as Blog Content), read with the free WordPress API." },
     { term: "Areas", text: "Neighbourhoods detected in the client's blog posts (Google Map embeds and the post text)." },
     { term: "Covered", text: "A blog post about that area links to (or best matches) that service, or a page URL contains both the service and the area." },
@@ -82,7 +82,7 @@ export default async function ProgrammaticPage() {
       ) : (
         <section aria-label="Service x area matrix" className="mt-4 min-w-0 rounded-[10px] border border-border bg-surface p-4">
           <h2 className="text-[15px] font-semibold">Coverage matrix</h2>
-          <p className="mb-3 text-xs text-muted">Rows: service pages. Columns: neighbourhoods. Number = blog posts covering that pair; P = a dedicated page exists; empty = gap.</p>
+          <p className="mb-3 text-xs text-muted">Number = blog posts covering the pair · P = dedicated page · empty = gap</p>
           <div className="overflow-x-auto">
             <table className="min-w-full border-separate border-spacing-0.5 text-xs">
               <thead><tr><th className="sticky left-0 bg-surface" />{areas.map((a) => <th key={a} className="h-28 min-w-8 align-bottom font-medium text-muted"><span className="inline-block max-w-28 -rotate-45 truncate whitespace-nowrap text-left" title={a}>{a}</span></th>)}</tr></thead>
@@ -102,15 +102,15 @@ export default async function ProgrammaticPage() {
       <div className="mt-4 grid gap-4 lg:grid-cols-2">
         <Card title="Safeguards before building location pages" sub="claude-seo seo-programmatic quality gates">
           <ul className="list-disc space-y-1.5 pl-5 text-sm text-secondary">
-            <li>Each page needs real local substance: projects done in that area, photos, local landmarks/roads, permit or HOA notes. Aim for 300+ words unique to the area and 60%+ unique text overall.</li>
-            <li>No swapped-city templates. Pages that differ only by the place name are doorway pages and risk a manual action.</li>
-            <li>Only areas actually served (the Business Profile service area). Build in batches of 5-10, check indexing and traffic, then continue.</li>
-            <li>Every new page links to its service page and the related blog posts, and is in the sitemap; keep thin or unindexed ones noindexed or merged.</li>
-            <li>Prefer strengthening the existing blog post for an area (link it to the service page) over a new page when the gap is small.</li>
+            <li>Real local substance (area projects, photos, landmarks): 300+ words unique to the area, 60%+ unique text overall.</li>
+            <li>No swapped-city templates: they are doorway pages and risk a manual action.</li>
+            <li>Only areas actually served. Build 5-10 at a time and check indexing and traffic before adding more.</li>
+            <li>Link each page to its service page and related posts, and add it to the sitemap; noindex or merge thin ones.</li>
+            <li>For small gaps, strengthen the existing area post instead of adding a page.</li>
           </ul>
         </Card>
         <Card title="Index-bloat check">
-          <p className="text-sm text-secondary">{services.length} service pages and {stored.data.otherPages.length} other pages are published. {services.length > 60 ? "That is already a large set for a local business: before adding more, check in Search Console that the existing ones are indexed and get impressions, and merge pages that overlap." : "The page count is moderate; a small number of well-made area pages is safe."}</p>
+          <p className="text-sm text-secondary">{services.length} service pages and {stored.data.otherPages.length} other pages are published. {services.length > 60 ? "That's already a large set: before adding more, check in Search Console that they are indexed, and merge pages that overlap." : "A moderate count; a few well-made area pages are safe."}</p>
           <p className="mt-2 text-xs text-muted">Indexing per page: <Link href="/search-console" className="underline">Search Console</Link> · traffic per page: <Link href="/organic-keywords" className="underline">Organic keywords</Link>.</p>
         </Card>
       </div>

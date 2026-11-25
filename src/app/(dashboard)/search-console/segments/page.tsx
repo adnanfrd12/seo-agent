@@ -20,7 +20,7 @@ const appName = (a: string) => APP[a] ?? a.replace(/_/g, " ").toLowerCase().repl
 export default async function SegmentsPage({ searchParams }: { searchParams: Promise<SearchParams> }) {
   const sp = await searchParams;
   return (
-    <GscScreen sp={sp} path={PATH} title="Devices, countries, appearance" description="Phones vs computers, where searchers are, when they click and how the site's results look on Google.">
+    <GscScreen sp={sp} path={PATH} title="Devices, countries, appearance" description="Devices, countries, click times and how your results look on Google.">
       {({ g, wins }) => {
         const dev = [...groupM(g.DEV.filter(g.inCur), (x) => String(x.device))].sort((a, b) => b[1].clicks - a[1].clicks);
         const cty = [...groupM(g.CD.filter(g.inCur), (x) => String(x.country))].sort((a, b) => b[1].impressions - a[1].impressions);
@@ -36,18 +36,18 @@ export default async function SegmentsPage({ searchParams }: { searchParams: Pro
           .filter((r) => r.mo.pos != null && r.de.pos != null && r.mo.impressions + r.de.impressions >= 20).map((r) => ({ page: pathOf(r.p), mob: r.mo.pos!, desk: r.de.pos!, gap: r.mo.pos! - r.de.pos!, flag: Math.abs(r.mo.pos! - r.de.pos!) > 2 ? "Gap over 2" : "OK" })).sort((a, b) => Math.abs(b.gap) - Math.abs(a.gap));
         return (
           <>
-            <Band title="Charts" sub="Hover for details, click any bar, point or bubble for more." />
+            <Band title="Charts" />
             <Grid>
               <Card title="Phone vs computer searchers" tech="Device split" sub={`Clicks by device, last ${g.p.days} days.`} span={5}>
                 <Donut parts={dev.map(([d, v], i) => ({ label: d.toLowerCase(), value: v.clicks, color: deviceColor(d, i) }))} />
               </Card>
-              <Card title="Where searchers are" tech="Countries" sub="Impressions by country. Search Console has no city dimension." span={7}>
+              <Card title="Where searchers are" tech="Countries" sub="Impressions by country." info="Impressions by country. Search Console has no city dimension." span={7}>
                 <BarList rows={cty.slice(0, 10).map(([c, v]) => ({ label: country(c), value: v.impressions, color: C[0], right: `${v.impressions.toLocaleString("en-US")} · ${v.clicks} clicks` }))} />
               </Card>
-              <Card title="When people click on you" tech="Clicks by weekday and hour" sub={`From hourly data (dataState hourly_all), Pacific time as Search Console reports it. Google keeps hourly data for the last ${hourDays} days only.`}>
+              <Card title="When people click on you" tech="Clicks by weekday and hour" sub={`Pacific time · last ${hourDays} days.`} info={`From hourly data, in Pacific time as Search Console reports it. Google keeps hourly data for the last ${hourDays} days only.`}>
                 {g.HOUR.length ? <Heat rows={WD} cols={bands.map((b) => b[0])} m={heat} color={C[0]} /> : <Missing why="Search Console returned no hourly data." fix="Hourly data covers only the most recent days; press Sync now." />}
               </Card>
-              <Card title="Phone vs computer clicks over time" tech="Clicks by device over time" sub="Daily, from the [date, device] dimension set." span={7}>
+              <Card title="Phone vs computer clicks over time" tech="Clicks by device over time" sub="Daily." span={7}>
                 <LineChart id="gsc-dev" labels={labels(g)} series={devs.map((d, i) => ({ name: d.toLowerCase(), values: g.daily(g.DEV.filter((x) => g.inCur(x) && x.device === d), (x) => Number(x.clicks)), color: deviceColor(d, i) }))} />
               </Card>
               <Card title="Clicks by day of the week" tech="Clicks by weekday" sub="This period vs previous." span={5}>
@@ -61,15 +61,15 @@ export default async function SegmentsPage({ searchParams }: { searchParams: Pro
                 {app.length > 0 && app.every(([, v]) => !v.clicks) && <Note>No clicks came from special result types, so the donut shows impressions.</Note>}
               </Card>
             </Grid>
-            <Band title="Tables and lists" sub="The data behind the charts. Filter with the chips, sort any column." />
+            <Band title="Tables and lists" />
             <Grid>
-              <Card title="Pages that rank differently on phones and computers" tech="Mobile vs desktop ranking gap" sub="Pages ranking very differently by device (flagged over 2 positions)." span={7}>
+              <Card title="Pages that rank differently on phones and computers" tech="Mobile vs desktop ranking gap" sub="Flagged when the gap is over 2 positions." span={7}>
                 <Table site={siteOf(g)} facets={[{ k: "flag", label: "Gap" }]} rows={gap} cols={[{ k: "page", label: "Page", kind: "page" }, { k: "mob", label: "Mobile pos", num: true, f: "dec1" }, { k: "desk", label: "Desktop pos", num: true, f: "dec1" }, { k: "gap", label: "Gap", num: true, f: "dec1" }]} />
               </Card>
-              <Card title="How your results look on Google" tech="Search appearance" sub="Result types and their CTR. Rich results lift CTR." span={5}>
+              <Card title="How your results look on Google" tech="Search appearance" span={5}>
                 <Table rows={app.map(([a, v]) => ({ a: appName(a), clicks: v.clicks, impressions: v.impressions, ctr: v.ctr }))} cols={[{ k: "a", label: "Appearance" }, { k: "clicks", label: "Clicks", num: true }, { k: "impressions", label: "Impressions", num: true }, { k: "ctr", label: "CTR", num: true, f: "pct" }]} empty="0: no special result types in this period." />
               </Card>
-              <Card title="Countries" tech="Countries table" sub="ISO country codes as Search Console reports them." span={12}>
+              <Card title="Countries" span={12}>
                 <Table limit={15} rows={cty.map(([c, v]) => ({ c: country(c), code: c.toUpperCase(), clicks: v.clicks, impressions: v.impressions, ctr: v.ctr, pos: v.pos }))} cols={[{ k: "c", label: "Country" }, { k: "code", label: "Code", kind: "mono" }, { k: "clicks", label: "Clicks", num: true }, { k: "impressions", label: "Impressions", num: true, bar: C[0] }, { k: "ctr", label: "CTR", num: true, f: "pct" }, { k: "pos", label: "Position", num: true, f: "dec1" }]} />
               </Card>
             </Grid>

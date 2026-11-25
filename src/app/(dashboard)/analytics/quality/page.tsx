@@ -16,7 +16,7 @@ const P = (v: number) => `${(v * 100).toFixed(v < 0.1 ? 2 : 1)}%`;
 export default async function QualityPage({ searchParams }: { searchParams: Promise<SearchParams> }) {
   const sp = await searchParams;
   return (
-    <Ga4xScreen sp={sp} path={PATH} users title="Insights and data quality" description="What changed, bot and spam traffic, whether lead tracking still works, and how trustworthy the numbers are.">
+    <Ga4xScreen sp={sp} path={PATH} users title="Insights and data quality" description="Unusual changes, bot traffic, lead tracking health and data checks.">
       {({ g, wins }) => {
         const insights = notableChanges(g);
         // bot slices over the last 14 stored days (as the sample shows) plus the selected period
@@ -60,9 +60,9 @@ export default async function QualityPage({ searchParams }: { searchParams: Prom
         const Tall = g.totalAll();
         return (
           <>
-            <Band title="Charts" sub="Hover for details, click any bar, point or bubble for more." />
+            <Band title="Charts" />
             <Grid>
-              <Card title="Insights" sub="Each day and slice compared with the same weekday over the previous 4 weeks.">
+              <Card title="Insights" info="Each day and slice compared with the same weekday over the previous 4 weeks.">
                 <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-4">{insights.map((c) => <Insight key={c.title} {...c} />)}</div>
               </Card>
               <Card title="Data health" info="Configuration score = setup checks passed ÷ all checks. Qualified leads = leads outside bot-like slices ÷ all leads. Human sessions = 1 − bot-like sessions ÷ sessions. Pages with a landing page value = 1 − sessions with landing page (not set) ÷ sessions.">
@@ -76,16 +76,16 @@ export default async function QualityPage({ searchParams }: { searchParams: Prom
               <Card title="Fake traffic by day" tech="Bot page views calendar" sub="Days with bursts of zero-engagement page views." span={6}>
                 <CalHeat values={botPv} start={start} color={C[7]} label="bot page views" />
               </Card>
-              <Card title="Share of visits that are fake" tech="Bot share of sessions" sub="Daily." span={6}>
+              <Card title="Share of visits that are fake" tech="Bot share of sessions" span={6}>
                 <LineChart id="q-bot" f="pct" labels={labels(g)} series={[{ name: "Bot share", values: dBot.map((v, i) => (dAll[i] ? v / dAll[i] : 0)), color: C[7], area: true }]} />
               </Card>
             </Grid>
-            <Band title="Tables and lists" sub="The data behind the charts. Filter with the chips, sort any column." />
+            <Band title="Tables and lists" />
             <Grid>
-              <Card title="Fake (bot) traffic" tech="Bot and spam traffic" sub={`Day, country and browser slices with many page views and almost no engagement (over 15 sessions, under 20% engaged). ${g.qualified ? "Excluded from lead reports." : "Included now (All leads)."}`} span={7}>
+              <Card title="Fake (bot) traffic" tech="Bot and spam traffic" sub={g.qualified ? "Excluded from lead reports." : "Included now (All leads)."} info="Day, country and browser slices with many page views and almost no engagement (over 15 sessions, under 20% engaged)." span={7}>
                 <Table rows={bots} facets={[{ k: "c", label: "Country" }, { k: "b", label: "Browser" }]} cols={[{ k: "d", label: "Day" }, { k: "c", label: "Country" }, { k: "b", label: "Browser" }, { k: "sessions", label: "Sessions", num: true }, { k: "pv", label: "Page views", num: true, bar: C[7] }, { k: "er", label: "Engagement rate", num: true, f: "pct" }]} empty="No bot-like traffic in this period." />
               </Card>
-              <Card title="Is lead tracking working?" tech="Lead tracking health" sub="Alerts when a lead event that usually arrives stops for 3 days." span={5}>
+              <Card title="Is lead tracking working?" tech="Lead tracking health" sub="Flags a regular lead event that stops for 3+ days." span={5}>
                 <Table rows={health} cols={[{ k: "e", label: "Event", kind: "event" }, { k: "avg", label: "Per day (28d)", num: true, f: "dec1" }, { k: "lastTxt", label: "Last seen", kind: "status" }]} empty="No lead events are counted yet." />
               </Card>
               <Card title="Data checks" tech="Data quality">

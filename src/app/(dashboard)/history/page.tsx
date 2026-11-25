@@ -48,9 +48,9 @@ export default async function HistoryPage({ searchParams }: { searchParams: Prom
 
   return (
     <div className="space-y-6">
-      <TabHeader source={null} eyebrow="Reporting" title="Historical Reports" description={`Complete months from ${monthLabel(firstM)} to ${monthLabel(last)}. History starts when each source was connected (GA4 and Search Console import 90 days at connection).`} guide={[
+      <TabHeader source={null} eyebrow="Reporting" title="Historical Reports" description={`Complete months from ${monthLabel(firstM)} to ${monthLabel(last)}.`} guide={[
   { term: "Complete months", text: "Only full calendar months are shown, so months are comparable." },
-  { term: "History starts at connection", text: "Each source's history begins when it was connected; the earliest month can be partial." },
+  { term: "History starts at connection", text: "Each source's history begins when it was connected (GA4 and Search Console import 90 days back), so the earliest month can be partial." },
 ]} />
       {months.length > 1 && <Highlights items={hl} stableNote={`${monthLabel(months[0].slice(0, 7))} was in line with ${monthLabel(months[1].slice(0, 7))}.`} />}
       {months.length === 0 ? (
@@ -87,7 +87,6 @@ export default async function HistoryPage({ searchParams }: { searchParams: Prom
             { label: "CTR", align: "right", render: (m) => fmtPercent(toNum(at(s, m)?.ctr), 2) },
             { label: "Position", align: "right", render: (m) => fmtDecimal(toNum(at(s, m)?.position)) },
           ]} />
-          <p className="text-xs text-muted">A month only covers the days that were imported; the earliest month can be partial. Compare any two custom periods on the Overview with the date picker and &quot;Compare to previous period&quot;.</p>
         </>
       )}
     </div>

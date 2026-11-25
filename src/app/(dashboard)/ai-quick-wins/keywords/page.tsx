@@ -25,7 +25,7 @@ export default async function KeywordsPage() {
   const admin = createAdminClient();
   const [gsc, kw, serp] = await Promise.all([gscWinsFor(admin, client.id).catch(() => null), loadKw(admin, client.id), loadSerp(admin, client.id)]);
   const canEdit = ["owner", "admin"].includes(client.role);
-  const header = <PageHeader title="Keywords: Search Console + DataForSEO" description="Every query Google showed the site for (last 28 days), with the monthly searches, keyword difficulty, intent and SERP features DataForSEO reports for it." />;
+  const header = <PageHeader title="Keywords: Search Console + DataForSEO" description="Your Google queries (last 28 days) with volume, difficulty and intent." />;
   if (!gsc) return <>{header}<Missing title="Search Console is not connected" why="This screen starts from the queries Search Console reports." fix="Connect Search Console on the Integrations page." /></>;
   const topPage = new Map<string, string>();
   for (const r of [...gsc.g.qp()].sort((a, b) => Number(b.impressions) - Number(a.impressions))) if (!topPage.has(String(r.query))) topPage.set(String(r.query), pathOf(String(r.page)));
@@ -55,17 +55,17 @@ export default async function KeywordsPage() {
         <Kpi label="Queries on page 1" value={rows.filter((r) => r.pos != null && r.pos <= 10).length.toLocaleString()} />
       </Kpis>
       <div className="mt-4"><FetchKeywords canEdit={canEdit} /></div>
-      {!withVol.length && <p className="mt-2 text-sm text-muted">0 queries have DataForSEO data yet. Press Fetch DataForSEO data (top 300 queries, one Labs request per 700 keywords, cached 24 hours), or run a Deep or nightly quick-wins run.</p>}
+      {!withVol.length && <p className="mt-2 text-sm text-muted">0 queries have DataForSEO data yet. Press Fetch DataForSEO data, or run a Deep or nightly quick-wins run.</p>}
       <Band title="Charts" />
       <Grid>
         <Card title="SERP features on your queries" tech="serp_info.serp_item_types" sub="How many of your queries show each Google feature." span={6}>
           {feat.size ? <BarList rows={[...feat].sort((a, b) => b[1] - a[1]).map(([label, value], i) => ({ label, value, color: C[i % C.length] }))} /> : <p className="text-sm text-muted">0: fetch DataForSEO data first.</p>}
         </Card>
-        <Card title="Search intent" tech="search_intent_info.main_intent" sub="Queries by main intent (DataForSEO Labs)." span={6}>
+        <Card title="Search intent" tech="search_intent_info.main_intent" span={6}>
           {intents.size ? <BarList rows={[...intents].sort((a, b) => b[1] - a[1]).map(([label, value], i) => ({ label, value, color: C[i % C.length] }))} /> : <p className="text-sm text-muted">0: fetch DataForSEO data first.</p>}
         </Card>
       </Grid>
-      <Band title="Tables and lists" sub="Sort any column; filter with the chips." />
+      <Band title="Tables and lists" />
       <Grid>
         <Card title="Your queries with search volume and difficulty" tech="Search Console 28 days × DataForSEO Labs keyword overview">
           <Table site={gsc.site} limit={50} rows={rows} facets={[{ k: "intent", label: "Intent" }]} cols={[

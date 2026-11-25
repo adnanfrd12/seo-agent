@@ -139,9 +139,8 @@ export function RoadmapView({ month, current, today, months, row, tasks, canEdit
                     <ol className="mt-2 space-y-1.5">{row!.priorities.map((x, i) => <li key={i} className="flex gap-2"><span className="font-semibold tabular-nums text-accent">{i + 1}.</span><span className="leading-snug">{x}</span></li>)}</ol>
                   </>)}
                   {(row?.expected_outcomes.length ?? 0) > 0 && (<>
-                    <h3 className="mt-4 text-xs font-semibold uppercase tracking-wider text-muted">Expected outcomes</h3>
+                    <h3 className="mt-4 text-xs font-semibold uppercase tracking-wider text-muted" title="Hypotheses to check next month, not guarantees.">Expected outcomes</h3>
                     <ul className="mt-2 space-y-1.5 text-secondary">{row!.expected_outcomes.map((x, i) => <li key={i} className="flex gap-2"><span className="mt-1.5 size-1.5 shrink-0 rounded-full bg-positive" aria-hidden /><span className="leading-snug">{x}</span></li>)}</ul>
-                    <p className="mt-2 text-[11px] text-faint">Hypotheses to check next month, not guarantees.</p>
                   </>)}
                 </div>
               )}
@@ -203,7 +202,7 @@ function EmptyMonth({ month, canEdit, aiConfigured, onGenerate, onAdd }: { month
     <section className="rounded-[12px] border border-dashed border-border bg-surface px-6 py-12 text-center">
       <span className="mx-auto grid size-12 place-items-center rounded-full bg-accent-soft text-accent"><ListChecks className="size-6" aria-hidden /></span>
       <h2 className="mt-4 text-lg font-semibold">No roadmap for {monthLabel(month)} yet</h2>
-      <p className="mx-auto mt-1.5 max-w-lg text-sm text-muted">Generate a personalised strategy from this client&apos;s connected data, ask Nova to plan it with you, or add tasks yourself.</p>
+      <p className="mx-auto mt-1.5 max-w-lg text-sm text-muted">Generate a strategy from this client&apos;s data, plan it with Nova, or add tasks yourself.</p>
       <div className="mt-5 flex flex-wrap justify-center gap-2">
         {canEdit && aiConfigured && <button type="button" className={cn(btn, "bg-accent text-accent-foreground hover:opacity-90")} onClick={onGenerate}><Sparkles className="size-4" aria-hidden /> Generate strategy</button>}
         <button type="button" className={cn(btn, "border border-border bg-surface hover:bg-surface-muted")} onClick={() => askNova(`Plan my SEO roadmap for ${monthLabel(month)}.`)}><Sparkles className="size-4 text-accent" aria-hidden /> Plan with Nova</button>

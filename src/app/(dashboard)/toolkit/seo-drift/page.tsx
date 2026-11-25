@@ -16,7 +16,7 @@ export default async function DriftPage() {
   const page = await researchPage();
   if (!page) return null;
   const { client, canEdit, cache } = page;
-  const header = <><BackToToolkit /><TabHeader source={null} title="SEO Drift Monitor" description="A baseline of the SEO-critical elements on the website's key pages, re-checked every week. Every change is logged with its date, and regressions (noindex, lost canonical, removed schema, missing H1) are flagged first." guide={[
+  const header = <><BackToToolkit /><TabHeader source={null} title="SEO Drift Monitor" description="Weekly checks of key pages for SEO changes, with regressions flagged first." guide={[
     { term: "Baseline", text: "The first scan of each page. Every later scan is compared with the previous one (to date each change) and with the baseline (to show total drift)." },
     { term: "Severity", text: "Critical: page stops answering 200, noindex added or canonical removed. High: schema removed, title/H1 removed, canonical changed, word count down 30%+. Medium: title or H1 rewritten, internal links down 30%+. Low: description or minor changes." },
     { term: "Pages", text: "Home, the top pages by organic traffic, WordPress service pages and the pages used by the technical checks: up to 25." },
@@ -54,8 +54,8 @@ export default async function DriftPage() {
       </div>
 
       <div className="mt-4 grid gap-4 lg:grid-cols-2">
-        <Card title="Alerts" sub="Critical and High regressions detected in the last 30 days">
-          {alerts.length === 0 ? <p className="text-sm text-positive">No regressions: titles, H1s, canonicals, robots and schema are stable on every monitored page.</p> : (
+        <Card title="Alerts" sub="Critical and High, last 30 days">
+          {alerts.length === 0 ? <p className="text-sm text-positive">No regressions on any monitored page.</p> : (
             <ul className="divide-y divide-hairline">{alerts.slice(0, 12).map((a, i) => (
               <li key={i} className="flex flex-col gap-1 py-2 text-sm sm:flex-row sm:gap-3">
                 <span className="w-20 shrink-0"><Prio p={a.severity} /></span>
@@ -64,7 +64,7 @@ export default async function DriftPage() {
             ))}</ul>
           )}
         </Card>
-        <Card title="Check history" sub="Every scan of the key pages and the changes it found">
+        <Card title="Check history">
           <ul className="space-y-1.5 text-sm">{d.checks.slice(0, 8).map((c) => (
             <li key={c} className="grid grid-cols-[6rem_minmax(0,1fr)_5rem] items-center gap-3">
               <span>{day(c)}</span>

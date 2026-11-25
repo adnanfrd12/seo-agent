@@ -27,7 +27,7 @@ export default async function KeywordPage({ searchParams }: { searchParams: Prom
   const sp = await searchParams;
   const q = (first(sp.q) ?? "").trim().slice(0, 200);
   const header = (
-    <TabHeader source="gsc" title={q ? `Keyword: ${q}` : "Keyword"} description="Which pages rank for this search, and where the ranking comes from: Search Console, DataForSEO rankings, rank tracking and blog posts targeting it." />
+    <TabHeader source="gsc" title={q ? `Keyword: ${q}` : "Keyword"} description="Which pages rank for this search, across all your data sources." />
   );
   const back = (
     <Link href="/organic-keywords" className="mb-4 inline-flex items-center gap-1.5 text-sm text-secondary hover:text-foreground">
@@ -114,7 +114,7 @@ export default async function KeywordPage({ searchParams }: { searchParams: Prom
 
       {nothing && (
         <div className="mt-6">
-          <EmptyState title="No stored data for this keyword" body="Search Console has no clicks or impressions for it in the selected range, it isn't in the DataForSEO ranking list, isn't tracked and no blog post targets it." />
+          <EmptyState title="No stored data for this keyword" body="No Search Console data in this range, no DataForSEO ranking, not tracked, and no blog post targets it." />
         </div>
       )}
 
@@ -136,7 +136,7 @@ export default async function KeywordPage({ searchParams }: { searchParams: Prom
               { key: "page", label: "Page", type: "url" }, { key: "clicks", label: "Clicks", type: "int" }, { key: "impressions", label: "Impressions", type: "int" },
               { key: "ctr", label: "CTR %", type: "dec" }, { key: "position", label: "Avg position", type: "dec" },
             ]}
-            note="Web search, all devices and countries, for the selected date range. Several pages for one search can mean they compete with each other." />
+            note="Web search, all devices and countries." />
         )}
 
         {ranked.length > 0 && (
@@ -146,7 +146,7 @@ export default async function KeywordPage({ searchParams }: { searchParams: Prom
               { key: "volume", label: "Volume / mo", type: "int" }, { key: "difficulty", label: "Difficulty", type: "int" }, { key: "cpc", label: "CPC", type: "usd" },
               { key: "traffic", label: "Est. traffic", type: "dec" }, { key: "intent", label: "Intent", type: "badge" },
             ]}
-            note={`From the stored DataForSEO ranked-keywords list${cache?.get("ranked_keywords")?.fetchedAt ? `, updated ${cache.get("ranked_keywords")!.fetchedAt.slice(0, 10)}` : ""}.`} />
+            note={`DataForSEO ranked keywords${cache?.get("ranked_keywords")?.fetchedAt ? `, updated ${cache.get("ranked_keywords")!.fetchedAt.slice(0, 10)}` : ""}.`} />
         )}
 
         {kws.length > 0 && (
@@ -157,7 +157,7 @@ export default async function KeywordPage({ searchParams }: { searchParams: Prom
                 { key: "checked", label: "Checked", type: "date" }, { key: "device", label: "Device", type: "badge" },
                 { key: "position", label: "Position", type: "int" }, { key: "url", label: "Ranking page", type: "url" },
               ]}
-              note="From Rank Tracking. An empty position means the site was not found in the checked results." />
+              note="Empty position = not found in the checked results." />
           </>
         )}
 

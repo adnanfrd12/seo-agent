@@ -16,13 +16,13 @@ export default async function SeoClusterTool() {
   const canEdit = ["owner", "admin"].includes(client.role);
   const stored = await loadTool<ClusterRun>(await createClient(), client.id, "seo-cluster");
   const r = stored?.data;
-  const header = <TabHeader source={null} title="Keyword Clustering" description="Groups the site's keywords (DataForSEO ranked keywords + Search Console queries) by how Google ranks them, then maps each cluster to a hub page with the internal links to add." guide={[
+  const header = <TabHeader source={null} title="Keyword Clustering" description="Groups your keywords into topics, each mapped to a hub page." guide={[
     { term: "SERP overlap", text: `The top ${MAX_SERP} keywords are searched on Google. Keywords sharing 4+ of their top-10 results belong on the same page cluster; 2-3 shared results means cross-link them.` },
     { term: "Words / semantic", text: "Other keywords join the cluster they share most words with; keywords that overlap with nothing are grouped by their core term (marked semantic)." },
     { term: "Hub page", text: "The site page that already ranks for most of the cluster's keywords. Spoke pages should link to it with the hub keyword as anchor." },
   ]} />;
   const run = <RunTool slug="seo-cluster" canEdit={canEdit} label="Cluster keywords" cost={`up to $${clusterEstimate().toFixed(3)}`} wait={`Searching Google for up to ${MAX_SERP} keywords. About 1-2 minutes.`} />;
-  if (!stored || !r) return <><BackToToolkit />{header}<RunBar note={`Estimated cost: ${MAX_SERP} Google searches x $0.002 = $${clusterEstimate().toFixed(3)} (searches made by the SXO or Brief tools in the last 14 days are reused for free).`}>{run}</RunBar><EmptyState title="No clusters yet" body="Run the clustering to see your keywords grouped into hub-and-spoke topics." /></>;
+  if (!stored || !r) return <><BackToToolkit />{header}<RunBar note={`${MAX_SERP} Google searches at $0.002 each; searches from the last 14 days are reused free.`}>{run}</RunBar><EmptyState title="No clusters yet" body="Run the clustering to see your keywords grouped into hub-and-spoke topics." /></>;
   const maxD = Math.max(1, ...r.clusters.map((c) => c.demand));
   const noHub = r.clusters.filter((c) => !c.hubPage).length;
   const cannibal = r.clusters.filter((c) => c.pages.length > 1).length;

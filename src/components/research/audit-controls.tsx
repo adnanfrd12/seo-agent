@@ -11,8 +11,8 @@ const SIZES = [50, 150, 300, 500];
 // per-page DataForSEO prices for each crawl mode (mirrors RENDER_MODES in lib/dataforseo/audit.ts)
 const MODES = [
   { key: "html", label: "HTML only", perPage: 0.00015, note: "reads the server's HTML; cheapest" },
-  { key: "js", label: "Render JavaScript", perPage: 0.0015, note: "runs scripts first, so content and links built by JavaScript are seen (10x the price)" },
-  { key: "browser", label: "Full browser rendering", perPage: 0.0051, note: "a real browser with images and styles, plus Core Web Vitals per page (34x)" },
+  { key: "js", label: "Render JavaScript", perPage: 0.0015, note: "sees content built by JavaScript (10x the price)" },
+  { key: "browser", label: "Full browser rendering", perPage: 0.0051, note: "a real browser, plus Core Web Vitals per page (34x)" },
 ] as const;
 const cost = (n: number, perPage = 0.00015) => `$${(n * perPage + 0.002).toFixed(3)}`;
 
@@ -47,7 +47,7 @@ export function AuditRun({ canEdit, busy, hasResult, mode: savedMode = "html" }:
           {pending ? <Loader2 className="size-4 animate-spin" /> : <ScanSearch className="size-4" />} {hasResult ? "Run a new audit" : "Run first audit"}
         </button>
       </div>
-      <p className="text-xs text-muted">{m.label}: {m.note}. The weekly automatic audit uses the mode you run last.</p>
+      <p className="text-xs text-muted">{m.label}: {m.note}. Weekly audits reuse your last mode.</p>
       {msg && <p role={msg.ok ? "status" : "alert"} className={msg.ok ? "text-sm text-positive" : "text-sm text-negative"}>{msg.text}</p>}
     </div>
   );
@@ -74,7 +74,7 @@ export function AuditProgress({ crawled, max }: { crawled: number; max: number }
     <div role="status" className="rounded-[10px] border border-border bg-surface p-4">
       <p className="flex items-center gap-2 text-sm font-medium"><Loader2 className="size-4 animate-spin" aria-hidden /> Crawling the website… {now.crawled} of up to {now.max} pages</p>
       <div className="mt-2 h-2 overflow-hidden rounded-full bg-surface-muted"><div className="h-full rounded-full bg-accent transition-all" style={{ width: `${pct}%` }} /></div>
-      <p className="mt-2 text-xs text-muted">This takes a few minutes and you can leave the page: the results are stored when the crawl finishes.</p>
+      <p className="mt-2 text-xs text-muted">Takes a few minutes; you can leave this page.</p>
     </div>
   );
 }

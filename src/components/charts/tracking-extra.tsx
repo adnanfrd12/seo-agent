@@ -64,8 +64,8 @@ export function CruxPanel({ run, latest, right }: { run: CruxRun | null; latest:
       <div className="mb-4 flex flex-wrap items-end justify-between gap-3">
         <div className="min-w-0">
           <h2 className="text-base font-semibold">Real-user data (Chrome UX Report)</h2>
-          <p className="text-xs text-muted">
-            What real Chrome visitors experienced over the last 28 days. Lighthouse can&apos;t measure INP because nobody clicks during a lab test.
+          <p className="text-xs text-muted" title="Lighthouse can't measure INP because nobody clicks during a lab test.">
+            Real Chrome visitors, last 28 days.
             {run ? ` Read ${run.checkedAt.slice(0, 10)} from ${run.source === "crux_api" ? "the Chrome UX Report API" : "PageSpeed Insights"}${period ? `, data up to ${period}` : ""} · refreshed weekly.` : ""}
           </p>
         </div>
@@ -81,7 +81,7 @@ export function CruxPanel({ run, latest, right }: { run: CruxRun | null; latest:
       {!run ? (
         !failed && <p className="text-sm text-muted">Not looked up yet. It runs with the weekly Lighthouse test, or use the refresh button.</p>
       ) : !any ? (
-        <p className="rounded-[10px] border border-dashed border-border p-4 text-sm text-muted">Not enough real-user data: Google publishes these numbers only for pages and sites with enough Chrome visits in the last 28 days, and this site doesn&apos;t have enough yet. The Lighthouse lab results above are the best guide until it does.</p>
+        <p className="rounded-[10px] border border-dashed border-border p-4 text-sm text-muted">Not enough real-user data yet: Google publishes it only for sites with enough Chrome visits. Use the Lighthouse results above.</p>
       ) : (
         <div className="space-y-4">
           <p className="text-xs text-muted">{origin.mobile || origin.desktop ? "Whole site (all pages together)" : "No whole-site record; the tested pages are shown below."}</p>

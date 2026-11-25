@@ -17,7 +17,7 @@ const AGES = ["18-24", "25-34", "35-44", "45-54", "55-64", "65+"];
 export default async function AudiencePage({ searchParams }: { searchParams: Promise<SearchParams> }) {
   const sp = await searchParams;
   return (
-    <Ga4xScreen sp={sp} path={PATH} users title="Audience and places" description="Where visitors are (countries, states, towns and your service area), who they are and which places bring leads.">
+    <Ga4xScreen sp={sp} path={PATH} users title="Audience and places" description="Where visitors are, who they are and which places bring leads.">
       {async ({ g, wins, clientId, areaSource }) => {
         const T = g.total();
         const cities = g.byGeo((x) => String(x.city)).filter((r) => r.key !== "(not set)").sort((a, b) => b.sessions - a.sessions);
@@ -38,9 +38,9 @@ export default async function AudiencePage({ searchParams }: { searchParams: Pro
         const region = (c: string) => g.cityRegion.get(c) ?? "";
         return (
           <>
-            <Band title="Charts" sub="Hover for details, click any bar, point or bubble for more." />
+            <Band title="Charts" />
             <Grid>
-              <Card title="Visitors from your service area" tech="Service area" sub="Sessions and leads from inside the cities served." span={4} info={`Service area: ${areaSource}. Change it on Lead setup.`}>
+              <Card title="Visitors from your service area" tech="Service area" span={4} info={`Service area: ${areaSource}. Change it on Lead setup.`}>
                 <Donut parts={[{ label: "Inside service area", value: sum(inA, (x) => Number(x.sessions)), color: C[2] }, { label: "Outside", value: sum(outA, (x) => Number(x.sessions)), color: C[3] }]} />
                 <Note>{T.leads ? `${Math.round((leadsIn / T.leads) * 1000) / 10}%` : "000"} of leads come from inside the service area. ({areaSource}{g.serviceArea.length ? `, ${g.serviceArea.length} cities` : ""}.)</Note>
               </Card>
@@ -50,7 +50,7 @@ export default async function AudiencePage({ searchParams }: { searchParams: Pro
               <Card title="Visitors by state" tech="Regions" span={4}>
                 <BarList rows={regions.map((r) => ({ label: r.k, value: r.s, color: C[2] }))} />
               </Card>
-              <Card title="Visitor age and gender" tech="Age and gender" sub="Needs Google signals. Small groups are hidden by GA4 thresholding." span={7}>
+              <Card title="Visitor age and gender" tech="Age and gender" info="Needs Google signals. Small groups are hidden by GA4 thresholding." span={7}>
                 {known.length ? <ColChart id="aud-age" stacked={false} labels={AGES} series={["female", "male"].map((gd, i) => ({ name: gd, values: AGES.map((a) => sum(known.filter((r) => r.age === a && r.gender === gd), (r) => r.users)), color: [C[4], C[0]][i] }))} />
                   : <Missing why={g.meta.config.signals === "GOOGLE_SIGNALS_ENABLED" ? "Google signals is on, but GA4 withheld every age and gender group in this range (thresholding hides small groups)." : "Age and gender need Google signals, which is off for this property."} fix={g.meta.config.signals === "GOOGLE_SIGNALS_ENABLED" ? "Pick a longer date range; groups appear once enough signed-in visitors are in each one." : "GA4 Admin → Data collection → Google signals → turn on. Data appears for visits after that."} />}
                 {known.length > 0 && <Note>{Math.round((sum(ag.filter((r) => r.age === "unknown" || r.gender === "unknown"), (r) => r.users) / Math.max(1, sum(ag, (r) => r.users))) * 100)}% of visitors have no age or gender (not signed in to Google, or hidden by thresholding).</Note>}
@@ -71,12 +71,12 @@ export default async function AudiencePage({ searchParams }: { searchParams: Pro
                 <Stack100 rows={topC.map((r) => ({ label: r.key, parts: devs.map((d) => sum(g.geoCur().filter((x) => x.city === r.key && x.deviceCategory === d), (x) => Number(x.sessions))) }))} names={devs} colors={devs.map((d, i) => deviceColor(d, i))} />
               </Card>
             </Grid>
-            <Band title="Tables and lists" sub="The data behind the charts. Filter with the chips, sort any column." />
+            <Band title="Tables and lists" />
             <Grid>
-              <Card title="Visitors by country" tech="Countries" sub="Sessions and leads by country." span={5}>
+              <Card title="Visitors by country" tech="Countries" span={5}>
                 <Table rows={countries.map((r) => ({ key: r.key, sessions: r.sessions, er: r.er, leads: r.leads }))} cols={[{ k: "key", label: "Country" }, { k: "sessions", label: "Sessions", num: true, bar: C[0] }, { k: "er", label: "Engagement rate", num: true, f: "pct" }, { k: "leads", label: "Leads", num: true }]} />
               </Card>
-              <Card title="Visitors by town" tech="Cities" sub="Cities in the service area are tagged." span={7}>
+              <Card title="Visitors by town" tech="Cities" span={7}>
                 <Table limit={15} facets={[{ k: "area", label: "Service area" }]} rows={cities.map((r) => ({ key: r.key, area: g.inArea(r.key) ? "service area" : "outside", areaTone: g.inArea(r.key) ? "good" : "mute", region: region(r.key), sessions: r.sessions, users: usersBy[r.key] ?? null, leads: r.leads, lr: r.lr }))}
                   cols={[{ k: "key", label: "City" }, { k: "area", label: "Area", kind: "tag" }, { k: "region", label: "Region" }, { k: "sessions", label: "Sessions", num: true, bar: C[2] }, { k: "users", label: "Users", num: true }, { k: "leads", label: "Leads", num: true }, { k: "lr", label: "Lead rate", num: true, f: "pct" }]} />
               </Card>

@@ -82,7 +82,7 @@ export function RivalForm({ canEdit, suggestions }: { canEdit: boolean; suggesti
   if (!canEdit) return null;
   return (
     <div className="space-y-2 rounded-[10px] border border-border bg-surface p-4">
-      <label className="block text-sm">Competing businesses <span className="text-muted">(one per line, up to 3; pre-filled with the businesses that beat you on the map)</span>
+      <label className="block text-sm">Competing businesses <span className="text-muted">(one per line, up to 3)</span>
         <textarea className={`${field} mt-1 block min-h-20 w-full`} value={text} onChange={(e) => setText(e.target.value)} placeholder={"Competitor sign shop\nAnother sign company"} />
       </label>
       <button className={btn} disabled={pending || !text.trim()} onClick={() => run(() => compareRivals(text))}>

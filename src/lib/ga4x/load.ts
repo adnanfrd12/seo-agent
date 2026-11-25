@@ -28,7 +28,7 @@ export type Ga4xView =
 type Sources = { settings: Record<string, unknown>; nap: Awaited<ReturnType<typeof clientNap>> | null; gbp: { metadata: unknown } | null };
 
 /** Client settings, business address and Business Profile area: read in parallel with the cubes. */
-async function sourcesFor(admin: ReturnType<typeof createAdminClient>, clientId: string): Promise<Sources> {
+export async function sourcesFor(admin: ReturnType<typeof createAdminClient>, clientId: string): Promise<Sources> {
   const [settings, nap, { data: gbp }] = await Promise.all([
     admin.from("clients").select("settings").eq("id", clientId).maybeSingle().then((x) => ((x.data?.settings ?? {}) as Record<string, unknown>)),
     clientNap(admin, clientId).catch(() => null),
@@ -84,7 +84,7 @@ export async function ga4xPage(sp: SearchParams, opts: { users?: boolean } = {})
 }
 
 /** The service area used for "local" leads: saved on Lead setup, else the business city, its Business Profile area and its state's cities. */
-function serviceArea({ settings, nap, gbp }: Sources, cubes: Read["cubes"]) {
+export function serviceArea({ settings, nap, gbp }: Sources, cubes: Read["cubes"]) {
   // service area: the cities saved on Lead setup, else the business city and its Business Profile service area, else its state
   let area = Array.isArray(settings.ga4_service_area) ? (settings.ga4_service_area as string[]) : [];
   let areaSource = "Saved on Lead setup";

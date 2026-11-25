@@ -34,13 +34,13 @@ export default async function OrganicKeywordsPage() {
   const page = await researchPage();
   if (!page) return null;
   const { canEdit, configured, cache, budget } = page;
-  const header = <TabHeader source="dfs" title="Organic Keywords" description="Google keywords the website ranks for in the top 100: positions, search volume, estimated traffic and movement. Data from DataForSEO." guide={[
+  const header = <TabHeader source="dfs" title="Organic Keywords" description="Keywords your site ranks for in Google's top 100." guide={[
           { term: "Position", text: "Where the page appears in Google for that keyword (1 = top). Page one is positions 1-10." },
           { term: "Volume", text: "Estimated monthly searches for the keyword." },
           { term: "Est. traffic", text: "Modelled visits from the ranking (volume × position). An estimate, not measured visits." },
           { term: "Difficulty", text: "0-100: how hard it is to reach the top 10. Lower is easier." },
           { term: "Intent", text: "What the searcher wants: information, a comparison, or to buy. Match the page to the intent." },
-          { term: "Quick wins", text: "Keywords on page two (positions 11-20) with real search demand: the cheapest traffic gains." },
+          { term: "Quick wins", text: "Keywords at positions 4-20 with 100+ monthly searches: improving the page's content, title and internal links is usually the cheapest traffic gain." },
         ]} />;
   if (!configured) return <>{header}<EmptyState title="DataForSEO isn't configured" body="Add DATAFORSEO_LOGIN and DATAFORSEO_PASSWORD to the environment, then redeploy." action={{ href: "/integrations", label: "Open Integrations" }} /></>;
   if (!cache.target) return <>{header}<EmptyState title="No website to analyse yet" body="Connect Bing, Search Console or Business Profile for this client so the website can be detected, or ask an owner or admin to set it." action={{ href: "/integrations", label: "Open Integrations" }} /></>;
@@ -59,7 +59,7 @@ export default async function OrganicKeywordsPage() {
     return (
       <>
         {header}{chrome}
-        <EmptyState title={`No keyword data for ${target.domain} yet`} body="Nothing is fetched automatically when you open this page. The first analysis costs about 10 cents and is stored; after that it refreshes weekly in the background." />
+        <EmptyState title={`No keyword data for ${target.domain} yet`} body="The first analysis costs about 10 cents; after that it refreshes weekly." />
         <div className="mt-4">{controls}</div>
       </>
     );
@@ -104,9 +104,9 @@ export default async function OrganicKeywordsPage() {
         <KpiCard label="Traffic value / month" source="DFS" format={usd0} value={o.traffic_value} previous={null} hint="What the same traffic would cost through Google Ads." />
       </section>
       {links && (
-        <p className="mt-2 text-xs text-muted">Authority behind these rankings: {fmtInt(links.data.backlinks)} backlinks from {fmtInt(links.data.referring_domains)} referring domains · domain rank {fmtInt(links.data.rank)} (details on the Backlinks tab).</p>
+        <p className="mt-2 text-xs text-muted">Backlinks: {fmtInt(links.data.backlinks)} from {fmtInt(links.data.referring_domains)} referring domains · domain rank {fmtInt(links.data.rank)}</p>
       )}
-      <p className="mt-2 text-xs text-muted">Market: {marketLabel(target.location_code)} · updated {coreAt?.slice(0, 10)} · {o.paid_keywords} paid keywords detected · {quickWins} quick wins (positions 4–20 with 100+ searches).</p>
+      <p className="mt-2 text-xs text-muted">Market: {marketLabel(target.location_code)} · updated {coreAt?.slice(0, 10)} · {o.paid_keywords} paid keywords · {quickWins} quick wins</p>
       <div className="mt-3">{controls}</div>
 
       <div className="mt-6 grid gap-4 lg:grid-cols-3">
@@ -126,7 +126,7 @@ export default async function OrganicKeywordsPage() {
       </div>
 
       <div className="mt-6 grid gap-4 lg:grid-cols-2">
-        <Scatter title="Where the opportunities are" sub="Each dot is a ranking keyword; highlighted dots are quick wins (positions 4–20, 100+ searches)" dots={dots}
+        <Scatter title="Where the opportunities are" sub="Highlighted: quick wins (positions 4–20, 100+ searches)" dots={dots}
           xLabel="Position" yLabel="Searches / mo" xMax={100} band={{ from: 4, to: 20, label: "Quick-win zone" }} legend={["Quick win", "Other keyword"]} />
         <BarList title="Pages with the most estimated traffic" valueLabel="Est. visits / mo" items={topPages} emptyText="No ranking pages yet." />
       </div>
@@ -139,7 +139,7 @@ export default async function OrganicKeywordsPage() {
           ]} />
         </div>
       )}
-      {snaps.length < 2 && <p className="mt-6 text-xs text-muted">The trend chart appears after the second weekly update; each refresh adds one point without extra cost.</p>}
+      {snaps.length < 2 && <p className="mt-6 text-xs text-muted">The trend chart appears after the second weekly update.</p>}
 
       <div className="mt-6 space-y-6">
         <ResearchTable title="Ranking keywords" rows={rows} searchKeys={["keyword", "url"]} initialSort={{ key: "traffic", dir: "desc" }} csvName={`organic-keywords-${target.domain}`}
@@ -155,8 +155,7 @@ export default async function OrganicKeywordsPage() {
             { label: "Page 2 (11–20)", where: [{ key: "position", op: "gte", value: 11 }, { key: "position", op: "lte", value: 20 }] },
             { label: "Quick wins (4–20, 100+ searches)", where: [{ key: "position", op: "gte", value: 4 }, { key: "position", op: "lte", value: 20 }, { key: "volume", op: "gte", value: 100 }] },
             { label: "New", where: [{ key: "is_new", op: "true" }] }, { label: "Improved", where: [{ key: "is_up", op: "true" }] }, { label: "Declined", where: [{ key: "is_down", op: "true" }] },
-          ]}
-          note="Quick wins are keywords already close to page one with real search demand: improving the page's content, title and internal links is usually the cheapest traffic gain." />
+          ]} />
 
         {relevant ? (
           <ResearchTable title="Top pages by organic traffic" rows={relevant.data} searchKeys={["page"]} initialSort={{ key: "traffic", dir: "desc" }} csvName={`top-pages-${target.domain}`}
@@ -171,7 +170,7 @@ export default async function OrganicKeywordsPage() {
             columns={[
               { key: "url", label: "Page", type: "url" }, { key: "keywords", label: "Keywords", type: "int" }, { key: "best", label: "Best position", type: "int" },
               { key: "traffic", label: "Est. traffic", type: "dec" }, { key: "volume", label: "Total volume", type: "int" },
-            ]} note="Built from the ranking keywords above. The deep dive adds a per-page breakdown with positions and traffic value." />
+            ]} note="From the ranking keywords above; the deep dive adds more detail." />
         )}
 
         {competitors ? (
@@ -179,7 +178,7 @@ export default async function OrganicKeywordsPage() {
             columns={[
               { key: "domain", label: "Domain" }, { key: "shared", label: "Shared keywords", type: "int" }, { key: "avg_position", label: "Avg position", type: "dec" },
               { key: "keywords", label: "Their keywords", type: "int" }, { key: "traffic", label: "Their est. traffic", type: "int" },
-            ]} note="Sites that rank for the same keywords. Add the relevant ones as competitors in the settings above to run link gap analysis." />
+            ]} note="Add relevant ones as competitors in the settings above to run link gap analysis." />
         ) : (
           <div className="rounded-[10px] border border-dashed border-border p-5 text-sm text-muted">Organic competitors are part of the deep dive. Run it from the buttons above (about 25 cents, stored for 14 days).</div>
         )}

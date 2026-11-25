@@ -19,7 +19,7 @@ export default async function SeoSignalXDashboard() {
   if (!p) {
     return (
       <>
-        <SxHeader title="Welcome to SEOSignalX" description="SEOSignalX audits for this client, read from SEOSignalX's MCP server." />
+        <SxHeader title="Welcome to SEOSignalX" description="SEOSignalX audits for this client." />
         <Empty title="No SEOSignalX project for this client" body={b?.error ?? `SEOSignalX has no project for this client's website.${b?.projects.length ? ` Projects in SEOSignalX: ${b.projects.map((x) => x.domain).join(", ")}.` : ""}`} />
       </>
     );
@@ -29,7 +29,7 @@ export default async function SeoSignalXDashboard() {
 
   return (
     <>
-      <SxHeader title="Welcome to SEOSignalX" description={`Monitoring ${p.domain} - Track your SEO performance`} project={p.name} analyzedAt={lastAudit}
+      <SxHeader title="Welcome to SEOSignalX" description={`Monitoring ${p.domain}`} project={p.name} analyzedAt={lastAudit}
         right={<SxSync fetchedAt={b!.fetchedAt} />} />
       {b!.error && <p role="alert" className="mb-4 rounded-lg bg-accent-soft p-3 text-sm text-negative">Last sync: {b!.error}</p>}
 
@@ -43,7 +43,7 @@ export default async function SeoSignalXDashboard() {
       </section>
 
       <div className="mt-6 grid gap-4 lg:grid-cols-3">
-        <Card title="Project" sub="From SEOSignalX">
+        <Card title="Project">
           <dl className="grid grid-cols-[auto_1fr] gap-x-4 gap-y-2 px-4 py-3 text-sm">
             <dt className="text-muted">Name</dt><dd className="font-medium">{p.name}</dd>
             <dt className="text-muted">Website</dt><dd><a href={p.fullUrl} target="_blank" rel="noreferrer" className="text-accent underline">{p.domain}</a></dd>
@@ -53,7 +53,7 @@ export default async function SeoSignalXDashboard() {
           </dl>
         </Card>
 
-        <Card title="Saved audits" sub="Each audit as last run in SEOSignalX">
+        <Card title="Saved audits">
           <ul className="divide-y divide-hairline">
             {AUDITS.map((a) => {
               const au = b!.audits[a.key];
@@ -81,7 +81,7 @@ export default async function SeoSignalXDashboard() {
           </ul>
         </Card>
 
-        <Card title={<span className="flex items-center gap-2"><Wrench className="size-4 text-muted" />SEO fixes (patches)</span>} sub="Draft, published and unpublished patches"
+        <Card title={<span className="flex items-center gap-2"><Wrench className="size-4 text-muted" />SEO fixes (patches)</span>}
           right={<Link href="/seosignalx/patches" className="text-xs text-accent underline">View all</Link>}>
           {b!.patches.length ? (
             <ul className="divide-y divide-hairline">

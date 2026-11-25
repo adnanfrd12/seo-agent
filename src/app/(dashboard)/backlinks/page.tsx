@@ -72,7 +72,7 @@ export default async function BacklinksPage() {
   const page = await researchPage();
   if (!page) return null;
   const { canEdit, configured, cache, budget } = page;
-  const header = <TabHeader source="dfs" title="Backlinks" description="Who links to the website: authority, referring domains, new and lost links, anchors and link opportunities. Data from DataForSEO." guide={[
+  const header = <TabHeader source="dfs" title="Backlinks" description="Who links to your site, and where to find new links." guide={[
           { term: "Domain rank", text: "A 0-1000 strength score for the whole site's link profile. Higher means more authority." },
           { term: "Backlinks and referring domains", text: "Links pointing to you, and the number of different websites they come from. Many links from few sites are worth less than links from many." },
           { term: "Dofollow / nofollow", text: "Dofollow links pass ranking value; nofollow links don't (but still send visitors)." },
@@ -107,7 +107,7 @@ export default async function BacklinksPage() {
     return (
       <>
         {header}{chrome}
-        <EmptyState title={`No backlink data for ${target.domain} yet`} body="Nothing is fetched automatically when you open this page. The first analysis costs about 10 cents and is stored; after that it refreshes weekly in the background." />
+        <EmptyState title={`No backlink data for ${target.domain} yet`} body="The first analysis costs about 10 cents; after that it refreshes weekly." />
         <div className="mt-4">{controls}</div>
       </>
     );
@@ -180,7 +180,7 @@ export default async function BacklinksPage() {
   const anchorMix = [...anchorCounts.entries()].sort((a, b) => b[1] - a[1]).map(([label, value]) => ({ label, value, detail: anchorTotal ? `${((value / anchorTotal) * 100).toFixed(0)}%` : undefined }));
 
   const followDonut = (
-    <Donut title="Dofollow vs nofollow" sub="Only dofollow links pass ranking value" center={dofollowShare != null ? `${dofollowShare.toFixed(0)}%` : "—"} centerLabel="dofollow"
+    <Donut title="Dofollow vs nofollow" center={dofollowShare != null ? `${dofollowShare.toFixed(0)}%` : "—"} centerLabel="dofollow"
       items={[{ label: `Dofollow · ${fmtInt(s.dofollow)}`, value: s.dofollow ?? 0, color: "var(--series)" }, { label: `Nofollow · ${fmtInt(s.nofollow)}`, value: s.nofollow ?? 0, color: "var(--series-prev)" }]} />
   );
 
@@ -196,8 +196,8 @@ export default async function BacklinksPage() {
         <KpiCard label="Referring pages" source="DFS" format={fmtInt} value={s.referring_pages} previous={null} />
         <KpiCard label="Spam score" source="DFS" format={fmtInt} value={s.spam_score} previous={month?.spam ?? null} higherIsBetter={false} hint="0-100 estimate of how spammy the backlink profile looks. Lower is better; above 50 deserves a review." />
       </section>
-      <p className="mt-2 text-xs text-muted">
-        Overview data updated {coreAt?.slice(0, 10)} · {dofollowShare != null ? `${dofollowShare.toFixed(0)}% dofollow · ` : ""}{fmtInt(s.broken_backlinks)} broken backlinks · first seen {s.first_seen ?? "—"} · comparison is vs about a month ago when history exists.
+      <p className="mt-2 text-xs text-muted" title="Changes compare with about a month ago, when history exists.">
+        Overview data updated {coreAt?.slice(0, 10)} · {dofollowShare != null ? `${dofollowShare.toFixed(0)}% dofollow · ` : ""}{fmtInt(s.broken_backlinks)} broken backlinks · first seen {s.first_seen ?? "—"}
       </p>
       <div className="mt-3">{controls}</div>
 
@@ -218,9 +218,9 @@ export default async function BacklinksPage() {
       <section className="mt-6" aria-label="Links gained and lost each month">
         <h2 className="mb-3 text-base font-semibold">Links gained and lost each month</h2>
         <div className="grid gap-4 lg:grid-cols-2">
-          <DivergingBars title="New and lost backlinks" sub="New links above the line, lost links below" upLabel="New backlinks" downLabel="Lost backlinks" upColor="var(--positive)"
+          <DivergingBars title="New and lost backlinks" upLabel="New backlinks" downLabel="Lost backlinks" upColor="var(--positive)"
             data={nl.map((m) => ({ date: m.date!, up: m.new_backlinks, down: m.lost_backlinks }))} />
-          <DivergingBars title="New and lost referring domains" sub="Sites that started linking above the line, sites that stopped below" upLabel="New referring domains" downLabel="Lost referring domains" upColor="var(--series)"
+          <DivergingBars title="New and lost referring domains" upLabel="New referring domains" downLabel="Lost referring domains" upColor="var(--series)"
             data={nl.map((m) => ({ date: m.date!, up: m.new_domains, down: m.lost_domains }))} />
         </div>
       </section>
@@ -237,7 +237,7 @@ export default async function BacklinksPage() {
 
       {/* the breakdown's length changes with the selected list; the neighbour's columns stretch to match it */}
       <div className={`mt-6 grid gap-4 ${!deep ? "lg:grid-cols-[minmax(0,3fr)_minmax(0,2fr)]" : anchorMix.length > 0 ? "lg:grid-cols-2" : ""}`}>
-        <Breakdown title="Backlink profile breakdown" sub="Share of all backlinks, as reported by DataForSEO" valueLabel="Backlinks" groups={[
+        <Breakdown title="Backlink profile breakdown" sub="Share of all backlinks" valueLabel="Backlinks" groups={[
           { key: "attributes", label: "Attributes", items: named(s.attributes, s.backlinks) },
           { key: "types", label: "Link types", items: named(s.types, s.backlinks) },
           { key: "tld", label: "Extensions", items: named(s.tld, s.backlinks) },
@@ -246,7 +246,7 @@ export default async function BacklinksPage() {
           { key: "semantic", label: "Placement", items: named(s.semantic, s.backlinks) },
         ]} />
         {!deep ? followDonut : anchorMix.length > 0 && (
-          <FillColumns title="Anchor text mix" sub="A natural profile is mostly brand names and varied phrases" valueLabel="Backlinks"
+          <FillColumns title="Anchor text mix" valueLabel="Backlinks"
             bins={anchorMix.map((a) => ({ label: a.label, value: a.value, detail: a.detail }))} />
         )}
       </div>
@@ -258,8 +258,8 @@ export default async function BacklinksPage() {
             <h2 className="text-base font-semibold">Recent link changes</h2>
             <p className="text-sm text-muted">
               {changes
-                ? `Checked ${changes.fetchedAt.slice(0, 10)}. Each daily check compares the newest and lost backlinks with the previous check, so a link appears here the day it is first detected. Strong new or lost links also raise an alert on the Overview.`
-                : "Once a day the strongest new and lost backlinks are compared with the previous check, so changes appear here the day they're detected. The first check records what exists today."}
+                ? `Checked daily · last check ${changes.fetchedAt.slice(0, 10)}`
+                : "Checked daily. The first check records what exists today."}
             </p>
           </div>
           <LinkChangeCheck canEdit={canEdit} />
@@ -275,7 +275,7 @@ export default async function BacklinksPage() {
               ]} searchKeys={["domain", "from", "anchor"]} facets={[{ key: "kind", label: "Change" }]} ranges={[{ key: "rank", label: "Link rank" }, { key: "spam", label: "Spam" }]}
                 presets={[{ label: "Strong (link rank ≥ 100)", where: [{ key: "rank", op: "gte", value: 100 }] }, SPAM_PRESET]}
                 initialSort={{ key: "detected", dir: "desc" }} csvName={`link-changes-${target.domain}`}
-                note="Lists the strongest links by rank; very low-value links may not be shown. Backlink databases update continuously but not every day, so some days show no change." />)}
+                note="Strongest links by rank only." />)}
       </section>
 
       <section className="mt-8 space-y-3" aria-label="Links pointing at pages that no longer exist">
@@ -283,7 +283,7 @@ export default async function BacklinksPage() {
           <div className="min-w-0">
             <h2 className="text-base font-semibold">Links pointing at pages that no longer exist{broken ? <span className="ml-2 rounded-md bg-surface-muted px-1.5 py-0.5 text-xs font-medium tabular-nums text-secondary">{fmtInt(brokenRows.length)}</span> : null}</h2>
             <p className="text-sm text-muted">
-              Other sites still link to these URLs, but they answer with an error, so the link&apos;s value is lost. A 301 redirect to the closest live page recovers it: the easiest link wins there are.
+              A 301 redirect to the closest live page recovers each link&apos;s value.
               {broken ? ` Checked ${broken.fetchedAt.slice(0, 10)} · refreshed weekly.` : " Checked weekly once there is a link profile."}
             </p>
           </div>
@@ -292,7 +292,7 @@ export default async function BacklinksPage() {
         {broken && blockedRows.length > 0 && (
           <p role="note" className="rounded-[10px] border border-warn/40 bg-warn/10 p-3 text-sm">
             <span className="font-medium">{fmtInt(blockedRows.length)} {brokenRows.length ? "more " : ""}link{blockedRows.length === 1 ? "" : "s"} from {fmtInt(new Set(blockedRows.map((r) => r.domain)).size)} sites point at pages that work</span>
-            <span className="text-muted"> ({[...new Set(blockedRows.map((r) => pathOnly(r.to)))].slice(0, 3).join(", ")}) but answered {[...new Set(blockedRows.map((r) => r.status))].join("/")} to DataForSEO&apos;s link crawler. That is usually bot protection or a firewall rule, not a missing page. If search engines got the same answer these links would count for less, so make sure the firewall lets search crawlers through. They are listed in the table as “blocked”.</span>
+            <span className="text-muted"> ({[...new Set(blockedRows.map((r) => pathOnly(r.to)))].slice(0, 3).join(", ")}) but answered {[...new Set(blockedRows.map((r) => r.status))].join("/")} to DataForSEO&apos;s link crawler, usually bot protection rather than a missing page. Make sure the firewall lets search crawlers through. Listed as “blocked” below.</span>
           </p>
         )}
         {!broken ? null : brokenAll.length === 0 ? (
@@ -316,7 +316,7 @@ export default async function BacklinksPage() {
               ranges={[{ key: "domain_rank", label: "Domain rank" }]} facets={[{ key: "kind", label: "Problem" }, { key: "fix", label: "Suggested fix" }]}
               presets={[{ label: "Missing pages", where: [{ key: "kind", op: "eq", value: "missing" }] }, { label: "Dofollow", where: [{ key: "dofollow", op: "true" }] }, { label: "Strong sites (rank ≥ 100)", where: [{ key: "domain_rank", op: "gte", value: 100 }] }]}
               initialSort={{ key: "domain_rank", dir: "desc" }} csvName={`links-to-dead-pages-${target.domain}`}
-              note={`${broken.data.total > brokenAll.length ? `Showing the ${brokenAll.length} strongest of ${fmtInt(broken.data.total)}. ` : ""}Suggested targets are matched on the words in the URL against live pages from the site audit and backlink data; check each before adding the redirect.`} />
+              note={`${broken.data.total > brokenAll.length ? `Showing the ${brokenAll.length} strongest of ${fmtInt(broken.data.total)}. ` : ""}Check each suggested target before adding the redirect.`} />
           </>
         )}
       </section>
@@ -326,7 +326,7 @@ export default async function BacklinksPage() {
         {!deep ? (
           <div className="rounded-[10px] border border-dashed border-border p-6 text-sm">
             <p className="font-medium">The detailed lists haven&apos;t been loaded.</p>
-            <p className="mt-1 text-muted">The deep dive fetches the backlink list (top 1,000 by rank), new and lost links, referring domains, anchors, linked pages and organic competitors in one go, then stores them for 14 days.</p>
+            <p className="mt-1 text-muted">Run the deep dive above to load backlinks, referring domains, anchors and more (kept 14 days).</p>
           </div>
         ) : (
           <Tabs label="Backlink lists" items={[
@@ -349,21 +349,19 @@ export default async function BacklinksPage() {
               <ResearchTable title="Anchor texts" rows={lists.anchors?.data.rows ?? []} columns={[
                 { key: "anchor", label: "Anchor text" }, { key: "backlinks", label: "Backlinks", type: "int" }, { key: "domains", label: "Domains", type: "int" },
                 { key: "spam", label: "Spam", type: "spam" }, { key: "first_seen", label: "First seen", type: "date" },
-              ]} searchKeys={["anchor"]} presets={[SPAM_PRESET]} ranges={[{ key: "backlinks", label: "Backlinks" }, { key: "domains", label: "Domains" }]} initialSort={{ key: "backlinks", dir: "desc" }}
-                note="An anchor with thousands of backlinks and a high spam score usually points to a spam campaign." />) },
+              ]} searchKeys={["anchor"]} presets={[SPAM_PRESET]} ranges={[{ key: "backlinks", label: "Backlinks" }, { key: "domains", label: "Domains" }]} initialSort={{ key: "backlinks", dir: "desc" }} />) },
             { key: "pages", label: "Linked pages", badge: fmtInt(lists.pages?.data.total ?? 0), content: (
               <ResearchTable title="Pages receiving links" rows={lists.pages?.data.rows ?? []} columns={[
                 { key: "page", label: "Page", type: "url" }, { key: "backlinks", label: "Backlinks", type: "int" }, { key: "domains", label: "Domains", type: "int" },
                 { key: "rank", label: "Rank", type: "int" }, { key: "status", label: "HTTP status", type: "int" },
-              ]} searchKeys={["page"]} presets={[{ label: "Broken (4xx/5xx)", where: [{ key: "status", op: "gte", value: 400 }] }]} initialSort={{ key: "backlinks", dir: "desc" }}
-                note="Pages with an error status that still receive links are quick wins: redirect them to a working page." />) },
+              ]} searchKeys={["page"]} presets={[{ label: "Broken (4xx/5xx)", where: [{ key: "status", op: "gte", value: 400 }] }]} initialSort={{ key: "backlinks", dir: "desc" }} />) },
           ]} />
         )}
       </div>
 
       <div className="mt-8 space-y-3">
         <h2 className="text-base font-semibold">Link gap</h2>
-        <p className="text-sm text-muted">Sites that link to a competitor but not to {target.domain}: the best outreach targets. Each competitor costs about 4 cents once and is stored for 14 days.</p>
+        <p className="text-sm text-muted">Sites that link to a competitor but not to {target.domain}.</p>
         <LinkGapForm canEdit={canEdit} competitors={target.competitors} />
         {cache.gaps.length === 0 ? <p className="text-sm text-muted">No link gap run yet.</p> : (
           <Tabs label="Link gap by competitor" items={cache.gaps.map((g) => ({

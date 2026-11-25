@@ -14,16 +14,16 @@ import { cn } from "@/lib/utils";
 
 type Action = { tool: string; ok: boolean; summary: string };
 type Activity = { id: string; name: string; status: "running" | "done" | "failed"; summary?: string; startedAt?: number };
-type Confirm = { id: string; title: string; detail: string; state: "pending" | "busy" | "done" | "cancelled" | "failed"; result?: string };
+type Confirm = { id: string; title: string; detail: string; state: "pending" | "busy" | "done" | "cancelled" | "failed"; result?: string; expectSeconds?: number; busyAt?: number };
 type Msg = { id: string; role: "user" | "assistant"; content: string; actions?: Action[]; activity?: Activity[]; confirms?: Confirm[]; streaming?: boolean; error?: string; startedAt?: number; finishedAt?: number; stopped?: boolean };
 type Conv = { id: string; title: string; updated_at: string };
 
 const TOOL_LABEL: Record<string, string> = {
-  get_client_data_sources: "Checking connected data", get_client_analytics: "Reading analytics", get_competitor_analysis: "Reading competitor data",
+  get_page_data: "Reading this page", get_client_data_sources: "Checking connected data", get_client_analytics: "Reading analytics", get_competitor_analysis: "Reading competitor data",
   get_historical_performance: "Reading history", get_roadmap: "Reading the roadmap", get_roadmap_tasks: "Reading tasks", get_roadmap_progress: "Checking progress",
-  generate_monthly_strategy: "Writing the monthly strategy", add_roadmap_task: "Adding a task", update_roadmap_task: "Updating a task",
-  mark_task_completed: "Updating a task", delete_roadmap_task: "Preparing a deletion", update_monthly_strategy: "Updating the strategy",
 };
+/** The live activity line for a tool: reads say what they read; every change is only prepared for the user's confirmation. */
+const toolLabel = (name: string) => TOOL_LABEL[name] ?? (/^(get|list|search|find|read|check|show)_/.test(name) ? "Reading data" : "Preparing a change for you to confirm");
 const SUGGESTIONS = [
   { icon: CalendarPlus, text: "Create next month's SEO strategy" },
   { icon: ListPlus, text: "Add the most important tasks to this month's roadmap" },
@@ -133,7 +133,7 @@ export function Nova({ firstName, clientName, canEdit }: { firstName: string | n
             const item: Activity = { id: String(e.id), name: String(e.name), status: e.status as Activity["status"], summary: e.summary as string | undefined };
             return { ...m, activity: i >= 0 ? act.map((a, j) => (j === i ? { ...a, ...item } : a)) : [...act, { ...item, startedAt: Date.now() }] };
           });
-          if (e.t === "confirm") patchLast((m) => ({ ...m, confirms: [...(m.confirms ?? []), { id: String(e.id), title: String(e.title), detail: String(e.detail ?? ""), state: "pending" }] }));
+          if (e.t === "confirm") patchLast((m) => ({ ...m, confirms: [...(m.confirms ?? []), { id: String(e.id), title: String(e.title), detail: String(e.detail ?? ""), state: "pending", expectSeconds: typeof e.expectSeconds === "number" ? e.expectSeconds : undefined }] }));
           if (e.t === "changed") { didChange = true; window.dispatchEvent(new Event(ROADMAP_CHANGED)); }
           if (e.t === "error") patchLast((m) => ({ ...m, error: String(e.message) }));
         }
@@ -193,19 +193,34 @@ export function Nova({ firstName, clientName, canEdit }: { firstName: string | n
     setConvs((c) => (c ?? []).filter((x) => x.id !== id));
     if (id === conversationId) newChat();
   };
-  const decide = async (msgId: string, c: Confirm, decision: "confirm" | "cancel") => {
+  const decide = async (msgId: string, c: Confirm, decision: "confirm" | "cancel", quiet = false): Promise<boolean> => {
     const set = (patch: Partial<Confirm>) => setMessages((ms) => ms.map((m) => (m.id === msgId ? { ...m, confirms: (m.confirms ?? []).map((x) => (x.id === c.id ? { ...x, ...patch } : x)) } : m)));
-    set({ state: "busy" });
+    set({ state: "busy", busyAt: Date.now() });
     const j = await fetch("/api/nova/confirm", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ id: c.id, decision }) }).then((r) => r.json()).catch(() => ({ ok: false, message: "The request failed. Try again." }));
     set({ state: decision === "cancel" ? "cancelled" : j.ok ? "done" : "failed", result: j.message ?? j.error });
-    if (j.changed) changed();
+    if (j.changed && !quiet) changed();
+    return Boolean(j.changed);
   };
+  /** Confirms (or cancels) every change still waiting in one answer, in order, then refreshes the page once. */
+  const decideAll = async (m: Msg, decision: "confirm" | "cancel") => {
+    let any = false;
+    for (const c of (m.confirms ?? []).filter((x) => x.state === "pending")) any = (await decide(m.id, c, decision, true)) || any;
+    if (any) changed();
+  };
+  // get Nova's data ready (in the background, no cost) when the user is about to use it
+  const warmedAt = useRef(0);
+  const warm = useCallback(() => {
+    if (Date.now() - warmedAt.current < 5 * 60_000) return;
+    warmedAt.current = Date.now();
+    void fetch("/api/nova/warm", { method: "POST" }).catch(() => undefined);
+  }, []);
+  useEffect(() => { if (open) warm(); }, [open, warm]);
 
   return (
     <>
       {/* launcher */}
       <div className={cn("fixed bottom-5 right-5 z-40 print:hidden", open && "pointer-events-none opacity-0 max-sm:hidden")}>
-        <button ref={launcher} type="button" onClick={() => setOpen(true)} aria-label="Ask Nova, your AI SEO strategist" aria-expanded={open}
+        <button ref={launcher} type="button" onClick={() => setOpen(true)} onPointerEnter={warm} onFocus={warm} aria-label="Ask Nova, your AI SEO strategist" aria-expanded={open}
           className="nova-launcher group relative grid size-[58px] place-items-center rounded-full outline-none focus-visible:ring-4 focus-visible:ring-accent/40">
           <span className="nova-orb absolute inset-0 rounded-full" aria-hidden />
           <Sparkle className="relative z-10 size-7 text-white transition-transform duration-300 group-hover:rotate-12 group-hover:scale-110" />
@@ -257,7 +272,7 @@ export function Nova({ firstName, clientName, canEdit }: { firstName: string | n
                     <Orb size={46} />
                     <div className="min-w-0">
                       <p className="text-[18px] font-semibold leading-tight">Hi{firstName ? ` ${firstName}` : ""}! 👋</p>
-                      <p className="mt-1.5 text-[13px] leading-relaxed text-secondary">I&apos;m Nova, your AI SEO strategist for {clientName}. I read your connected data to analyse performance, plan strategies, and {canEdit ? "manage your roadmap and tasks for you" : "explain your roadmap and tasks"}.</p>
+                      <p className="mt-1.5 text-[13px] leading-relaxed text-secondary">I&apos;m Nova, your AI SEO strategist for {clientName}. I read your connected data to analyse performance, plan strategies, and {canEdit ? "run the dashboard for you: roadmap, rank tracking, audits, AI quick wins and more" : "explain your roadmap and data"}.</p>
                     </div>
                   </div>
                 </div>
@@ -298,11 +313,18 @@ export function Nova({ firstName, clientName, canEdit }: { firstName: string | n
                           {m.content && <Markdown text={m.content} />}
                           {m.streaming && m.startedAt && (
                             <WorkingIndicator startedAt={m.startedAt}
-                              label={(() => { const run = m.activity?.find((a) => a.status === "running"); return run ? `${TOOL_LABEL[run.name] ?? "Working"}…` : m.content ? "Writing…" : "Thinking…"; })()} />
+                              label={(() => { const run = m.activity?.find((a) => a.status === "running"); return run ? `${toolLabel(run.name)}…` : m.content ? "Writing…" : "Thinking…"; })()} />
                           )}
                           {m.stopped && !m.content && <p className="text-[13px] text-muted">Stopped before Nova answered. If it finished in the background, the answer is in the conversation history.</p>}
                           {!m.streaming && m.startedAt && m.finishedAt && !m.error && <AnswerTime ms={m.finishedAt - m.startedAt} stopped={m.stopped} />}
-                          {(m.confirms ?? []).map((c) => <ConfirmCard key={c.id} c={c} canAct={canEdit} onDecide={(d) => decide(m.id, c, d)} />)}
+                          {(m.confirms ?? []).map((c) => <ConfirmCard key={c.id} c={c} onDecide={(d) => decide(m.id, c, d)} />)}
+                          {!m.streaming && (m.confirms ?? []).filter((c) => c.state === "pending").length > 1 && (
+                            <div className="flex flex-wrap items-center gap-2 rounded-xl border border-hairline bg-surface-sunken px-3 py-2">
+                              <span className="min-w-0 flex-1 text-[12.5px] text-secondary">{(m.confirms ?? []).filter((c) => c.state === "pending").length} changes waiting</span>
+                              <button type="button" onClick={() => decideAll(m, "confirm")} className="inline-flex h-8 items-center gap-1.5 rounded-lg bg-foreground px-3 text-[13px] font-medium text-surface hover:opacity-90"><Check className="size-3.5" /> Confirm all</button>
+                              <button type="button" onClick={() => decideAll(m, "cancel")} className="h-8 rounded-lg border border-border bg-surface px-3 text-[13px] font-medium hover:bg-surface-muted">Cancel all</button>
+                            </div>
+                          )}
                           {m.error && <p role="alert" className="flex items-start gap-2 rounded-lg bg-negative-soft px-3 py-2 text-[13px] text-negative"><CircleAlert className="mt-0.5 size-4 shrink-0" />{m.error}</p>}
                         </div>
                       </div>
@@ -334,7 +356,7 @@ export function Nova({ firstName, clientName, canEdit }: { firstName: string | n
                 ? <button type="button" onClick={() => abort.current?.abort()} disabled={!stopReady} aria-label="Stop answering" title="Stop answering" className="grid size-9 shrink-0 place-items-center rounded-xl bg-foreground text-surface transition hover:opacity-90 disabled:opacity-40"><Square className="size-3.5 fill-current" /></button>
                 : <button type="submit" disabled={!input.trim()} aria-label="Send" className="nova-send grid size-9 shrink-0 place-items-center rounded-xl text-white transition disabled:opacity-40"><ArrowUp className="size-[18px]" strokeWidth={2.5} /></button>}
             </div>
-            <p className="mt-1.5 px-1 text-[11px] text-faint">Nova uses this client&apos;s connected data and can make mistakes. Deleting tasks or replacing a strategy always asks you first.</p>
+            <p className="mt-1.5 px-1 text-[11px] text-faint">Nova can make mistakes. It asks you before changing anything.</p>
           </form>
         )}
       </aside>
@@ -349,17 +371,17 @@ function IconBtn({ label, onClick, children, active, className }: { label: strin
 /** What Nova did: a live list while it works, then a collapsible summary. */
 function ActivityList({ activity, actions, live }: { activity?: Activity[]; actions?: Action[]; live?: boolean }) {
   const [open, setOpen] = useState(false);
-  const items = activity?.length ? activity.map((a) => ({ key: a.id, status: a.status, startedAt: a.startedAt, long: a.name === "generate_monthly_strategy", text: a.summary ?? `${TOOL_LABEL[a.name] ?? a.name}${a.status === "failed" ? " (didn't work)" : ""}` }))
-    : (actions ?? []).map((a, i) => ({ key: String(i), status: a.ok ? "done" as const : "failed" as const, startedAt: undefined as number | undefined, long: false, text: a.summary }));
+  const items = activity?.length ? activity.map((a) => ({ key: a.id, status: a.status, text: a.summary ?? `${toolLabel(a.name)}${a.status === "failed" ? " (didn't work)" : ""}` }))
+    : (actions ?? []).map((a, i) => ({ key: String(i), status: a.ok ? "done" as const : "failed" as const, text: a.summary }));
   if (!items.length) return null;
   const running = items.some((i) => i.status === "running");
   const expanded = open || running || Boolean(live);
-  const writes = items.filter((i) => /^(Added|Updated|Completed|Reopened|Generated|Deleted|Waiting)/.test(i.text) && i.status === "done").length;
+  const waiting = items.filter((i) => i.text.startsWith("Waiting for your confirmation") && i.status === "done").length;
   return (
     <div className="rounded-xl border border-hairline bg-surface-sunken text-[12.5px]">
       <button type="button" onClick={() => setOpen((v) => !v)} disabled={Boolean(live)} aria-expanded={expanded} className="flex w-full items-center gap-2 px-3 py-2 text-left text-secondary hover:text-foreground disabled:cursor-default">
         {live ? <Loader2 className="size-3.5 animate-spin text-accent" /> : <Check className="size-3.5 text-positive" />}
-        <span className="min-w-0 flex-1 truncate">{live ? "What Nova is doing" : `${items.length} step${items.length > 1 ? "s" : ""}${writes ? ` · ${writes} roadmap change${writes > 1 ? "s" : ""}` : ""}`}</span>
+        <span className="min-w-0 flex-1 truncate">{live ? "What Nova is doing" : `${items.length} step${items.length > 1 ? "s" : ""}${waiting ? ` · ${waiting} change${waiting > 1 ? "s" : ""} prepared` : ""}`}</span>
         {!live && <ChevronDown className={cn("size-3.5 transition-transform", !open && "-rotate-90")} />}
       </button>
       {expanded && (
@@ -367,10 +389,7 @@ function ActivityList({ activity, actions, live }: { activity?: Activity[]; acti
           {items.map((i) => (
             <li key={i.key} className="flex items-start gap-2">
               {i.status === "running" ? <Loader2 className="mt-0.5 size-3 shrink-0 animate-spin text-muted" /> : i.status === "failed" ? <X className="mt-0.5 size-3 shrink-0 text-negative" /> : <Check className="mt-0.5 size-3 shrink-0 text-positive" />}
-              <span className="min-w-0 flex-1">
-                <span className={cn("leading-snug", i.status === "failed" ? "text-negative" : "text-secondary")}>{i.text}{i.status === "running" ? "…" : ""}</span>
-                {i.status === "running" && i.long && i.startedAt && <span className="mt-1.5 block"><StepProgress startedAt={i.startedAt} expectedS={150} label="Usually about 2 minutes" /></span>}
-              </span>
+              <span className={cn("min-w-0 flex-1 leading-snug", i.status === "failed" ? "text-negative" : "text-secondary")}>{i.text}{i.status === "running" ? "…" : ""}</span>
             </li>
           ))}
         </ul>
@@ -379,7 +398,8 @@ function ActivityList({ activity, actions, live }: { activity?: Activity[]; acti
   );
 }
 
-function ConfirmCard({ c, canAct, onDecide }: { c: Confirm; canAct: boolean; onDecide: (d: "confirm" | "cancel") => void }) {
+/** A change Nova prepared. Nothing happens until the user confirms (the server checks their role again). */
+function ConfirmCard({ c, onDecide }: { c: Confirm; onDecide: (d: "confirm" | "cancel") => void }) {
   const settled = c.state === "done" || c.state === "cancelled" || c.state === "failed";
   return (
     <div className={cn("rounded-xl border p-3.5", settled ? "border-hairline bg-surface-sunken" : "border-warn/40 bg-warn-soft")}>
@@ -389,14 +409,17 @@ function ConfirmCard({ c, canAct, onDecide }: { c: Confirm; canAct: boolean; onD
         <p className={cn("mt-2 flex items-start gap-1.5 text-[12.5px] font-medium", c.state === "done" ? "text-positive" : c.state === "failed" ? "text-negative" : "text-muted")}>
           {c.state === "done" ? <Check className="mt-0.5 size-3.5 shrink-0" /> : <X className="mt-0.5 size-3.5 shrink-0" />}{c.result ?? (c.state === "cancelled" ? "Cancelled." : "")}
         </p>
-      ) : canAct ? (
-        <div className="mt-3 flex gap-2">
-          <button type="button" onClick={() => onDecide("confirm")} disabled={c.state === "busy"} className="inline-flex h-8 items-center gap-1.5 rounded-lg bg-foreground px-3 text-[13px] font-medium text-surface hover:opacity-90 disabled:opacity-60">
-            {c.state === "busy" ? <Loader2 className="size-3.5 animate-spin" /> : <Check className="size-3.5" />} Confirm
-          </button>
-          <button type="button" onClick={() => onDecide("cancel")} disabled={c.state === "busy"} className="h-8 rounded-lg border border-border bg-surface px-3 text-[13px] font-medium hover:bg-surface-muted disabled:opacity-60">Cancel</button>
-        </div>
-      ) : <p className="mt-2 text-[12px] text-muted">Only owners and admins can confirm this.</p>}
+      ) : (
+        <>
+          {c.state === "busy" && c.expectSeconds && c.busyAt && <div className="mt-2.5"><StepProgress startedAt={c.busyAt} expectedS={c.expectSeconds} label={`Usually about ${c.expectSeconds >= 90 ? `${Math.round(c.expectSeconds / 60)} minutes` : `${c.expectSeconds} seconds`}`} /></div>}
+          <div className="mt-3 flex gap-2">
+            <button type="button" onClick={() => onDecide("confirm")} disabled={c.state === "busy"} className="inline-flex h-8 items-center gap-1.5 rounded-lg bg-foreground px-3 text-[13px] font-medium text-surface hover:opacity-90 disabled:opacity-60">
+              {c.state === "busy" ? <Loader2 className="size-3.5 animate-spin" /> : <Check className="size-3.5" />} {c.state === "busy" ? "Working…" : "Confirm"}
+            </button>
+            <button type="button" onClick={() => onDecide("cancel")} disabled={c.state === "busy"} className="h-8 rounded-lg border border-border bg-surface px-3 text-[13px] font-medium hover:bg-surface-muted disabled:opacity-60">Cancel</button>
+          </div>
+        </>
+      )}
     </div>
   );
 }

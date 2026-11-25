@@ -21,7 +21,7 @@ const EFF = { Low: 1, Medium: 2, High: 3 } as const;
 export default async function GscQuickWinsPage({ searchParams }: { searchParams: Promise<SearchParams> }) {
   const sp = await searchParams;
   return (
-    <GscScreen sp={sp} path={PATH} title="Quick wins" description="Changes to make on the website to get more clicks from Google, ranked by extra clicks a month for the effort.">
+    <GscScreen sp={sp} path={PATH} title="Quick wins" description="Website changes that bring more Google clicks, ranked by gain for effort.">
       {({ g, wins, clientId }) => {
         const total = Math.round(wins.reduce((a, w) => a + w.gain, 0) * 10) / 10;
         const byType = [...new Set(wins.map((w) => w.type))].map((t) => ({ k: t, v: Math.round(wins.filter((w) => w.type === t).reduce((a, w) => a + w.gain, 0) * 10) / 10 })).sort((a, b) => b.v - a.v);
@@ -36,25 +36,23 @@ export default async function GscQuickWinsPage({ searchParams }: { searchParams:
               <Kpi label="Pages affected" value={String(new Set(wins.map((w) => w.page)).size)} />
               <div className="flex min-w-0 flex-col rounded-[10px] border border-border bg-surface p-3.5"><div className="text-[13px] font-medium">Done</div><QwDone scope={scope} total={wins.length} /></div>
             </Kpis>
-            <Band title="Charts" sub="Hover for details, click any bar, point or bubble for more." />
+            <Band title="Charts" />
             <Grid>
-              <Card title="How we pick these" tech="How this list is built">
-                <p className="max-w-4xl text-sm leading-relaxed text-secondary">Generated from the last 28 days of Search Console data, our crawl of the site and the URL Inspection results, by fixed rules: title rewrites and meta descriptions for pages ranking well with a weak click rate, queries missing from the title or H1, questions without a heading, FAQ and snippet formats, long AI-style searches, internal links to keywords almost on page one, new city pages, merges for pages competing with each other, sitemap and technical fixes, pages that aren&apos;t indexed, content refreshes, trust, image and local SEO, pages with no clicks or no impressions, falling click rates, rich-result errors and mobile ranking gaps. Gain = extra clicks a month from the expected click rate at the target position. Suggested text never invents facts: anything not on the site is a [placeholder]. Score = gain × confidence (1 / 0.75 / 0.5) ÷ effort (1 / 2 / 3).</p>
-              </Card>
-              <Card title="What to do first" tech="Impact vs effort" sub="Each bubble is a quick win. Top-left = do first (big gain, little work)." span={7}>
+              <Card title="What to do first" tech="Impact vs effort" info="Each bubble is a quick win. Top-left = do first (big gain, little work)." span={7}>
                 <Scatter points={wins.map((w) => ({ x: EFF[w.effort] + (w.rank % 5) * 0.06, y: w.gain, s: w.score, label: `#${w.rank} ${w.title}`, show: w.rank <= 5, c: w.effort === "Low" ? C[2] : w.effort === "Medium" ? C[3] : C[7] }))} xLabel="Effort (1 = low, 3 = high)" yLabel="Extra clicks a month" xf="dec1" yf="dec1" quad={[["Do first", 0, 1], ["Plan", 1, 1]]} />
               </Card>
               <Card title="Which kinds of changes pay off most" tech="Gain by type of change" span={5}>
                 <BarList rows={byType.map((r) => ({ label: r.k, value: r.v, color: C[0] }))} f="dec1" />
               </Card>
-              <Card title="Which pages to work on" tech="Gain by page" sub="Where the work pays off most.">
+              <Card title="Which pages to work on" tech="Gain by page">
                 <Treemap items={byPage.slice(0, 16).map((r, i) => ({ label: r.k, value: Math.round(r.v * 10) / 10, color: C[i % C.length] }))} f="dec1" />
               </Card>
-              <Card title="Your to-do list" tech="All quick wins" sub={'Ranked by estimated gain ÷ effort, adjusted for confidence. Tick "Done" as you go; it is saved in this browser.'}>
+              <Card title="Your to-do list" tech="All quick wins" sub={'Tick "Done" as you go (saved in this browser).'}
+                info="Built by fixed rules from the last 28 days of Search Console data, our crawl of the site and the URL Inspection results. Gain = extra clicks a month from the expected click rate at the target position. Score = gain × confidence (1 / 0.75 / 0.5) ÷ effort (1 / 2 / 3). Suggested text never invents facts: anything not on the site is a [placeholder].">
                 {wins.length ? <QwList wins={wins} scope={scope} unit="clicks/mo" /> : <p className="py-6 text-sm text-muted">No quick wins right now: none of the rules found a page holding clicks back in the last 28 days.</p>}
               </Card>
             </Grid>
-            <Band title="Quick wins by screen" sub="The same tasks that appear at the bottom of each screen." />
+            <Band title="Quick wins by screen" />
             <div className="space-y-4">
               {SCREENS.map(([id, label, href]) => {
                 const list = gscForScreen(wins, id);

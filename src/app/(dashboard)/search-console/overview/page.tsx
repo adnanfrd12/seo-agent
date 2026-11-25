@@ -16,7 +16,7 @@ const PATH = "/search-console/overview";
 export default async function GscOverviewPage({ searchParams }: { searchParams: Promise<SearchParams> }) {
   const sp = await searchParams;
   return (
-    <GscScreen sp={sp} path={PATH} types title="Overview" description="How the site does on Google search: clicks, impressions, click rate and ranking, what changed and where clicks land.">
+    <GscScreen sp={sp} path={PATH} types title="Overview" description="Clicks, impressions, click rate and ranking on Google search.">
       {({ g, wins }) => {
         const cur = g.totals(), prev = g.totals(true);
         const day = (prevP = false) => groupM(g.T.filter((x) => x.type === g.type && (prevP ? g.inPrev(x) : g.inCur(x))), (x) => String(x.date));
@@ -67,14 +67,14 @@ export default async function GscOverviewPage({ searchParams }: { searchParams: 
               <Kpi label="Clicks from private searches" tech="Hidden (anonymized) clicks" value={fmt("pct", hidden)} cur={hidden} prev={hiddenP} invert note="Totals minus visible query rows" />
               <Kpi label="Clicks from people searching your name" tech="Brand share of clicks" value={g.settings.brand.length ? fmt("pct", brandShare) : "0"} cur={brandShare} prev={brandShareP} missing={g.settings.brand.length ? undefined : "0: no brand terms are set. Add them on the Brand screen."} />
             </Kpis>
-            <Band title="Charts" sub="Hover for details, click any bar, point or bubble for more." />
+            <Band title="Charts" />
             <Grid>
-              <Card title="How many people saw and clicked your site on Google" tech="Clicks and impressions, last 90 days" sub="Daily, from date-only requests (true totals). Impressions rising faster than clicks in the last month is flagged in AI search." span={8}>
+              <Card title="How many people saw and clicked your site on Google" tech="Clicks and impressions, last 90 days" sub="Daily totals." info="Daily, from date-only requests (true totals). Impressions rising faster than clicks in the last month is flagged in AI search." span={8}>
                 <LineChart id="gsc-ov-90" labels={l90.map(sd)} series={[{ name: "Clicks", values: l90.map((d) => d90.get(d)?.clicks ?? 0), color: C[0], area: true }, { name: "Impressions ÷ 10", tech: "impressions / 10", values: l90.map((d) => (d90.get(d)?.impressions ?? 0) / 10), color: C[6] }]} />
               </Card>
-              <Card title="Which Google tab people found you in" tech="Clicks by search type" sub="Web, Image, Video, Discover and News are separate API search types." span={4}>
+              <Card title="Which Google tab people found you in" tech="Clicks by search type" info="Web, Image, Video, Discover and News are separate search types in Search Console." span={4}>
                 <BarList rows={byType.map((r, i) => ({ label: r.label, value: r.value, color: C[i % C.length] }))} />
-                {byType.slice(1).every((r) => !r.value) && <Note>Only Web search had clicks in this period; Image, Video, News, Discover and Google News show 0 because Google showed the site there rarely or never.</Note>}
+                {byType.slice(1).every((r) => !r.value) && <Note>Only Web search had clicks in this period.</Note>}
               </Card>
               <Card title="How high your keywords rank" tech="Position distribution" sub="Queries per position bucket, weekly." span={6}>
                 <ColChart id="gsc-ov-posdist" labels={weeks.map(sd)} series={posDist} />
@@ -88,32 +88,32 @@ export default async function GscOverviewPage({ searchParams }: { searchParams: 
                   <Gauge v={cur.clicks ? rich / cur.clicks : null} label="Clicks with a rich result" color={C[3]} />
                 </div>
               </Card>
-              <Card title="Clicks from Google each day" tech="Daily clicks calendar" sub="90 days. Darker = more clicks. Weekends are visibly lighter." span={6}>
+              <Card title="Clicks from Google each day" tech="Daily clicks calendar" sub="Last 90 days · darker = more clicks." span={6}>
                 <CalHeat values={cal} start={s90} color={C[0]} label="clicks" />
               </Card>
               <Card title="Click rate and ranking over time" tech="CTR and average position" sub="Daily. Position axis is reversed so up is better." span={6}>
                 <LineChart id="gsc-ov-ctr" f="pct" labels={labels(g)} series={[{ name: "CTR", values: series(dc, g.p.start, (v) => v.ctr), color: C[2], area: true }, { name: "Previous period", values: series(dp, g.p.pstart, (v) => v.ctr), color: C[2], dash: true }]} h={160} />
                 <LineChart labels={labels(g)} invert series={[{ name: "Average position", values: series(dc, g.p.start, (v) => v.pos ?? 0).map((v) => v || null), color: C[3] }]} h={160} />
               </Card>
-              <Card title="What caused the change in clicks" tech="What changed clicks" sub={`Each page's contribution to the change vs the previous ${g.p.days} days.`} span={6}>
+              <Card title="What caused the change in clicks" tech="What changed clicks" sub={`By page, vs the previous ${g.p.days} days.`} span={6}>
                 <WhatChanged id="gsc-ov-wf" unit="clicks" start={prev.clicks} items={[...top6.map((p) => ({ label: pathOf(p.page), value: p.dClicks })), { label: "All other pages", value: rest }]} />
               </Card>
               <Card title="Which parts of your site get the clicks" tech="Where clicks land" sub="Clicks by site section." span={6}>
                 <Treemap items={sections} />
               </Card>
-              <Card title="New searches you started showing for vs ones you lost" tech="New vs lost queries per week" sub="Queries seen for the first time vs queries that stopped appearing (query-level daily data)." span={6}>
+              <Card title="New searches you started showing for vs ones you lost" tech="New vs lost queries per week" info="Queries seen for the first time vs queries that stopped appearing (query-level daily data)." span={6}>
                 <ColChart id="gsc-ov-newlost" stacked={false} labels={weeks.map(sd)} series={[{ name: "New queries", values: newQ, color: C[2] }, { name: "Lost queries", values: lostQ, color: C[7] }]} />
               </Card>
-              <Card title="How many searches and pages bring clicks" tech="Queries and pages with clicks" sub="Distinct queries and pages with at least one click, weekly." span={6}>
+              <Card title="How many searches and pages bring clicks" tech="Queries and pages with clicks" sub="Weekly." info="Distinct queries and pages with at least one click, weekly." span={6}>
                 <LineChart id="gsc-ov-distinct" labels={weeks.map(sd)} series={[{ name: "Queries with clicks", values: withClicks, color: C[0] }, { name: "Pages with clicks", values: pagesWithClicks, color: C[1] }]} />
               </Card>
             </Grid>
-            <Band title="Tables and lists" sub="The data behind the charts. Filter with the chips, sort any column." />
+            <Band title="Tables and lists" />
             <Grid>
-              <Card title="Searches that changed the most" tech="Biggest movers" sub={`Queries with the largest click change vs the previous ${g.p.days} days.`} span={6}>
+              <Card title="Searches that changed the most" tech="Biggest movers" sub={`Click change vs the previous ${g.p.days} days.`} span={6}>
                 <Table rows={movers.map((r) => ({ query: r.query, clicks: r.clicks, chg: r.dClicks }))} cols={[{ k: "query", label: "Query", wrap: true }, { k: "clicks", label: "Clicks", num: true }, { k: "chg", label: "Change", num: true }]} />
               </Card>
-              <Card title="Clicks by search type" tech={`Search type: ${typeName}`} sub="True totals per Search Console search type for this period." span={6}>
+              <Card title="Clicks by search type" tech={`Search type: ${typeName}`} info="True totals per Search Console search type for this period." span={6}>
                 <Table rows={TYPES.map(([k, l]) => { const v = g.totals(false, k), p = g.totals(true, k); return { t: l, clicks: v.clicks, chg: v.clicks, prev: p.clicks, impressions: v.impressions, ctr: v.ctr, pos: v.pos }; })}
                   cols={[{ k: "t", label: "Search type" }, { k: "clicks", label: "Clicks", num: true }, { k: "chg", label: "Change", num: true, kind: "delta", prevKey: "prev" }, { k: "impressions", label: "Impressions", num: true }, { k: "ctr", label: "CTR", num: true, f: "pct" }, { k: "pos", label: "Position", num: true, f: "dec1" }]} />
               </Card>

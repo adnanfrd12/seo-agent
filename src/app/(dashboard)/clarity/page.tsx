@@ -59,7 +59,7 @@ export default async function ClarityPage() {
     const clientId = client.id;
     after(() => refreshRecordingsFor(createAdminClient(), clientId));
   }
-  const header = <TabHeader source="clarity" title="Microsoft Clarity" description="How visitors actually use the site: where they get stuck, what doesn't work and how far they read." guide={[
+  const header = <TabHeader source="clarity" title="Microsoft Clarity" description="Where visitors get stuck, what breaks and how far they read." guide={[
     { term: "Rage clicks", text: "Visitors clicking the same spot repeatedly: a sign something looks clickable but doesn't work." },
     { term: "Dead clicks", text: "Clicks that did nothing. Often a button or image people expect to be a link." },
     { term: "Quick backs", text: "Visitors who jumped straight back to the previous page: the page wasn't what they expected." },
@@ -184,7 +184,7 @@ export default async function ClarityPage() {
       {rows.length > 0 && <IssueRecordings set={recordings} issues={issueSummaries} site={client.name} />}
 
       {rows.length === 0 ? (
-        <Unavailable title="No Clarity data stored yet" body="The first import runs right after connecting (it can take a minute); then one day is added per daily sync. Clarity's API only serves the last 1–3 days, so history builds up over time." />
+        <Unavailable title="No Clarity data stored yet" body="The first import runs right after connecting (about a minute); each daily sync then adds a day." />
       ) : (
         <>
           <section aria-label="Totals" className="grid grid-cols-2 gap-3 md:grid-cols-3 lg:grid-cols-4 2xl:grid-cols-6">
@@ -222,7 +222,7 @@ export default async function ClarityPage() {
           {devices.length > 0 && <ReportTable<(typeof devices)[number]> title="Devices" source="Microsoft Clarity" empty="" rows={devices} columns={dimCols("Device")} />}
 
           {frictionPages.length > 0 && (
-            <StackedBars title="Friction by page" sub="Pages with the most friction events, split by type (hover a row for the counts)" valueLabel="Events"
+            <StackedBars title="Friction by page" sub="Pages with the most friction events, by type" valueLabel="Events"
               keys={frictionKeys} rows={frictionPages} />
           )}
 

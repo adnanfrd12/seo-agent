@@ -83,7 +83,7 @@ export function PostsSection({ rows, canEdit }: { rows: PostsRow[]; canEdit: boo
   return (
     <div className="space-y-4">
       <div className="flex flex-wrap items-start justify-between gap-3">
-        <p className="text-sm text-muted">Newest {fmtInt(20)} Google Business Profile posts per business · {rows.find((r) => r.fetchedAt)?.fetchedAt?.slice(0, 10)} · refreshes weekly</p>
+        <p className="text-sm text-muted">Newest {fmtInt(20)} posts per business · {rows.find((r) => r.fetchedAt)?.fetchedAt?.slice(0, 10)} · refreshes weekly</p>
         {control}
       </div>
       <section aria-label="Posting summary" className="grid grid-cols-2 gap-3 sm:grid-cols-3 xl:grid-cols-6">
@@ -99,7 +99,7 @@ export function PostsSection({ rows, canEdit }: { rows: PostsRow[]; canEdit: boo
       <div className="grid gap-4 lg:grid-cols-2">
         <StackedBars title="Where post links go" sub="Link destination per business" valueLabel="Posts" keys={DEST} rows={destRows} />
         {myDest.length > 0
-          ? <Donut title="Your link destinations" sub="Where the button on your posts leads" items={myDest} center={fmtInt(mine.length)} centerLabel="posts" />
+          ? <Donut title="Your link destinations" items={myDest} center={fmtInt(mine.length)} centerLabel="posts" />
           : <BarList title="Your link destinations" valueLabel="Posts" items={[]} emptyText="No posts of yours loaded." />}
       </div>
       <div className="grid gap-4 lg:grid-cols-2">

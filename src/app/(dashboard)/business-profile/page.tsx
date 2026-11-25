@@ -47,7 +47,7 @@ export default async function BusinessProfilePage({ searchParams }: { searchPara
   if (scope.gbp.length === 0) {
     return (
       <>
-        <TabHeader source="gbp" title={title} description="How customers find your business on Google Search and Maps, and what they do next." />
+        <TabHeader source="gbp" title={title} description="How customers find you on Search and Maps, and what they do." />
         <EmptyState
           title="Business Profile isn't connected"
           body="Connect the Google account that manages the Business Profile, then choose the locations to track."
@@ -70,7 +70,7 @@ export default async function BusinessProfilePage({ searchParams }: { searchPara
   const lastSync = conn.data?.last_synced_at ? new Date(conn.data.last_synced_at).toLocaleString() : "never";
   const header = (
     <TabHeader source="gbp" title={title}
-      description={`How customers find your business on Google Search and Maps, and what they do next. Location: ${scope.label(scope.gbp, scope.gbpPick)} · last synced ${lastSync}`}
+      description={`How customers find you on Search and Maps, and what they do. Location: ${scope.label(scope.gbp, scope.gbpPick)} · last synced ${lastSync}`}
       guide={[
           { term: "Profile views", text: "Times your Business Profile was shown on Google Search or Maps (unique viewers per day)." },
           { term: "Search vs Maps", text: "Whether people found you by searching Google, or by browsing the map." },
@@ -179,7 +179,7 @@ export default async function BusinessProfilePage({ searchParams }: { searchPara
               {picked.metadata.category && <span className="hidden shrink-0 rounded-md bg-surface-muted px-1.5 py-0.5 text-[11px] text-secondary sm:inline">{picked.metadata.category}</span>}
             </p>
           ) : <span />}
-          {lastDay && <p className="text-xs text-muted">Data through {asOf(lastDay)} · Google reports Business Profile data a few days late</p>}
+          {lastDay && <p className="text-xs text-muted">Data through {asOf(lastDay)} · Google reports a few days late</p>}
         </div>
       )}
 
@@ -217,14 +217,14 @@ export default async function BusinessProfilePage({ searchParams }: { searchPara
       </div>
 
       <div className="mt-4">
-        <StackedTimeBars title="Customer actions over time" sub="Website clicks, call button clicks and direction requests from the profile" valueLabel="Actions"
+        <StackedTimeBars title="Customer actions over time" valueLabel="Actions"
           bucket={dayCount > 45 ? "week" : "day"} keys={[{ key: "website_clicks", label: "Website" }, { key: "call_clicks", label: "Calls" }, { key: "direction_requests", label: "Directions" }]}
           data={actionDays} />
       </div>
 
       <div className="mt-6 grid grid-cols-1 gap-4 lg:grid-cols-2">
         <ViewsByWhere split={{ mobile_maps: toNum(b?.mobile_maps) ?? 0, desktop_maps: toNum(b?.desktop_maps) ?? 0, mobile_search: toNum(b?.mobile_search) ?? 0, desktop_search: toNum(b?.desktop_search) ?? 0 }} />
-        <ShareDonut title="What people did next" sub="Website, call and direction actions in this period" centerLabel="actions" keepOrder
+        <ShareDonut title="What people did next" centerLabel="actions" keepOrder
           items={[{ label: "Website", value: pick(cur, "website_clicks") ?? 0 }, { label: "Calls", value: pick(cur, "call_clicks") ?? 0 }, { label: "Directions", value: pick(cur, "direction_requests") ?? 0 }]} />
       </div>
 
@@ -233,7 +233,7 @@ export default async function BusinessProfilePage({ searchParams }: { searchPara
         <section className="rounded-[10px] border border-border bg-surface p-4" aria-label="Search keywords">
           <div className="mb-3 flex items-baseline justify-between">
             <h2 className="text-sm font-semibold">Searches that showed the profile</h2>
-            <span className="text-xs text-muted">Monthly · impressions</span>
+            <span className="text-xs text-muted" title="Reported per calendar month; every month overlapping the range is included. Google shows low counts only as a threshold.">Monthly · impressions</span>
           </div>
           {s.keywords.length === 0 ? (
             <p className="py-8 text-center text-sm text-muted">No keyword data for these months yet.</p>
@@ -249,7 +249,6 @@ export default async function BusinessProfilePage({ searchParams }: { searchPara
               ))}
             </ul>
           )}
-          <p className="mt-2 text-xs text-muted">Keywords are reported per calendar month; every month overlapping the range is included. Low counts are shown by Google only as a threshold.</p>
         </section>
         {picked && (
           <section className="rounded-[10px] border border-border bg-surface p-4 text-sm" aria-label="Business information">

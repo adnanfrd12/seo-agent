@@ -13,7 +13,7 @@ const PATH = "/analytics/engagement";
 export default async function EngagementPage({ searchParams }: { searchParams: Promise<SearchParams> }) {
   const sp = await searchParams;
   return (
-    <Ga4xScreen sp={sp} path={PATH} users title="Engagement" description="Which pages people view and land on, how long they stay, how far they read, what they click and search for.">
+    <Ga4xScreen sp={sp} path={PATH} users title="Engagement" description="Which pages people read and what they do there.">
       {({ g, wins }) => {
         const pg = [...group(g.pages.filter(g.inCur), (x) => String(x.pagePath))].map(([k, v]) => ({ key: k, views: sum(v, (x) => Number(x.screenPageViews)), sec: sum(v, (x) => Number(x.userEngagementDuration)), title: String(v[0].pageTitle ?? "") }));
         const leadsOn = new Map([...group(g.l2Cur(), (x) => String(x.pagePath))].map(([k, v]) => [k, sum(v, (x) => Number(x.eventCount))]));
@@ -29,16 +29,16 @@ export default async function EngagementPage({ searchParams }: { searchParams: P
         const sections = [...group(pages, (p) => pageGroup(p.key))].map(([k, v], i) => ({ label: k, value: sum(v, (p) => p.views), color: C[i % C.length] }));
         return (
           <>
-            <Band title="Charts" sub="Hover for details, click any bar, point or bubble for more." />
+            <Band title="Charts" />
             <Grid>
-              <Card title="How far people read" tech="Scroll depth by page" sub="Share of page views that reached 90% (scroll event ÷ page_view)." span={4}>
+              <Card title="How far people read" tech="Scroll depth by page" sub="Page views scrolled to 90%." info="Share of page views that reached 90% (scroll event ÷ page_view)." span={4}>
                 {scroll.some((r) => r.sc) ? <BarList rows={scroll.map((r) => ({ label: r.k, value: Math.min(1, r.sc / r.pv), color: C[3] }))} f="pct" max={1} />
                   : <Missing why="GA4 receives no scroll events from this site." fix="Turn on Enhanced measurement → Scrolls (GA4 Admin → Data streams → your web stream)." />}
               </Card>
-              <Card title="Links people clicked to other sites" tech="Outbound clicks" sub="Links to other sites (click event, link_domain)." span={4}>
+              <Card title="Links people clicked to other sites" tech="Outbound clicks" info="Outbound click events, by link_domain." span={4}>
                 <BarList rows={out.map((r) => ({ label: r.k, value: r.n, color: C[4] }))} empty="No clicks on links to other sites in this period." />
               </Card>
-              <Card title="What people searched for on your site" tech="Site search terms" sub="view_search_results with search_term." span={4}>
+              <Card title="What people searched for on your site" tech="Site search terms" info="view_search_results events, by search_term." span={4}>
                 {terms.length ? <BarList rows={terms.map((r) => ({ label: r.k, value: r.n, color: C[5] }))} />
                   : <Missing why="GA4 receives no view_search_results events: the site has no search box, or search tracking is off." fix="If the site has a search box, turn on Enhanced measurement → Site search and check its query parameter (q, s, search)." />}
               </Card>
@@ -56,17 +56,17 @@ export default async function EngagementPage({ searchParams }: { searchParams: P
                 <Stack100 rows={lp.slice(0, 8).map((r) => ({ label: r.key, parts: [r.engaged, r.sessions - r.engaged] }))} names={["Engaged", "Not engaged"]} colors={[GOOD, MUTED]} />
               </Card>
             </Grid>
-            <Band title="Tables and lists" sub="The data behind the charts. Filter with the chips, sort any column." />
+            <Band title="Tables and lists" />
             <Grid>
-              <Card title="Most visited pages" tech="Pages and screens" sub="Views, engagement and leads that happened on each page.">
+              <Card title="Most visited pages" tech="Pages and screens">
                 <Table site={g.meta.streamUrl} limit={12} rows={pages.map((p) => ({ key: p.key, views: p.views, users: p.users, aet: p.aet, onPage: p.onPage }))}
                   cols={[{ k: "key", label: "Page path", kind: "page" }, { k: "views", label: "Views", num: true, bar: C[0] }, { k: "users", label: "Users", num: true }, { k: "aet", label: "Avg engagement time", num: true, f: "dur" }, { k: "onPage", label: "Leads on page", num: true }]} />
               </Card>
-              <Card title="Pages people arrive on" tech="Landing pages (cleaned)" sub="Tracking parameters removed, with how many raw variants were merged." span={7}>
+              <Card title="Pages people arrive on" tech="Landing pages (cleaned)" sub="Tracking parameters removed." info="Tracking parameters removed, with how many raw variants were merged." span={7}>
                 <Table site={g.meta.streamUrl} limit={12} rows={lp.map((r) => ({ key: r.key, sessions: r.sessions, er: r.er, leads: r.leads, lr: r.lr, variants: variants.get(r.key) ?? 1 }))}
                   cols={[{ k: "key", label: "Landing page", kind: "page" }, { k: "sessions", label: "Sessions", num: true, bar: C[2] }, { k: "er", label: "Engagement rate", num: true, f: "pct" }, { k: "leads", label: "Leads", num: true }, { k: "lr", label: "Lead rate", num: true, f: "pct" }, { k: "variants", label: "Raw variants", num: true }]} />
               </Card>
-              <Card title="Everything visitors did" tech="Events" sub="Every event the property collects." span={5}>
+              <Card title="Everything visitors did" tech="Events" span={5}>
                 <Table limit={20} rows={evs} cols={[{ k: "e", label: "Event name", kind: "event" }, { k: "n", label: "Count", num: true, bar: C[1] }, { k: "users", label: "Users", num: true }, { k: "per", label: "Per user", num: true, f: "dec2" }]} />
               </Card>
             </Grid>

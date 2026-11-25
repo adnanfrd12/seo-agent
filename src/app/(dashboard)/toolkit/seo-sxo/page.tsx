@@ -19,12 +19,12 @@ export default async function SeoSxoTool() {
   const canEdit = ["owner", "admin"].includes(client.role);
   const stored = await loadTool<SxoRun>(await createClient(), client.id, "seo-sxo");
   const r = stored?.data;
-  const header = <TabHeader source={null} title="Intent / SXO Check" description="Is the page you rank the kind of page Google wants for the keyword? The Google top 10 for your top keywords is classified by page type and compared with your ranking page." guide={[
+  const header = <TabHeader source={null} title="Intent / SXO Check" description="Does your ranking page match the page type Google wants?" guide={[
     { term: "Mismatch", text: "At least 40% of the top 10 is one page type, your page is a different type, and fewer than 2 results share your type. A great page of the wrong type rarely breaks through." },
     { term: "Method", text: "Page-type comparison from the open-source claude-seo seo-sxo skill (MIT), classified from each result's URL and title." },
   ]} />;
   const run = <RunTool slug="seo-sxo" canEdit={canEdit} label="Check intent" cost={`up to $${sxoEstimate().toFixed(3)}`} wait={`Searching Google for ${MAX_SXO} keywords. About 1 minute.`} />;
-  if (!stored || !r) return <><BackToToolkit />{header}<RunBar note={`Estimated cost: ${MAX_SXO} Google searches x $0.002 (fresh searches from the Clustering or Brief tools are reused for free).`}>{run}</RunBar><EmptyState title="No intent check yet" body="Run the check to compare your ranking pages with what Google rewards." /></>;
+  if (!stored || !r) return <><BackToToolkit />{header}<RunBar note={`${MAX_SXO} Google searches at $0.002 each; searches from the last 14 days are reused free.`}>{run}</RunBar><EmptyState title="No intent check yet" body="Run the check to compare your ranking pages with what Google rewards." /></>;
   const mism = r.rows.filter((x) => x.mismatch);
   return (
     <>

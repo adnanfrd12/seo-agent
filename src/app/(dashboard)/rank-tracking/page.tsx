@@ -33,7 +33,7 @@ export default async function RankTrackingPage() {
   const page = await researchPage();
   if (!page) return null;
   const { client, canEdit, configured, cache, budget } = page;
-  const header = <TabHeader source="dfs" title="Rank Tracking" description="Google positions for your keywords on desktop and mobile, and what else is on each results page." guide={[
+  const header = <TabHeader source="dfs" title="Rank Tracking" description="Google positions for your keywords on desktop and mobile." guide={[
     { term: "Position", text: `Place among Google's organic results (1 = first). "Not in top ${RANK_DEPTH}" means it wasn't found.` },
     { term: "Change", text: "Movement since the previous check." },
     { term: "Next check", text: "When the daily job (07:30 UTC) next re-checks the keyword, from the chosen schedule. Runs for clients opened in the last 14 days with automatic refresh on, inside the daily spend cap." },
@@ -161,8 +161,8 @@ export default async function RankTrackingPage() {
             <p className="text-xs font-semibold uppercase tracking-wide text-muted">Next automatic check</p>
             <p className="mt-1 text-lg font-semibold tabular-nums">{plan.soonest ? when(plan.soonest) : "—"}</p>
             <p className="mt-1 text-xs text-muted">
-              {plan.dueThen} of {rows.length} keyword{rows.length === 1 ? "" : "s"} due then · {settings.schedule} schedule · the daily job runs at 07:30 UTC for clients opened in the last 14 days, inside the daily spend cap
-              {cache.target.auto_refresh === false ? ". Automatic refresh is off for this client, so only “Check now” runs." : "."}
+              {plan.dueThen} of {rows.length} keyword{rows.length === 1 ? "" : "s"} due then · {settings.schedule} schedule
+              {cache.target.auto_refresh === false ? " · Automatic refresh is off, so only “Check now” runs." : ""}
             </p>
           </div>
           <RankSchedulePicker canEdit={canEdit} schedule={settings.schedule} monthly={monthly} count={rows.length} />
@@ -225,7 +225,6 @@ export default async function RankTrackingPage() {
 
           <div className="mt-6">
             <ResearchTable title="Tracked keywords" rows={tableRows} searchKeys={["keyword", "url"]} csvName={`rankings-${cache.target.domain}`}
-              note={`Pinned keywords are listed first. “Live Google page” opens the same search on Google${rows.some((r) => !r.checkUrl) ? " (for checks made before the link was recorded, it is rebuilt from the keyword and the search location)" : ""}.`}
               columns={[
                 { key: "pinned", label: "Pin", type: "badge" },
                 { key: "keyword", label: "Keyword", type: "keyword" }, { key: "position", label: "Position", type: "int", hint: `Place in Google's organic results; empty = not in the top ${RANK_DEPTH}` },

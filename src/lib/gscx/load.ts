@@ -24,7 +24,7 @@ export type GscView =
 type SettingsSources = { c: { name: string; settings: unknown } | null; nap: Awaited<ReturnType<typeof clientNap>> | null; gbp: { metadata: unknown } | null };
 
 /** What the settings defaults are built from (read in parallel with the cubes). */
-async function settingsSources(admin: ReturnType<typeof createAdminClient>, clientId: string): Promise<SettingsSources> {
+export async function settingsSources(admin: ReturnType<typeof createAdminClient>, clientId: string): Promise<SettingsSources> {
   const [{ data: c }, nap, { data: gbp }] = await Promise.all([
     admin.from("clients").select("name, settings").eq("id", clientId).maybeSingle(),
     clientNap(admin, clientId).catch(() => null),
@@ -34,7 +34,7 @@ async function settingsSources(admin: ReturnType<typeof createAdminClient>, clie
 }
 
 /** Default settings from what the portal already knows about the business; anything saved on the Brand / Local screens wins. */
-function settingsFrom({ c, nap, gbp }: SettingsSources, inv: InventoryRow[], qRows: (string | number)[][]): { s: GscSettings; src: Record<keyof GscSettings, string> } {
+export function settingsFrom({ c, nap, gbp }: SettingsSources, inv: InventoryRow[], qRows: (string | number)[][]): { s: GscSettings; src: Record<keyof GscSettings, string> } {
   const st = ((c?.settings ?? {}) as Record<string, unknown>);
   const saved = (st.gsc_settings ?? {}) as Partial<GscSettings>;
   const host = inv[0] ? new URL(inv[0].url).hostname.replace(/^www\./, "") : "";

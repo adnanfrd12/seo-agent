@@ -21,7 +21,7 @@ export default async function LeadSetupPage({ searchParams }: { searchParams: Pr
   const { client } = await getSession();
   const canEdit = !!client && ["owner", "admin"].includes(client.role);
   return (
-    <Ga4xScreen sp={sp} path={PATH} title="Lead setup" description="Which GA4 events count as leads, which lead actions on the website aren't tracked yet, and how the GA4 property is set up.">
+    <Ga4xScreen sp={sp} path={PATH} title="Lead setup" description="Which events count as leads, what isn't tracked yet, and GA4 setup.">
       {({ g, wins, areaSource }) => {
         const evCur = g.events.filter((x) => g.inCur(x));
         const counts = new Map([...group(evCur, (x) => String(x.eventName))].map(([k, v]) => [k, sum(v, (x) => Number(x.eventCount))]));
@@ -65,9 +65,9 @@ export default async function LeadSetupPage({ searchParams }: { searchParams: Pr
         const gtm = gaps.length ? gtmContainer(g.meta.measurementId ?? null, gaps) : "";
         return (
           <>
-            <Band title="Charts" sub="Hover for details, click any bar, point or bubble for more." />
+            <Band title="Charts" />
             <Grid>
-              <Card title="Google Analytics setup check" tech="Property configuration check" sub="Read through the Admin API. Fix each item in GA4 Admin (steps in the quick wins below).">
+              <Card title="Google Analytics setup check" tech="Property configuration check" sub="Steps for each fix are in the quick wins below." info="Read through the Admin API. Fix each item in GA4 Admin (steps in the quick wins below).">
                 <div className="grid gap-x-8 gap-y-2 md:grid-cols-2">
                   {audit.map(([l, ok, note]) => (
                     <div key={l} className="flex items-baseline justify-between gap-3 border-b border-hairline py-1.5 text-[13px]">
@@ -85,16 +85,16 @@ export default async function LeadSetupPage({ searchParams }: { searchParams: Pr
                   <Gauge v={T.leads ? withSource / T.leads : null} label="Leads with a known source" sub="source isn't (not set)" color={C[6]} />
                 </div>
               </Card>
-              <Card title="Lead actions each day" tech="Lead events per day" sub="Stacked. A flat line at zero means tracking broke." span={7}>
+              <Card title="Lead actions each day" tech="Lead events per day" sub="A flat line at zero means tracking broke." span={7}>
                 <ColChart id="setup-day" labels={labels(g)} series={g.leadEvents.map((e) => ({ name: plainEvent(g, e), tech: e, values: g.daily(g.lCur().filter((x) => x.eventName === e), (x) => Number(x.eventCount)), color: eventColor(g, e) }))} />
               </Card>
-              <Card title="Everything visitors did (share)" tech="Event volume" sub="Share of all events." span={5}>
+              <Card title="Everything visitors did (share)" tech="Event volume" span={5}>
                 <Treemap items={[...counts].filter(([k]) => !k.includes("(")).sort((a, b) => b[1] - a[1]).slice(0, 14).map(([k, v], i) => ({ label: k, value: v, color: C[i % C.length] }))} />
               </Card>
             </Grid>
-            <Band title="Tables and lists" sub="The data behind the charts. Filter with the chips, sort any column." />
+            <Band title="Tables and lists" />
             <Grid>
-              <Card title="Actions tracked on your website" tech="Events found in this property" sub="Read automatically on connect. Lead events are detected by name, so no explorations or setup are needed in GA4. You can change any type." span={7}>
+              <Card title="Actions tracked on your website" tech="Events found in this property" sub="You can change any event's lead type." info="Read automatically on connect. Lead events are detected by name, so no explorations or setup are needed in GA4. You can change any type." span={7}>
                 <div className="overflow-x-auto">
                   <table className="w-full text-sm">
                     <thead className="border-b border-hairline text-[11px] font-semibold uppercase tracking-wide text-muted"><tr><th className="px-3 py-2 text-left">Event name</th><th className="px-3 py-2 text-right">Event count</th><th className="px-3 py-2 text-left">Lead type</th><th className="px-3 py-2 text-left">Key event</th><th className="px-3 py-2 text-left">Detected by</th></tr></thead>
@@ -117,7 +117,7 @@ export default async function LeadSetupPage({ searchParams }: { searchParams: Pr
                   </table>
                 </div>
               </Card>
-              <Card title="Actions on your site that aren't tracked yet" tech="Tracking gaps" sub={`Lead actions found on ${site.replace(/^https?:\/\//, "") || "the site"} (${(g.meta.crawl?.pages ?? []).join(", ") || "not checked"}) compared with events GA4 receives. Missing ones get a ready-made Tag Manager tag.`} span={5}>
+              <Card title="Actions on your site that aren't tracked yet" tech="Tracking gaps" sub={`Found on ${site.replace(/^https?:\/\//, "") || "the site"} (${(g.meta.crawl?.pages ?? []).join(", ") || "not checked"}) vs events GA4 receives.`} span={5}>
                 <table className="w-full text-sm">
                   <thead className="border-b border-hairline text-[11px] font-semibold uppercase tracking-wide text-muted"><tr><th className="px-2 py-2 text-left">Action</th><th className="px-2 py-2 text-left">On site</th><th className="px-2 py-2 text-left">Status</th></tr></thead>
                   <tbody className="divide-y divide-hairline">
@@ -133,7 +133,7 @@ export default async function LeadSetupPage({ searchParams }: { searchParams: Pr
                   </div>
                 )}
               </Card>
-              <Card title="Your service area" sub="Cities you serve: used for 'Leads from service area', the city tags and the local-proof quick wins. One city per line.">
+              <Card title="Your service area" sub="One city per line." info="Cities you serve: used for 'Leads from service area', the city tags and the local-proof quick wins.">
                 <ServiceAreaForm initial={areaSource === "Saved on Lead setup" ? g.serviceAreaNames : []} source={`${areaSource}${g.serviceArea.length ? ` (${g.serviceArea.length} cities)` : ""}`} action={setServiceArea} disabled={!canEdit} />
               </Card>
             </Grid>

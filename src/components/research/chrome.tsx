@@ -45,8 +45,8 @@ export function SpikeAlert({ spike }: { spike: LinkSpike }) {
         <p className="font-semibold text-negative">Unusual jump in new links in {spike.month}</p>
         <p className="mt-1">
           {spike.newDomains.toLocaleString("en-US")} new referring domains and {spike.newBacklinks.toLocaleString("en-US")} new backlinks, versus a usual {spike.baseline.toLocaleString("en-US")} new domains a month
-          ({Math.round(spike.ratio)}× normal). A spike this size is usually a link farm, spam or negative SEO rather than real growth. Check the <strong>Anchors</strong> and
-          <strong> Referring domains</strong> tabs (sort by spam score) and consider disavowing the spammy domains in Google Search Console.
+          ({Math.round(spike.ratio)}× normal). Spikes this size are usually spam or negative SEO, not real growth. Check the <strong>Anchors</strong> and
+          <strong> Referring domains</strong> tabs (sort by spam score) and consider disavowing spammy domains in Google Search Console.
         </p>
       </div>
     </div>

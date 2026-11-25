@@ -38,7 +38,7 @@ export function UploadForm() {
       <label className="flex cursor-pointer flex-col items-center justify-center gap-2 rounded-[10px] border-2 border-dashed border-border bg-surface p-8 text-center hover:bg-surface-muted">
         <FileUp className="size-8 text-muted" aria-hidden />
         <span className="text-sm font-medium">{file ? file.name : "Choose a PDF report (up to 20 MB)"}</span>
-        <span className="text-xs text-muted">Text and image-only (screenshot) PDFs are supported</span>
+        <span className="text-xs text-muted">Text and scanned PDFs both work</span>
         <input type="file" accept="application/pdf,.pdf" className="sr-only" onChange={(e) => setFile(e.target.files?.[0] ?? null)} />
       </label>
       <button onClick={go} disabled={!file || pending}
@@ -88,7 +88,7 @@ export function ReviewTable({ importId, metrics, confirmed }: { importId: string
             className="inline-flex items-center gap-1.5 rounded-lg bg-accent px-4 py-2 text-sm font-medium text-accent-foreground hover:opacity-90 disabled:opacity-60">
             {pending && <Loader2 className="size-4 animate-spin" />} Confirm selection
           </button>
-          <p className="text-xs text-muted">Only ticked figures are kept as supporting evidence. They never replace data from the Google or Clarity APIs.</p>
+          <p className="text-xs text-muted">Only ticked figures are kept; they never replace API data.</p>
           {msg && <p className="text-sm">{msg}</p>}
         </div>
       )}

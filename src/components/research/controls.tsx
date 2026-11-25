@@ -60,8 +60,8 @@ export function RefreshControls({ canEdit, coreAt, deepAt, estCore, estDeep, sho
         )}
       </div>
       <p className="text-xs text-muted">
-        Overview data {ago(coreAt) ? `updated ${ago(coreAt)}` : "not fetched yet"}; refreshed automatically about weekly.
-        {show !== "core" && ` Deep dive ${ago(deepAt) ? `updated ${ago(deepAt)}` : "not run yet"}; stored for 14 days. Opening this page never costs anything.`}
+        Overview data {ago(coreAt) ? `updated ${ago(coreAt)}` : "not fetched yet"} · refreshes weekly.
+        {show !== "core" && ` Deep dive ${ago(deepAt) ? `updated ${ago(deepAt)}` : "not run yet"} · kept 14 days.`}
       </p>
       {note}
     </div>
@@ -81,7 +81,7 @@ export function TargetForm({ canEdit, domain, location, autoRefresh, competitors
       <label className="text-sm">Country for rankings and keyword data
         <select className={`${field} mt-1`} value={loc} onChange={(e) => setLoc(Number(e.target.value))}>{MARKETS.map((m) => <option key={m.code} value={m.code}>{m.label}</option>)}</select>
       </label>
-      <label className="text-sm sm:col-span-2">Competitors (up to 8, comma separated; used for link gap analysis)
+      <label className="text-sm sm:col-span-2">Competitors (up to 8, comma separated)
         <input className={`${field} mt-1`} value={comp} onChange={(e) => setComp(e.target.value)} placeholder="competitor1.com, competitor2.com" />
       </label>
       <label className="flex items-center gap-2 text-sm sm:col-span-2"><input type="checkbox" className="size-4 accent-[var(--accent)]" checked={auto} onChange={(e) => setAuto(e.target.checked)} />
@@ -175,8 +175,8 @@ export function KeywordResearch({ canEdit, defaultLocation }: { canEdit: boolean
           </button>
         </div>
         <p className="mt-2 text-xs text-muted">
-          {canEdit ? "Each new search costs about 2–3 cents and each result is stored for 30 days, shared by every client, so repeating a search is free."
-            : "Only owners and admins can run new searches (they spend API credit)."}
+          {canEdit ? "Repeating a search within 30 days is free."
+            : "Only owners and admins can run new searches."}
         </p>
         {msg && <p role="alert" className="mt-2 text-sm text-negative">{msg}</p>}
       </div>

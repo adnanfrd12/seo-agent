@@ -17,7 +17,7 @@ export default async function HreflangPage() {
   const page = await researchPage();
   if (!page) return null;
   const { client, canEdit, cache } = page;
-  const header = <><BackToToolkit /><TabHeader source={null} title="International / hreflang" description="Checks whether the website serves more than one language or country and, if it does, whether the hreflang tags are valid. A single-language local site doesn't need hreflang; this page says so plainly instead of inventing work." guide={[
+  const header = <><BackToToolkit /><TabHeader source={null} title="International / hreflang" description="Whether the site needs hreflang tags, and whether they are valid." guide={[
     { term: "Checks when present", text: "Valid ISO language(-region) codes, a self-referencing entry, x-default, absolute URLs and return links between alternates." },
     { term: "lang attribute", text: "<html lang> should be set on every page; it helps screen readers and confirms the page language to search engines." },
     { term: "Method", text: "Adapted from the open-source claude-seo seo-hreflang skill (MIT licence). Free: reads the client's own website." },
@@ -64,9 +64,9 @@ export default async function HreflangPage() {
       <div className="mt-4 grid gap-4 lg:grid-cols-2">
         <Card title="Verdict">
           {single ? (
-            <p className="text-sm text-secondary">Every page checked is in <span className="font-medium text-foreground">{[...langs.keys()].join(", ")}</span> and none declares alternates. This is a single-language site serving one market, so <span className="font-medium text-foreground">hreflang is not needed</span>. Revisit only if a Spanish (or other language) version of the site is added.</p>
+            <p className="text-sm text-secondary">Every page checked is in <span className="font-medium text-foreground">{[...langs.keys()].join(", ")}</span> and none declares alternates, so <span className="font-medium text-foreground">hreflang is not needed</span>. Revisit if another language version is added.</p>
           ) : (
-            <p className="text-sm text-secondary">The site declares {withH.length ? "hreflang alternates" : "more than one page language"}. The checks on the right validate the setup.</p>
+            <p className="text-sm text-secondary">The site declares {withH.length ? "hreflang alternates" : "more than one page language"}.</p>
           )}
           <ul className="mt-3 flex flex-wrap gap-1.5 text-xs">{[...langs].map(([l, n]) => <li key={l} className="rounded-md bg-surface-muted px-2 py-0.5">{l} · {n} pages</li>)}</ul>
         </Card>

@@ -92,7 +92,7 @@ export default async function BingPage({ searchParams }: { searchParams: Promise
   if (scope.bing.length === 0) {
     return (
       <>
-        <TabHeader source="bing" title={title} description="How your website performs in Bing search, and how healthy it looks to Bing." />
+        <TabHeader source="bing" title={title} description="Your Bing search performance and site health." />
         <EmptyState title="Bing isn't connected" body="Connect Bing Webmaster Tools with an API key and choose this client's site on the Integrations page."
           action={{ href: "/integrations", label: "Go to Integrations" }} />
       </>
@@ -108,7 +108,7 @@ export default async function BingPage({ searchParams }: { searchParams: Promise
   const siteOptions = resourceOptions(scope.bing, "All sites (combined)");
   const header = (
     <TabHeader source="bing" title={title}
-      description={`How your website performs in Bing search, and how healthy it looks to Bing. Site: ${scope.label(scope.bing, scope.bingPick)} · Bing dates in UTC`}
+      description={`Your Bing search performance and site health. Site: ${scope.label(scope.bing, scope.bingPick)} · dates in UTC`}
       guide={[
           { term: "Clicks and impressions", text: "How often your site appeared in Bing results (impressions) and how often it was clicked." },
           { term: "Average position", text: "Where you typically appear in Bing (1 = top). It is an impression-weighted average of Bing's weekly figures." },
@@ -169,7 +169,7 @@ export default async function BingPage({ searchParams }: { searchParams: Promise
                 value={pick(s.current, m.k)} previous={pick(s.previous, m.k)} mom={pick(s.mom, m.k)} yoy={pick(s.yoy, m.k)} />
             ))}
           </section>
-          <p className="mt-2 text-xs text-muted">{coverage} Query and page statistics are weekly buckets; weeks starting inside the range are included.</p>
+          <p className="mt-2 text-xs text-muted" title="Bing reports queries and pages in weekly buckets; weeks starting inside the range are included.">{coverage} Queries and pages are weekly figures.</p>
 
           <div className="mt-6 grid gap-4 lg:grid-cols-2">
             <MetricTrend title="Bing search performance" source="Bing" options={[
@@ -186,9 +186,9 @@ export default async function BingPage({ searchParams }: { searchParams: Promise
           </div>
 
           <div className="mt-4 grid grid-cols-1 gap-4 lg:grid-cols-2">
-            <PositionScatter title="Click-through vs position" sub="Every Bing query in the period: high on the left is healthy, low on the left needs a better title"
+            <PositionScatter title="Click-through vs position" sub="Bing queries in this period; low on the left needs a better title"
               points={s.queries.filter((q) => toNum(q.position) != null && Number(q.impressions) > 0).map((q) => ({ label: q.query, position: toNum(q.position)!, ctr: toNum(q.ctr) ?? 0, impressions: Number(q.impressions), clicks: Number(q.clicks) }))} />
-            <Columns title="Where Bing queries rank" sub="Queries by average position in the period; page one highlighted" valueLabel="Queries"
+            <Columns title="Where Bing queries rank" sub="By average position; page one highlighted" valueLabel="Queries"
               bins={POS_BINS.map(([label, lo, hi]) => ({ label, value: s.queries.filter((q) => { const p = toNum(q.position); return p != null && p >= lo && p < hi; }).length, highlight: hi <= 10.5 }))} />
           </div>
         </>
@@ -235,11 +235,10 @@ export default async function BingPage({ searchParams }: { searchParams: Promise
                   <div key={String(l)} className="rounded-lg bg-surface-muted p-3"><p className="text-xs font-medium text-muted">{l}</p><p className="mt-1 text-[26px] font-semibold tabular-nums tracking-[-0.02em]">{fmtInt(toNum(v))}</p></div>
                 ))}
               </div>
-              <p className="mt-1 text-xs text-muted">Index and inbound-link counts are the latest day ({latest?.metric_date}); crawled pages and errors are summed over the range.</p>
+              <p className="mt-1 text-xs text-muted">Index and links as of {latest?.metric_date}; crawls, errors and responses are range totals.</p>
               <ul className="mt-3 grid gap-x-6 gap-y-1 text-sm sm:grid-cols-2">
                 {codes.map(([label, k]) => <li key={k} className="flex justify-between border-b border-border/60 py-1"><span>{label}</span><span className="tabular-nums">{fmtInt(sumC(k))}</span></li>)}
               </ul>
-              <p className="mt-1 text-xs text-muted">HTTP response counts summed over the days in range.</p>
             </section>
             <div className="grid min-w-0 content-start gap-4">
               <ShareDonut title="HTTP responses" sub="Share of crawl responses in the period" centerLabel="responses" keepOrder top={codes.length}
@@ -286,7 +285,7 @@ export default async function BingPage({ searchParams }: { searchParams: Promise
               )}
               <div className={`grid grid-cols-1 gap-4 ${settings?.CrawlRate?.length ? "lg:grid-cols-2" : ""}`}>
                 {settings?.CrawlRate?.length ? (
-                  <Columns title="Crawl rate by hour" sub="Bing's crawl rate setting per hour (UTC); busiest hours highlighted" valueLabel="Rate"
+                  <Columns title="Crawl rate by hour" sub="Hours in UTC; busiest highlighted" valueLabel="Rate"
                     bins={settings.CrawlRate.map((v, h) => ({ label: String(h), value: v, highlight: v === Math.max(...settings.CrawlRate) }))} />
                 ) : null}
                 <section className={card} aria-label="Bing settings">

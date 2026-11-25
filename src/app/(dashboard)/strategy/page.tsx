@@ -64,7 +64,7 @@ export default async function StrategyPage({ searchParams }: { searchParams: Pro
 
   return (
     <div>
-      <TabHeader source={null} eyebrow="AI intelligence" title="30-Day SEO Strategy" description="A prioritised, week-by-week plan generated from this period's evidence. Track progress as you go; future reports compare before and after, without claiming cause and effect." guide={[
+      <TabHeader source={null} eyebrow="AI intelligence" title="30-Day SEO Strategy" description="A week-by-week plan built from this period's data." guide={[
   { term: "Weekly plan", text: "Week 1 fixes and quick wins, week 2 keyword and content work, week 3 user experience and conversion, week 4 measurement and next steps." },
   { term: "Evidence", text: "Each task cites the data behind it. Tasks without evidence are setup or measurement steps." },
   { term: "Success metric", text: "What to check later to know whether the task worked. Results are compared before and after, without claiming cause and effect." },
@@ -82,7 +82,7 @@ export default async function StrategyPage({ searchParams }: { searchParams: Pro
           <GenerateButton kind="strategy" start={range.start} end={range.end}
             label={plan ? `Generate latest strategy (${range.start} → ${range.end})` : "Generate 30-day strategy"}
             disabled={!canEdit || running} disabledReason={running ? "A strategy is already being generated" : "Owners and admins only"} />
-          {plan && <p className="text-xs text-muted">A new plan is prepared automatically after each month closes. Generating a new one keeps earlier plans and their task history.</p>}
+          {plan && <p className="text-xs text-muted" title="Generating a new plan keeps earlier plans and their task history.">A new plan is prepared automatically after each month closes.</p>}
         </div>
       )}
 
@@ -99,7 +99,7 @@ export default async function StrategyPage({ searchParams }: { searchParams: Pro
             <div className="flex min-w-0 flex-col gap-4">
               <StackedBars title="Progress by week" sub="Tasks per week, by status" valueLabel="Tasks" keys={STATUS_KEYS}
                 rows={[1, 2, 3, 4].map((w) => ({ label: `W${w} · ${WEEKS[w - 1]}`, values: Object.fromEntries(STATUS_KEYS.map((k) => [k.key, all.filter((t) => t.week === w && t.status === k.key).length])) }))} />
-              <Fill className="flex-1"><SplitBar title="By priority" sub="Expected importance of each task" segments={[
+              <Fill className="flex-1"><SplitBar title="By priority" sub="Expected importance" segments={[
                 { label: "High", value: all.filter((t) => t.priority === "high").length, color: "var(--negative)" }, { label: "Medium", value: all.filter((t) => t.priority === "medium").length, color: "var(--warn)" },
                 { label: "Low", value: all.filter((t) => t.priority === "low").length, color: "var(--cat-other)" },
               ]} /></Fill>

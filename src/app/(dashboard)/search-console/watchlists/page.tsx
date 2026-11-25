@@ -15,7 +15,7 @@ const CATS = ["Not indexed", "Indexed but no demand", "Duplicate/canonicalised",
 export default async function WatchlistsPage({ searchParams }: { searchParams: Promise<SearchParams> }) {
   const sp = await searchParams;
   return (
-    <GscScreen sp={sp} path={PATH} title="Page watchlists" description="Pages that are shown but never clicked, pages Google never shows, and pages whose click rate rose or fell.">
+    <GscScreen sp={sp} path={PATH} title="Page watchlists" description="Pages never clicked, never shown, or with a changing click rate.">
       {({ g, wins }) => {
         const pages = pageTable(g);
         const nc = noClicks(g, pages), ni = noImpressions(g, pages), ch = ctrChanges(g, pages);
@@ -30,7 +30,7 @@ export default async function WatchlistsPage({ searchParams }: { searchParams: P
               <Kpi label="Pages clicked more often" tech="Pages with CTR up" value={fmt("int", up.length)} note={`vs previous ${g.p.days} days`} />
               <Kpi label="Pages clicked less often" tech="Pages with CTR down" value={fmt("int", down.length)} note={`vs previous ${g.p.days} days`} />
             </Kpis>
-            <Band title="Charts" sub="Hover for details, click any bar, point or bubble for more." />
+            <Band title="Charts" />
             <Grid>
               <Card title="Shown on Google, never clicked" tech="Impressions without a click" span={4}>
                 <BarList rows={nc.slice(0, 8).map((p) => ({ label: pathOf(p.page), value: p.impressions, color: C[7] }))} empty="Every page shown on Google got at least one click." />
@@ -45,13 +45,13 @@ export default async function WatchlistsPage({ searchParams }: { searchParams: P
                 <CompareBars f="pct" rows={[...up.slice(0, 4), ...down.slice(0, 4)].map((p) => ({ label: pathOf(p.page), cur: p.ctr, prev: p.ctrPrev }))} />
               </Card>
             </Grid>
-            <Band title="Tables and lists" sub="The data behind the charts. Filter with the chips, sort any column." />
+            <Band title="Tables and lists" />
             <Grid>
-              <Card title="Pages people see on Google but never click" tech="Pages and posts with no clicks" sub={`Impressions > 0 and clicks = 0, last ${g.p.days} days.`}>
+              <Card title="Pages people see on Google but never click" tech="Pages and posts with no clicks" sub={`Last ${g.p.days} days.`}>
                 <Table site={site} facets={[{ k: "reason", label: "Likely reason" }]} rows={nc.map((p) => ({ page: pathOf(p.page), impressions: p.impressions, pos: p.pos, top: p.topQuery ?? "–", reason: p.reason, todo: p.todo }))}
                   cols={[{ k: "page", label: "Page", kind: "page" }, { k: "impressions", label: "Impr.", num: true }, { k: "pos", label: "Pos", num: true, f: "dec1" }, { k: "top", label: "Top query", wrap: true }, { k: "reason", label: "Likely reason", wrap: true }, { k: "todo", label: "What to do", wrap: true }]} empty="No page with impressions and zero clicks." />
               </Card>
-              <Card title="Pages Google never shows" tech="Pages and posts with no impressions" sub="From the URL inventory (sitemaps, crawl, Search Console), joined with inspections.">
+              <Card title="Pages Google never shows" tech="Pages and posts with no impressions" info="From the URL inventory (sitemaps, crawl, Search Console), joined with inspections.">
                 <Table site={site} facets={[{ k: "cat", label: "Category" }, { k: "status", label: "Index status" }]} rows={ni.map((p) => ({ page: pathOf(p.url), status: p.status, links: p.linksIn, cat: p.cat, reason: p.reason, todo: p.todo }))}
                   cols={[{ k: "page", label: "Page", kind: "page" }, { k: "status", label: "Index status", wrap: true }, { k: "links", label: "Internal links in", num: true }, { k: "reason", label: "Likely reason", wrap: true }, { k: "todo", label: "What to do", wrap: true }]} empty="Every known page was shown on Google in this period." />
               </Card>
@@ -59,7 +59,7 @@ export default async function WatchlistsPage({ searchParams }: { searchParams: P
                 <Table site={site} rows={up.map((p) => ({ page: pathOf(p.page), before: p.ctrPrev, now: p.ctr, chg: `+${(p.dCtr * 100).toFixed(1)} pp`, extra: p.gained, dpos: p.dPos, reason: p.reason }))}
                   cols={[{ k: "page", label: "Page", kind: "page" }, { k: "before", label: "CTR before", num: true, f: "pct" }, { k: "now", label: "CTR now", num: true, f: "pct" }, { k: "chg", label: "Change" }, { k: "extra", label: "Extra clicks", num: true, f: "dec1" }, { k: "dpos", label: "Δ pos", num: true, f: "dec1" }, { k: "reason", label: "Likely reason", wrap: true }]} empty="No page with 100+ impressions in both periods improved its CTR." />
               </Card>
-              <Card title="Pages getting clicked less often" tech="Pages and posts with CTR decreased" sub="Clicks lost = impressions × (old CTR − new CTR).">
+              <Card title="Pages getting clicked less often" tech="Pages and posts with CTR decreased" info="Clicks lost = impressions × (old CTR − new CTR).">
                 <Table site={site} rows={down.map((p) => ({ page: pathOf(p.page), before: p.ctrPrev, now: p.ctr, chg: `${(p.dCtr * 100).toFixed(1)} pp`, lost: -p.gained, dpos: p.dPos, reason: p.reason }))}
                   cols={[{ k: "page", label: "Page", kind: "page" }, { k: "before", label: "CTR before", num: true, f: "pct" }, { k: "now", label: "CTR now", num: true, f: "pct" }, { k: "chg", label: "Change" }, { k: "lost", label: "Clicks lost", num: true, f: "dec1" }, { k: "dpos", label: "Δ pos", num: true, f: "dec1" }, { k: "reason", label: "Likely reason", wrap: true }]} empty="No page with 100+ impressions in both periods lost CTR." />
               </Card>

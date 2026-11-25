@@ -85,7 +85,7 @@ export function ReportBody({ d, opts }: { d: ReportData; opts: ReportOptions }) 
     <div className="space-y-14">
       {/* ---------------------------------------------------------------- 01 */}
       <Chapter n={no(CH.overall)} id="ch-01" icon={Flag} title="Overall Performance & Monthly Wins"
-        subtitle="Headline website, search and local visibility results at a glance"
+        subtitle="Headline website, search and local results"
         sources={[ga4Ok && "Google Analytics 4", gscOk && "Google Search Console", gbpOk && "Google Business Profile", gbpExtrasOk && "Local Brand Manager", bg && "Bing Webmaster Tools", rs && "DataForSEO"].filter(Boolean) as string[]}>
         {!ga4Ok && !gscOk && !gbpOk && !gbpExtrasOk && !bg?.totals.current?.has_data ? (
           <Unavailable title="No connected data for this period" body="Connect Google Analytics 4 or Search Console on the Integrations page, then run a sync." />
@@ -129,9 +129,8 @@ export function ReportBody({ d, opts }: { d: ReportData; opts: ReportOptions }) 
         <FindingsPair
           left={{ title: "Monthly wins", tone: "good", items: wins.length ? wins.slice(0, 6).map((w) => `${w.text} · ${w.source}`) : ["No metric improved by 10% or more with enough volume to be meaningful."] }}
           right={{ title: "Watch list", tone: "bad", items: declines.length ? declines.slice(0, 6).map((w) => `${w.text} · ${w.source}`) : ["No significant declines (10% or more) this period."] }} />
-        <p className="text-xs text-muted">
-          Comparisons are {opts.basisLabel}. A change is a win only if it is at least 10% and based on enough volume.
-          Wins and declines are calculated from the data, not written by AI.
+        <p className="text-xs text-muted" title="Wins and declines are calculated from the data, not written by AI.">
+          Comparisons are {opts.basisLabel}. Wins and declines are moves of 10%+ with enough volume.
         </p>
       </Chapter>
 
@@ -174,19 +173,18 @@ export function ReportBody({ d, opts }: { d: ReportData; opts: ReportOptions }) 
 
       {/* ---------------------------------------------------------------- 03 */}
       <Chapter n={no(CH.gbp)} id="ch-03" icon={MapPin} title="Google Business Profile Performance"
-        subtitle="Local visibility, reviews, map rankings, calls, website visits and direction requests"
+        subtitle="Local visibility, reviews, map rankings and customer actions"
         sources={[gbpOk && "Google Business Profile", gbpExtrasOk && "Local Brand Manager"].filter(Boolean) as string[]}>
         {d.gbpCoverage && (
           <p className="text-xs text-muted">
-            Daily profile metrics stored from {d.gbpCoverage.first} to {d.gbpCoverage.last}. Google reports them a few days late, and
-            history before the first stored day isn&apos;t available from the API.
+            Profile metrics stored from {d.gbpCoverage.first} to {d.gbpCoverage.last}. Google reports them a few days late.
           </p>
         )}
         {!gbpOk ? (
           <Unavailable title={d.connected.gbp ? "No Business Profile data for this period" : "Google Business Profile isn't connected"}
             body={d.connected.gbp
               ? "The location is connected but Google returned no performance data for this range yet (metrics arrive a few days late, and API access must be approved for the project)."
-              : "Connect the Google account that manages the Business Profile on the Integrations page. Profile views (Search and Maps), call clicks, website clicks, direction requests and search keywords will appear here."} />
+              : "Connect the Google account that manages the Business Profile on the Integrations page."} />
         ) : <>
           <div className={cn("grid gap-4 sm:grid-cols-2 xl:grid-cols-4", FILL_ROW_4)}>
             <StatTile label="Profile views" icon={Eye} color={CHAPTER_COLORS[2]} source="GBP" format={fmtInt}
@@ -365,12 +363,9 @@ export function ReportBody({ d, opts }: { d: ReportData; opts: ReportOptions }) 
                   { label: "Impr.", align: "right", render: (x) => fmtInt(num(x.impressions)) },
                 ]} />
             </div>
-            <p className="text-xs text-muted">
-              Methodology: current period vs the equal-length previous period, Web search, rates re-weighted from totals.
-              Average position is impression-weighted, not an exact rank. &quot;New&quot; queries are new within the stored
-              Search Console history only. Multiple pages ranking for one query can be normal; cannibalization is flagged
-              as possible, not confirmed. Quick-win score = impressions × (10% target CTR − current CTR), a transparent
-              prioritisation aid, not a forecast.
+            <p className="text-xs text-muted"
+              title={"Current period vs the equal-length previous period, Web search, rates re-weighted from totals. Average position is impression-weighted, not an exact rank. \"New\" queries are new within the stored Search Console history only. Multiple pages ranking for one query can be normal; cannibalization is flagged as possible, not confirmed. The quick-win score is a prioritisation aid, not a forecast."}>
+              Quick-win score = impressions × (10% target CTR − current CTR).
             </p>
           </>}
           {detail("/search-console", "Full Search Console analysis")}
@@ -437,7 +432,7 @@ export function ReportBody({ d, opts }: { d: ReportData; opts: ReportOptions }) 
                   { label: "Position", align: "right", render: (x) => fmtDecimal(num(x.position)) },
                 ]} />
             )}
-            <p className="text-xs text-muted">Bing reports query and page statistics in weekly buckets; weeks starting inside the period are included.</p>
+            <p className="text-xs text-muted" title="Weeks starting inside the period are included.">Bing reports query and page figures by week.</p>
           </>}
           {detail("/bing", "Full Bing analysis")}
         </Chapter>
@@ -507,7 +502,7 @@ export function ReportBody({ d, opts }: { d: ReportData; opts: ReportOptions }) 
               ]} />
           )}
           <p className="text-xs text-muted">
-            Backlink and keyword figures are DataForSEO estimates from its own web index, updated about weekly{rs.updatedAt ? ` (latest ${rs.updatedAt.slice(0, 10)})` : ""}; they won&apos;t match Search Console exactly.
+            DataForSEO estimates, updated about weekly{rs.updatedAt ? ` (latest ${rs.updatedAt.slice(0, 10)})` : ""}. They won&apos;t match Search Console exactly.
           </p>
           {detail("/backlinks", "Full backlink analysis")}
         </Chapter>
@@ -518,7 +513,7 @@ export function ReportBody({ d, opts }: { d: ReportData; opts: ReportOptions }) 
       {cp && (
         <Chapter n={no(CH.competitors)} id="ch-competitors" icon={Swords} title={CH.competitors}
           subtitle={`How ${cp.domain} compares with the sites competing for the same searches`} sources={["DataForSEO"]}>
-          <p className="text-xs text-muted">Analysis completed {cp.latestAt}, refreshed automatically every 24 hours. Rankings are positions DataForSEO observed in Google; keyword counts and traffic are modelled estimates, not measured visits.</p>
+          <p className="text-xs text-muted">Analysis completed {cp.latestAt}, refreshed daily. Keyword counts and traffic are estimates.</p>
           <ReportTable<(typeof cp.sites)[number]> title="Side by side (estimates)" source="DataForSEO" empty="" rows={cp.sites}
             columns={[
               { label: "Site", render: (x) => <span className={x.you ? "font-semibold" : ""}>{x.domain}{x.you ? " (you)" : ""}</span> },
@@ -573,8 +568,7 @@ export function ReportBody({ d, opts }: { d: ReportData; opts: ReportOptions }) 
           <ClarityBlock d={d} />
           {!opts.executive && <>
             <Unavailable title="Funnel drop-off can't be measured yet"
-              body="Exact drop-off rates need each funnel step tracked as a GA4 event (for example: view_service → click_cta → form_start → form_submit). Until then, this report doesn't show a conversion funnel." />
-            <p className="text-xs text-muted">404 monitoring needs either a GA4 event for error pages or verified page titles; it is not inferred from URLs.</p>
+              body="Track each funnel step as a GA4 event (for example: view_service → click_cta → form_start → form_submit) to see drop-off rates." />
           </>}
         </Chapter>
       )}
@@ -598,7 +592,7 @@ export function ReportBody({ d, opts }: { d: ReportData; opts: ReportOptions }) 
             body="A full week-by-week plan is generated with AI from the evidence in this report once AI analysis is configured." />
         )}
         </>} />
-        <p className="text-xs text-muted">No ranking or revenue outcome is guaranteed; each action lists the metric that will show whether it worked.</p>
+        <p className="text-xs text-muted">Outcomes aren&apos;t guaranteed; each action lists the metric to check.</p>
       </Chapter>
 
       {/* ---------------------------------------------------------------- Blog content */}
@@ -631,7 +625,7 @@ export function ReportBody({ d, opts }: { d: ReportData; opts: ReportOptions }) 
       {/* ---------------------------------------------------------------- Technical SEO (appended last so earlier chapter numbers never change) */}
       {d.technical && (
         <Chapter n={no(CH.technical)} id="ch-technical" icon={ShieldCheck} title={CH.technical}
-          subtitle="Overall technical health, score per area and the changes that matter most" sources={["Crawl", "Lighthouse", "Website"]}>
+          subtitle="Technical health, scores by area and the top fixes" sources={["Crawl", "Lighthouse", "Website"]}>
           <TileGrid>
             <StatTile label="Technical SEO score" icon={ShieldCheck} source="Weighted" format={(v) => (v == null ? "—" : `${v}/100`)} value={d.technical.overall} />
             {d.technical.categories.filter((c) => c.score != null).slice(0, 3).map((c) => (
@@ -658,8 +652,8 @@ export function ReportBody({ d, opts }: { d: ReportData; opts: ReportOptions }) 
       )}
 
       <footer className="border-t border-border pt-6 text-xs text-muted">
-        <p className="flex items-center gap-1.5"><Trophy className="size-3.5" aria-hidden /> Figures come directly from connected Google APIs and are never estimated. Unavailable data is labelled, never shown as zero.</p>
-        <p className="mt-1 flex items-center gap-1.5"><Globe className="size-3.5" aria-hidden /> GA4 dates use the property&apos;s time zone; Search Console dates are Pacific Time. GA4 users are summed daily active users.</p>
+        <p className="flex items-center gap-1.5"><Trophy className="size-3.5" aria-hidden /> Unavailable data is labelled, never shown as zero.</p>
+        <p className="mt-1 flex items-center gap-1.5"><Globe className="size-3.5" aria-hidden /> GA4 dates use the property&apos;s time zone; Search Console dates are Pacific Time.</p>
         <div className="mt-2 flex flex-wrap gap-1.5">{ga4Ok && <SourceTag>Google Analytics 4 API</SourceTag>}{gscOk && <SourceTag>Google Search Console API</SourceTag>}{gbpOk && <SourceTag>Business Profile Performance API</SourceTag>}{gbpExtrasOk && <SourceTag>Local Brand Manager API</SourceTag>}{bg && <SourceTag>Bing Webmaster Tools API</SourceTag>}{(rs || cp) && <SourceTag>DataForSEO API</SourceTag>}{d.clarity && <SourceTag>Microsoft Clarity Data Export API</SourceTag>}</div>
       </footer>
     </div>

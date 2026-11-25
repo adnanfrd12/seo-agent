@@ -25,9 +25,9 @@ export default async function LocalPage({ searchParams }: { searchParams: Promis
   const { client } = await getSession();
   const canEdit = !!client && ["owner", "admin"].includes(client.role);
   return (
-    <GscScreen sp={sp} path={PATH} title="Local demand" description="Which services people search for in which towns, 'near me' searches, and towns that have no page on the site.">
+    <GscScreen sp={sp} path={PATH} title="Local demand" description="Services searched by town, 'near me' searches and missing town pages.">
       {async ({ g, wins, clientId, settingsSource }) => {
-        const form = <Card title="Cities and services" sub="Local demand is read from the words in each query (Search Console has no city dimension), so it depends on these lists."><GscSettingsForm initial={g.settings} sources={settingsSource} action={saveGscSettings} disabled={!canEdit} /></Card>;
+        const form = <Card title="Cities and services" sub="Local demand depends on these lists." info="Local demand is read from the words in each query (Search Console has no city dimension), so it depends on these lists."><GscSettingsForm initial={g.settings} sources={settingsSource} action={saveGscSettings} disabled={!canEdit} /></Card>;
         const cities = g.settings.cities, services = g.settings.services;
         if (!cities.length) return <><Missing title="No cities set" why="Local demand counts searches that name a town you serve, and no towns are known for this business." fix="Add the towns you serve below (or on GA4 Lead setup → service area)." /><div className="mt-4"><Grid>{form}</Grid></div></>;
         const cur = [...g.queries()], prev = [...g.queries(true)];
@@ -59,13 +59,13 @@ export default async function LocalPage({ searchParams }: { searchParams: Promis
         const localOnHome = qp.filter((r) => (near.test(r.query) || cityOf(g, r.query)) && pathOf(r.page) === "/").reduce((a, r) => a + r.impressions, 0);
         return (
           <>
-            <Band title="Charts" sub="Hover for details, click any bar, point or bubble for more." />
+            <Band title="Charts" />
             <Grid>
-              <Card title="Which services people search for in each town" tech="Service × city demand" sub="Impressions for queries naming each service and city (from words in the query; there's no city dimension).">
+              <Card title="Which services people search for in each town" tech="Service × city demand" sub="Impressions." info="Impressions for queries naming each service and city (from words in the query; there's no city dimension).">
                 {topServices.length && shownCities.length ? <Heat rows={topServices.map((x) => titleCase(x.s))} cols={shownCities.map((x) => titleCase(x.c))} m={heat} color={C[0]} />
                   : <Missing why={!topServices.length ? "No query in this period names one of the services in the list." : "No query in this period names one of the towns in the list."} fix="Check the service and city lists below; add the words people actually type (e.g. 'channel letters', 'neon')." />}
               </Card>
-              <Card title="'Near me' searches over time" tech="'Near me' impressions" sub="Daily impressions for queries containing near me / nearby." span={7}>
+              <Card title="'Near me' searches over time" tech="'Near me' impressions" sub="Daily." info="Daily impressions for queries containing near me / nearby." span={7}>
                 <LineChart id="gsc-near" labels={labels(g)} series={[{ name: "Near me impressions", values: nearDaily, color: C[2], area: true }]} />
               </Card>
               <Card title="Searches by town (map)" tech="Search demand by city" sub="Impressions for queries naming each place. Positions are approximate." span={5}>
@@ -75,13 +75,13 @@ export default async function LocalPage({ searchParams }: { searchParams: Promis
               <Card title="Towns: this month vs last" tech="Cities: this period vs last" sub="Impressions." span={5}>
                 <CompareBars rows={shownCities.map((x) => ({ label: titleCase(x.c), cur: x.v, prev: x.p }))} />
               </Card>
-              <Card title="Services searched in each town" tech="Service mix per city" sub="Which services people search for in each place." span={7}>
+              <Card title="Services searched in each town" tech="Service mix per city" span={7}>
                 <Stack100 rows={shownCities.filter((x) => x.v).map((x, i) => ({ label: titleCase(x.c), parts: topServices.map((_, j) => heat[j]?.[shownCities.indexOf(x)] ?? i * 0) }))} names={topServices.map((x) => titleCase(x.s))} />
               </Card>
             </Grid>
-            <Band title="Tables and lists" sub="The data behind the charts. Filter with the chips, sort any column." />
+            <Band title="Tables and lists" />
             <Grid>
-              <Card title="Towns people search that have no page on your site" tech="Cities searched with no page" sub="Place names in queries without a dedicated city page." span={5}>
+              <Card title="Towns people search that have no page on your site" tech="Cities searched with no page" span={5}>
                 <Table rows={noPage.map((x) => ({ c: titleCase(x.c), v: x.v }))} cols={[{ k: "c", label: "City" }, { k: "v", label: "Impressions", num: true, bar: C[0] }]} empty="Every town people search has its own page." />
                 {localOnHome > 0 && <Note>{localOnHome} impressions from near-me and city searches land on the home page.</Note>}
               </Card>

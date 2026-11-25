@@ -22,7 +22,7 @@ export default async function DisavowPage() {
   const page = await researchPage();
   if (!page) return null;
   const { cache } = page;
-  const header = <><BackToToolkit /><TabHeader source="dfs" title="Disavow Candidates" description="Referring domains that look toxic or spammy, from the backlink data already stored for this client, with a ready Google disavow.txt. Review before uploading: Google ignores most spam links on its own and disavowing good links can hurt." guide={[
+  const header = <><BackToToolkit /><TabHeader source="dfs" title="Disavow Candidates" description="Spammy referring domains and a ready disavow.txt. Review before uploading." guide={[
     { term: "Spam score", text: "DataForSEO's 0-100 backlink spam score for the referring domain. 60+ = likely toxic (included in the file), 30-59 = review." },
     { term: "Extra signals", text: "Spammy free TLDs (.xyz, .top, .click…), domain rank 0 with many links, and all-dofollow link blasts raise the tier." },
     { term: "When to use", text: "Only after a manual action in Search Console, or with a clear paid/link-scheme pattern. Upload at search.google.com/search-console/disavow-links." },
@@ -72,7 +72,7 @@ export default async function DisavowPage() {
       </div>
       <div className="mt-4 grid gap-4 lg:grid-cols-2">
         <Columns title="Referring domains by spam score" sub="Highlighted: 60+ (likely toxic)" bins={bins} valueLabel="domains" />
-        <Card title="disavow.txt" sub={`Google format, one domain: line per candidate. ${disavow.length} domains in the strict file, ${disavow.length + review.length} with the review list.`}
+        <Card title="disavow.txt" sub={`${disavow.length} domains in the strict file, ${disavow.length + review.length} with the review list.`}
           right={<div className="flex flex-wrap gap-2"><DownloadText text={file(disavow)} filename={`disavow-${cache.target?.domain ?? "site"}.txt`} label="Strict" /><DownloadText text={file([...disavow, ...review])} filename={`disavow-incl-review-${cache.target?.domain ?? "site"}.txt`} label="Incl. review" /></div>}>
           <pre className="max-h-64 overflow-auto whitespace-pre-wrap break-all rounded-lg bg-surface-muted p-3 text-xs">{disavow.length ? file(disavow) : "# No domain reaches the disavow threshold. Nothing to upload: Google already ignores ordinary low-quality links."}</pre>
         </Card>

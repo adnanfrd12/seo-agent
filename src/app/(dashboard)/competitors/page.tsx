@@ -45,7 +45,7 @@ export default async function CompetitorsPage() {
   const page = await researchPage();
   if (!page) return null;
   const { client, canEdit, configured, budget } = page;
-  const header = <TabHeader source="dfs" title="Competitor Intelligence" description="How your organic visibility compares with the sites that compete for the same searches. Analysed automatically every 24 hours; this page shows the latest stored analysis." guide={[
+  const header = <TabHeader source="dfs" title="Competitor Intelligence" description="Your search visibility against competing sites, updated daily." guide={[
     { term: "Ranking keywords", text: "Google keywords a site ranks for in the top 100. A modelled estimate from DataForSEO's index." },
     { term: "Estimated traffic", text: "Visits the rankings would bring, based on search volume and position. A consistent yardstick, not measured visits." },
     { term: "Keyword gap", text: "Keywords a competitor ranks top-20 for that you don't rank for at all: content you could create." },
@@ -188,7 +188,7 @@ export default async function CompetitorsPage() {
     return { label: `${k[0].toUpperCase()}${k.slice(1)} · ${fmtInt(v)}`, value: v, color: i >= 0 ? cat(i) : "var(--cat-other)" };
   });
   const charts2 = [
-    h2hRows.length > 0 && <StackedBars key="h2h" title="Head to head on shared keywords" sub="Keywords you both rank for, by who ranks higher" valueLabel="Keywords"
+    h2hRows.length > 0 && <StackedBars key="h2h" title="Head to head on shared keywords" valueLabel="Keywords"
       keys={[{ key: "ahead", label: "You rank higher", color: "var(--positive)" }, { key: "tied", label: "Same position", color: "var(--series-prev)" }, { key: "behind", label: "They rank higher", color: "var(--negative)" }]} rows={h2hRows} />,
     gapIntentItems.length > 0 && <Donut key="intent" title="What the keyword gaps are for" sub={`${fmtInt(mergedGaps.length)} gap keywords by search intent`} items={gapIntentItems}
       center={`${Math.round((gapIntentItems[0].value / Math.max(1, mergedGaps.length)) * 100)}%`} centerLabel={gapIntentItems[0].label.split(" · ")[0]} />,
@@ -267,13 +267,12 @@ export default async function CompetitorsPage() {
           {winnable > 0 && (
             <div className="rounded-[10px] border border-positive/40 bg-positive/5 p-4 text-sm">
               <p className="flex items-center gap-2 font-semibold text-positive"><TrendingUp className="size-4" aria-hidden /> {fmtInt(winnable)} easier opportunities</p>
-              <p className="mt-1 text-muted">Keywords with 100+ monthly searches and difficulty ≤ 35 where a competitor ranks and you don&apos;t. See the keyword gap tab.</p>
+              <p className="mt-1 text-muted">100+ searches a month, difficulty ≤ 35, a competitor ranks and you don&apos;t.</p>
             </div>
           )}
           {beatenBy > 0 && (
             <div className="rounded-[10px] border border-border bg-surface p-4 text-sm">
               <p className="font-semibold">{fmtInt(beatenBy)} shared keywords where a competitor outranks you</p>
-              <p className="mt-1 text-muted">Same searches, better position for them: improving those pages is usually the fastest gain.</p>
             </div>
           )}
         </section>
@@ -284,9 +283,9 @@ export default async function CompetitorsPage() {
       <div className="mt-6"><CompareTrend snapshots={comp.snapshots} /></div>
 
       <div className="mt-6 grid gap-4 lg:grid-cols-2">
-        <Donut title="Estimated traffic share" sub="Your share of the estimated organic traffic across the tracked sites" items={shareItems}
+        <Donut title="Estimated traffic share" sub="You and your tracked competitors" items={shareItems}
           center={myShare == null ? "—" : `${myShare}%`} centerLabel="your share" />
-        <StackedBars title="Keyword footprint" sub="Ranking keywords per site, split into top 10 and positions 11–100" valueLabel="Keywords"
+        <StackedBars title="Keyword footprint" sub="Ranking keywords per site" valueLabel="Keywords"
           keys={[{ key: "top10", label: "Top 10", color: "var(--series)" }, { key: "rest", label: "Positions 11–100", color: "color-mix(in oklab, var(--series) 35%, var(--surface))" }]} rows={footprint} />
       </div>
       {charts2.length > 0 && <div className={`mt-4 grid gap-4 ${charts2.length > 1 ? "lg:grid-cols-2" : ""}`}>{charts2}</div>}
@@ -311,30 +310,29 @@ export default async function CompetitorsPage() {
             ))}
           </tbody>
         </table>
-        <p className="px-4 pb-3 pt-1 text-xs text-muted">Change = ranking keywords since the first stored snapshot for that site (from {summary[0]?.since}).</p>
+        <p className="px-4 pb-3 pt-1 text-xs text-muted">Change = ranking keywords gained or lost since {summary[0]?.since}.</p>
       </div>
 
       <section aria-label="Competitor trends" className="mt-8">
         <div className="mb-3 flex flex-wrap items-end justify-between gap-3">
           <div className="min-w-0">
             <h2 className="text-base font-semibold">You vs competitors over time</h2>
-            <p className="text-xs text-muted">Rankings from your Rank Tracking checks; links, reviews and pages from DataForSEO{extrasAt ? ` (competitor links and pages updated ${extrasAt})` : ""}. Refreshes weekly.</p>
+            <p className="text-xs text-muted">{extrasAt ? `Competitor links and pages updated ${extrasAt} · ` : ""}Refreshes weekly.</p>
           </div>
           {canEdit && comp.tracked.length > 0 && <MarketRefreshButton action="compExtras" label="Fetch competitor links & pages" estimate={`≈$${extrasEstimate(Math.min(EXTRAS_MAX, comp.tracked.length)).toFixed(2)}`} />}
         </div>
         <Tabs label="Competitor trends" items={[
           { key: "rank", label: "Rank history", badge: rankDates.length, content: rankRows.length ? (
             <div className="space-y-4">
-              <MultiLine title="Average position on your tracked keywords" sub={`Each Rank Tracking check · keywords where the site is in Google's top 10 · lower is better${extras.rankTrend.some((r) => r.domain === self && r.ranked > 0) ? "" : ` · ${self} is not in the top 100 for these keywords yet`}`} metrics={rankMetrics} />
+              <MultiLine title="Average position on your tracked keywords" sub={`Top-10 positions · lower is better${extras.rankTrend.some((r) => r.domain === self && r.ranked > 0) ? "" : ` · ${self} is not in the top 100 for these keywords yet`}`} metrics={rankMetrics} />
               <ResearchTable title="Rank history by site" rows={rankRows} initialSort={{ key: "date", dir: "desc" }} pageSize={8} facets={[{ key: "site", label: "Site" }]} csvName={`competitor-rank-history-${target.domain}`}
-                columns={[{ key: "date", label: "Checked", type: "date" }, { key: "site", label: "Site" }, { key: "avg", label: "Avg position (top 10)", type: "dec" }, { key: "top10", label: "Keywords in top 10", type: "int" }, { key: "all", label: "Your avg position (top 100)", type: "dec" }, { key: "ranked", label: "Your keywords in top 100", type: "int" }, { key: "checks", label: "Keywords checked", type: "int" }]}
-                note="Rank checks store the top 10 results for every keyword, so competitors are compared inside the top 10; your own positions are checked to 100." />
+                columns={[{ key: "date", label: "Checked", type: "date" }, { key: "site", label: "Site" }, { key: "avg", label: "Avg position (top 10)", type: "dec" }, { key: "top10", label: "Keywords in top 10", type: "int" }, { key: "all", label: "Your avg position (top 100)", type: "dec" }, { key: "ranked", label: "Your keywords in top 100", type: "int" }, { key: "checks", label: "Keywords checked", type: "int" }]} />
             </div>
           ) : <p className={dashed}>Appears after the first Rank Tracking check.</p> },
           { key: "links", label: "Link growth", badge: extras.links.length, content: extras.links.length ? (
             <div className="space-y-4">
-              <MultiLine title="Referring domains, last 12 months" sub="Websites linking to each site, at the end of each month" metrics={linkMetrics} />
-              <GroupedBars title="Links earned and lost in the latest month" sub="New and lost referring domains and backlinks (DataForSEO backlink history)" valueLabel="Count" rows={linkChange}
+              <MultiLine title="Referring domains, last 12 months" sub="Month-end totals" metrics={linkMetrics} />
+              <GroupedBars title="Links earned and lost in the latest month" valueLabel="Count" rows={linkChange}
                 keys={[{ key: "new_domains", label: "Referring domains gained", color: "var(--positive)" }, { key: "lost_domains", label: "Referring domains lost", color: "var(--negative)" }, { key: "new_backlinks", label: "Backlinks gained", color: "color-mix(in oklab, var(--positive) 45%, var(--surface))" }, { key: "lost_backlinks", label: "Backlinks lost", color: "color-mix(in oklab, var(--negative) 45%, var(--surface))" }]} />
               <ResearchTable title="Link growth by site" rows={linkRows} initialSort={{ key: "referring_domains", dir: "desc" }} pageSize={6}
                 columns={[{ key: "site", label: "Site" }, { key: "referring_domains", label: "Referring domains", type: "int" }, { key: "change", label: "12-month change", type: "delta" }, { key: "new_domains", label: "Gained (month)", type: "int" }, { key: "lost_domains", label: "Lost (month)", type: "int" }, { key: "new_backlinks", label: "Backlinks gained", type: "int" }, { key: "lost_backlinks", label: "Backlinks lost", type: "int" }, { key: "month", label: "Month ending", type: "date" }]} />
@@ -343,23 +341,23 @@ export default async function CompetitorsPage() {
           { key: "reviews", label: "Review velocity", badge: reviewSets.length, content: reviewSets.length ? (
             <div className="space-y-4">
               <div className="grid gap-4 lg:grid-cols-[minmax(0,1.6fr)_minmax(0,1fr)]">
-                <MultiLine title="New Google reviews per month" sub="Last 6 months, you and the nearby competitors compared on Local SEO" metrics={reviewMetrics} />
-                <GroupedBars title="Recent reviews" sub="New reviews in the last 90 days and 6 months" valueLabel="Reviews" rows={reviewBars}
+                <MultiLine title="New Google reviews per month" sub="Last 6 months" metrics={reviewMetrics} />
+                <GroupedBars title="Recent reviews" valueLabel="Reviews" rows={reviewBars}
                   keys={[{ key: "last90", label: "Last 90 days", color: "var(--series)" }, { key: "last6", label: "Last 6 months", color: "color-mix(in oklab, var(--series) 40%, var(--surface))" }]} />
               </div>
               <ResearchTable title="Reviews compared" rows={reviewRows} initialSort={{ key: "last90", dir: "desc" }} pageSize={8}
                 columns={[{ key: "business", label: "Business" }, { key: "rating", label: "Rating", type: "dec" }, { key: "reviews", label: "Total reviews", type: "int" }, { key: "last90", label: "Reviews · 90 days", type: "int" }, { key: "last6", label: "Reviews · 6 months", type: "int" }, { key: "reply", label: "Owner response rate %", type: "int" }]}
-                note="From the newest reviews stored for each business (Google Business Profile via DataForSEO); response rate is over those reviews." />
+                note="Based on the newest stored reviews for each business." />
             </div>
           ) : <p className={dashed}>Compare nearby businesses on the <Link href="/local-seo" className="text-foreground underline decoration-border-strong underline-offset-2 hover:decoration-foreground">Local SEO &amp; Reviews</Link> tab to see their review pace here.</p> },
           { key: "content", label: "Content", badge: extras.content.length, content: extras.content.length ? (
             <div className="space-y-4">
-              <StackedBars title="What kind of pages rank" sub="Each site's ranking pages by type (from the page address)" valueLabel="Pages" rows={contentBars}
+              <StackedBars title="What kind of pages rank" sub="Ranking pages by type" valueLabel="Pages" rows={contentBars}
                 keys={TYPES.map((t, i) => ({ key: t.key, label: t.label, color: t.key === "other" ? "var(--cat-other)" : cat(i) }))} />
               <ResearchTable title="Content compared" rows={contentRows} initialSort={{ key: "traffic", dir: "desc" }} pageSize={6}
                 columns={[{ key: "site", label: "Site" }, { key: "pages", label: "Ranking pages", type: "int" }, { key: "traffic", label: "Est. traffic / mo", type: "int" }, { key: "keywords", label: "Keywords", type: "int" }, { key: "top_page", label: "Top page", type: "url" }, { key: "top_traffic", label: "Top page traffic", type: "int" },
                   ...TYPES.map((t) => ({ key: t.key, label: t.label, type: "int" as const }))]}
-                note="Up to 100 pages per site, ordered by estimated traffic (DataForSEO Labs). Page types are read from the address, so they are a guide, not an exact count." />
+                note="Up to 100 pages per site. Page types are guessed from the address, so treat them as a guide." />
             </div>
           ) : <p className={dashed}>Collected with the next weekly run.</p> },
         ]} />
@@ -370,26 +368,25 @@ export default async function CompetitorsPage() {
           <h2 className="mb-3 text-base font-semibold">Keyword analysis</h2>
           <div className="mb-3 space-y-1">
             <KeywordGapForm canEdit={canEdit} suggestions={[...new Set([...comp.tracked, ...(comp.auto?.data ?? []).map((a) => a.domain.toLowerCase())])]} />
-            <p className="text-xs text-muted">Content gap against any site you type: keywords it ranks top-20 for that you don&apos;t rank for. About 3 cents, stored for 7 days, counted in the daily spend limit. Results appear as their own tab below.</p>
+            <p className="text-xs text-muted">Keywords any site ranks top-20 for that you don&apos;t. Results are kept 7 days and appear as a tab below.</p>
           </div>
           {gapsBy.length === 0 && sharedBy.length === 0 && onDemand.length === 0 ? (
-            <div className="rounded-[10px] border border-dashed border-border p-6 text-sm text-muted">Keyword gaps and head-to-head rankings are refreshed weekly. They appear after the next analysis completes.</div>
+            <div className="rounded-[10px] border border-dashed border-border p-6 text-sm text-muted">Keyword gaps and head-to-head rankings appear after the next weekly analysis.</div>
           ) : (
             <Tabs label="Keyword analysis" items={[
               { key: "gap", label: "Keyword gaps", badge: fmtInt(mergedGaps.length), content: (
                 <ResearchTable title="Keywords competitors rank for and you don't" rows={mergedGaps} columns={GAP_COLS} searchKeys={["keyword", "competitor"]} presets={gapPresets}
                   ranges={[{ key: "volume", label: "Volume / mo" }, { key: "difficulty", label: "Difficulty" }, { key: "their_position", label: "Their position" }]} facets={[{ key: "intent", label: "Intent" }, { key: "competitor", label: "Competitor" }]}
                   initialSort={{ key: "volume", dir: "desc" }} csvName={`keyword-gaps-${target.domain}`} empty="No keyword gaps found."
-                  note="Competitor top-20 keywords with 50+ monthly searches where you have no top-100 ranking, excluding the competitor's own brand name. Volume, difficulty and CPC are estimates." />) },
+                  note="50+ searches a month, no top-100 ranking for you; competitor brand names excluded." />) },
               { key: "h2h", label: "Head to head", badge: fmtInt(mergedShared.length), content: (
                 <ResearchTable title="Keywords you both rank for" rows={mergedShared} columns={H2H_COLS} searchKeys={["keyword", "competitor"]} presets={h2hPresets}
                   ranges={[{ key: "volume", label: "Volume / mo" }, { key: "difficulty", label: "Difficulty" }, { key: "you", label: "Your position" }, { key: "them", label: "Their position" }]} facets={[{ key: "competitor", label: "Competitor" }]}
-                  initialSort={{ key: "volume", dir: "desc" }} csvName={`head-to-head-${target.domain}`} empty="No shared keywords found."
-                  note="Both positions are Google ranks observed by DataForSEO. ▲ means you rank better by that many positions." />) },
+                  initialSort={{ key: "volume", dir: "desc" }} csvName={`head-to-head-${target.domain}`} empty="No shared keywords found." />) },
               ...[...gapsBy, ...onDemand].map((g) => ({
                 key: `gap-${g.competitor}`, label: g.competitor, badge: fmtInt(g.total),
                 content: <ResearchTable title={`Gaps vs ${g.competitor}`} rows={g.rows.map((r) => ({ ...r, competitor: g.competitor }))} columns={GAP_COLS.filter((c) => c.key !== "competitor")} searchKeys={["keyword"]} presets={gapPresets}
-                  initialSort={{ key: "volume", dir: "desc" }} note={`${fmtInt(g.total)} keywords in total; the top ${g.rows.length} by search volume are stored. Updated ${g.fetchedAt.slice(0, 10)}.`} />,
+                  initialSort={{ key: "volume", dir: "desc" }} note={`Top ${g.rows.length} of ${fmtInt(g.total)} by search volume · updated ${g.fetchedAt.slice(0, 10)}`} />,
               })),
             ]} />
           )}
@@ -442,9 +439,9 @@ export default async function CompetitorsPage() {
 
         <section className="rounded-[10px] border border-border bg-surface p-4" aria-label="AI competitor recommendations">
           <h2 className="mb-1 text-sm font-semibold">AI recommendations from this data <span className="ml-1 rounded bg-surface-muted px-1.5 py-0.5 text-[10px] font-medium uppercase tracking-wide text-secondary">ai interpretation</span></h2>
-          <p className="mb-3 text-xs text-muted">Written by AI from the competitor data above. They are hypotheses to test, never guaranteed outcomes.</p>
+          <p className="mb-3 text-xs text-muted">Hypotheses to test, not guaranteed outcomes.</p>
           {(aiRecs ?? []).length === 0 ? (
-            <p className="text-sm text-muted">No competitor-specific recommendations yet. They are added to the next AI analysis, which refreshes weekly for active clients once new data is available. <Link href="/insights" className="text-foreground underline decoration-border-strong underline-offset-2 hover:decoration-foreground">Open AI Insights</Link></p>
+            <p className="text-sm text-muted">No competitor recommendations yet; they come with the next weekly AI analysis. <Link href="/insights" className="text-foreground underline decoration-border-strong underline-offset-2 hover:decoration-foreground">Open AI Insights</Link></p>
           ) : (
             <ul className="space-y-3">
               {(aiRecs ?? []).map((r) => (
@@ -462,7 +459,7 @@ export default async function CompetitorsPage() {
         {comp.auto && (
           <section className="rounded-[10px] border border-border bg-surface p-4" aria-label="Discovered competitors">
             <h2 className="mb-1 text-sm font-semibold">Who competes with you in search</h2>
-            <p className="mb-3 text-xs text-muted">Sites that rank for the most of the same keywords as you (discovered weekly, popular generic sites removed). Track the ones that are real rivals and hide the rest.</p>
+            <p className="mb-3 text-xs text-muted">Track the real rivals and hide the rest.</p>
             <div className="overflow-x-auto">
               <table className="w-full min-w-[40rem] text-sm">
                 <thead><tr className="text-left text-xs text-muted">{["Site", "Shared keywords", "Their keywords", "Their est. traffic", "Avg position on shared", ""].map((h, i) => <th key={i} className={`px-2 py-2 font-medium ${i && i < 5 ? "text-right" : ""}`}>{h}</th>)}</tr></thead>
@@ -478,7 +475,7 @@ export default async function CompetitorsPage() {
                 </tbody>
               </table>
             </div>
-            <p className="mt-2 text-xs text-muted">Discovered {comp.auto.fetchedAt.slice(0, 10)}. Large national brands can appear here; hide any that don&apos;t compete for your customers.</p>
+            <p className="mt-2 text-xs text-muted">Discovered {comp.auto.fetchedAt.slice(0, 10)} · refreshed weekly</p>
           </section>
         )}
 

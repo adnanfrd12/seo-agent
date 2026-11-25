@@ -18,7 +18,7 @@ export default async function SourcesPage() {
   const used = (s: string) => items.filter((w) => (w.status === "todo" || w.status === "doing") && w.seen_run && (w.sources as string[]).includes(s)).length;
   return (
     <>
-      <PageHeader title="Data sources" description="Every platform the portal uses feeds the quick wins engine. Each quick win shows which sources its evidence came from, so you can see why it was suggested." />
+      <PageHeader title="Data sources" description="What each data source adds to quick wins." />
       <Band title="Sources" sub={`${SOURCES.filter((s) => st[s].ok).length} of ${SOURCES.length} hold data for ${client.name}.`} />
       <Grid>
         <Card title="What each source adds">
@@ -36,7 +36,7 @@ export default async function SourcesPage() {
                     <td className="py-2 text-right tabular-nums">{used(s)}</td>
                   </tr>
                 ))}
-                <tr className="align-top"><td className="py-2 pr-3"><SourceBadge s="claude" /></td><td className="py-2 pr-3"><Tag tone="acc">API</Tag></td><td className="py-2 pr-3">Chooses and prioritises, writes the title, the steps and the suggested text, explains why in plain words, groups related changes. Never invents numbers or pages.</td><td className="py-2 pr-3 text-secondary">All rules</td><td className="py-2 pr-3 text-xs text-muted">Rewrite the title to: Channel Letters in Houston | LED Lights and Signs</td><td className="py-2 text-right tabular-nums">{items.filter((w) => w.seen_run && (w.status === "todo" || w.status === "doing")).length}</td></tr>
+                <tr className="align-top"><td className="py-2 pr-3"><SourceBadge s="claude" /></td><td className="py-2 pr-3"><Tag tone="acc">API</Tag></td><td className="py-2 pr-3">Prioritises, writes the title, steps and suggested text, explains why and groups related changes. Never invents numbers or pages.</td><td className="py-2 pr-3 text-secondary">All rules</td><td className="py-2 pr-3 text-xs text-muted">Rewrite the title to: Channel Letters in Houston | LED Lights and Signs</td><td className="py-2 text-right tabular-nums">{items.filter((w) => w.seen_run && (w.status === "todo" || w.status === "doing")).length}</td></tr>
               </tbody>
             </table>
           </div>

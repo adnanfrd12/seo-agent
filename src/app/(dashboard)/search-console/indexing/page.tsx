@@ -15,7 +15,7 @@ const DAY = 86_400_000;
 export default async function IndexingPage({ searchParams }: { searchParams: Promise<SearchParams> }) {
   const sp = await searchParams;
   return (
-    <GscScreen sp={sp} path={PATH} title="Indexing" description="Which pages are on Google and which aren't, why, and when Google last visited them, from the URL Inspection API.">
+    <GscScreen sp={sp} path={PATH} title="Indexing" description="Which pages are on Google, which aren't, and why.">
       {({ g, wins }) => {
         const inv = g.inv, n = inv.length;
         const lat = inv.map((r) => ({ r, i: g.latest(r.url) }));
@@ -62,19 +62,19 @@ export default async function IndexingPage({ searchParams }: { searchParams: Pro
               <Kpi label="Checked in the last 30 days" tech="Inspected in 30 days" value={fmt("pct", n ? in30.length / n : 0)} note={`${in30.length} of ${n}${daysToCover ? ` · about ${daysToCover} day(s) to cover the rest` : ""}`} />
               <Kpi label="Page checks used today" tech="Inspection quota today" value={fmt("int", quota)} note="of about 2,000 a day" />
             </Kpis>
-            <Band title="Charts" sub="Hover for details, click any bar, point or bubble for more." />
+            <Band title="Charts" />
             <Grid>
-              <Card title="Why some pages aren't on Google" tech="Why pages aren't indexed" sub="Coverage state from the URL Inspection API for every URL that isn't indexed." span={6}>
+              <Card title="Why some pages aren't on Google" tech="Why pages aren't indexed" info="Coverage state from the URL Inspection API for every URL that isn't indexed." span={6}>
                 <BarList rows={reasons.map((r) => ({ label: r.k, value: r.n, color: C[7] }))} empty="Every inspected URL is indexed." />
               </Card>
-              <Card title="Pages on Google vs not, by week" tech="Indexed vs not indexed, weekly" sub="Rebuilt from inspection history." span={6}>
+              <Card title="Pages on Google vs not, by week" tech="Indexed vs not indexed, weekly" info="Rebuilt from inspection history." span={6}>
                 <ColChart id="gsc-idx-wk" labels={weeks.map(sd)} series={[{ name: "Indexed", values: wk.map((x) => x[0]), color: C[2] }, { name: "Not indexed", values: wk.map((x) => x[1]), color: C[7] }]} />
                 {weeks.length < 3 && <Note>Inspection history starts {firstWeek ? sd(firstWeek) : "with the first sync"}; this chart grows a week at a time.</Note>}
               </Card>
               <Card title="How recently Google visited each page" tech="Crawl freshness" sub="Days since Google last crawled each URL." span={6}>
                 <BarList rows={fresh.map(([l, f]) => ({ label: l, value: inspected.filter((x) => f(age(x))).length, color: C[0] }))} />
               </Card>
-              <Card title="Could Google load each page?" tech="Page fetch state" sub="pageFetchState per URL." span={6}>
+              <Card title="Could Google load each page?" tech="Page fetch state" span={6}>
                 <BarList rows={fetchSt.map(([k, v]) => ({ label: k, value: v.clicks, color: k === "SUCCESSFUL" ? C[2] : C[7] }))} />
               </Card>
               <Card title="Index health" info="Indexed = PASS ÷ inspected. In a sitemap = URLs in a submitted sitemap ÷ inventory. Crawled in 30 days = lastCrawlTime within 30 days ÷ inspected. Canonical agreed = Google's canonical = yours ÷ URLs with both. Crawled as mobile = MOBILE ÷ crawled.">
@@ -86,27 +86,27 @@ export default async function IndexingPage({ searchParams }: { searchParams: Pro
                   <Gauge v={crawled.length ? mobile / crawled.length : null} label="Crawled as mobile" color={C[4]} />
                 </div>
               </Card>
-              <Card title="Pages in your sitemap vs pages on Google" tech="Discovery → index status" sub="How URLs in and out of sitemaps end up." span={6}>
+              <Card title="Pages in your sitemap vs pages on Google" tech="Discovery → index status" span={6}>
                 <Sankey flows={flows} rightColor={C[2]} />
               </Card>
               <Card title="Why pages aren't on Google" tech="Not-indexed reasons" sub="Area = number of URLs." span={6}>
                 <Treemap items={reasons.map((r, i) => ({ label: r.k, value: r.n, color: C[(i + 1) % C.length] }))} />
               </Card>
-              <Card title="Google's visits to your site each week" tech="Googlebot crawls per week" sub="Count of lastCrawlTime values per week from inspection history." span={6}>
+              <Card title="Google's visits to your site each week" tech="Googlebot crawls per week" info="Last crawl times per week, from inspection history." span={6}>
                 <ColChart id="gsc-idx-crawl" labels={cw.map(([w]) => sd(w))} series={[{ name: "URLs crawled", values: cw.map(([, v]) => v), color: C[0] }]} />
               </Card>
-              <Card title="Pages on Google" tech="Index status" sub="verdict from the URL Inspection API." span={6}>
+              <Card title="Pages on Google" tech="Index status" span={6}>
                 <Donut parts={verdicts.map(([k, v]) => ({ label: k, value: v.clicks, color: k.startsWith("Indexed") ? C[2] : k.startsWith("Excluded") ? C[3] : C[7] }))} />
               </Card>
             </Grid>
-            <Band title="Tables and lists" sub="The data behind the charts. Filter with the chips, sort any column." />
+            <Band title="Tables and lists" />
             <Grid>
-              <Card title="Every page and whether it's on Google" tech="Every URL and its index status" sub="verdict, coverageState, lastCrawlTime, crawledAs, canonicals and sitemap membership per URL. 'Request indexing' and 'Validate fix' are buttons in Search Console only (no API).">
+              <Card title="Every page and whether it's on Google" tech="Every URL and its index status" sub="Request indexing and Validate fix are done in Search Console itself." info="Index verdict, coverage state, last crawl, crawler, canonicals and sitemap membership per URL. 'Request indexing' and 'Validate fix' are buttons in Search Console only (no API).">
                 <Table site={siteOf(g)} limit={25} rows={rows}
                   facets={[{ k: "status", label: "Index status" }, { k: "reason", label: "Reason" }, { k: "as", label: "Crawled as" }, { k: "sm", label: "Sitemap" }, { k: "lastB", label: "Last crawled" }, { k: "fetch", label: "Page fetch" }]}
                   cols={[{ k: "url", label: "URL", kind: "page" }, { k: "status", label: "Status", kind: "tag" }, { k: "reason", label: "Reason / coverage state", wrap: true }, { k: "last", label: "Last crawl" }, { k: "as", label: "Crawled as" }, { k: "sm", label: "In sitemap" }, { k: "refs", label: "Referring URLs", num: true }, { k: "impr", label: "Impr. 28d", num: true }]} />
               </Card>
-              <Card title="Pages where Google picked a different main version" tech="Canonical mismatches" sub="Where Google's chosen canonical differs from the declared one." span={6}>
+              <Card title="Pages where Google picked a different main version" tech="Canonical mismatches" span={6}>
                 <Table rows={canon.filter((x) => x.i!.googleCanonical !== x.i!.userCanonical).map((x) => ({ url: pathOf(x.r.url), yours: pathOf(x.i!.userCanonical!), google: pathOf(x.i!.googleCanonical!) }))} cols={[{ k: "url", label: "URL", wrap: true }, { k: "yours", label: "Your canonical", wrap: true }, { k: "google", label: "Google's choice", wrap: true }]} empty="Google agrees with every declared canonical." />
               </Card>
             </Grid>

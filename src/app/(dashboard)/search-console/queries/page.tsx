@@ -19,7 +19,7 @@ export default async function QueriesPage({ searchParams }: { searchParams: Prom
   const sp = await searchParams;
   const seg = first(sp.seg) ?? "", rx = (first(sp.rx) ?? "").slice(0, 4096);
   return (
-    <GscScreen sp={sp} path={PATH} types title="Queries and regex" description="Every search people make that shows the site, filtered by saved segments or any regex.">
+    <GscScreen sp={sp} path={PATH} types title="Queries and regex" description="Every search that shows your site, filtered by segment or regex.">
       {({ g, wins }) => {
         const s = g.segs.find((x) => x.id === seg) ?? null;
         const rxErr = rx ? re2Error(rx) : null;
@@ -36,7 +36,7 @@ export default async function QueriesPage({ searchParams }: { searchParams: Prom
         return (
           <>
             <Grid>
-              <Card title="Filter the searches people make" tech="Segment and regex filter" sub="Pick a saved segment, type any regex (RE2 syntax, case-insensitive), or both. The regex runs on the stored Search Console query rows (the same rows an includingRegex filter returns from the API), so it filters within a second.">
+              <Card title="Filter the searches people make" tech="Segment and regex filter" sub="Pick a segment, type a regex (RE2, case-insensitive), or both." info="Pick a saved segment, type any regex (RE2 syntax, case-insensitive), or both. The regex runs on the stored Search Console query rows (the same rows an includingRegex filter returns from the API), so it filters within a second.">
                 <div className="flex flex-wrap items-end gap-4">
                   <FilterSelect label="Segment" name="seg" value={seg} path={PATH} sp={sp} options={[{ value: "", label: "All queries" }, ...g.segs.map((x) => ({ value: x.id, label: `${x.name}${unset(x.id) ? " (set the list first)" : ""}` }))]} />
                   <RegexBox value={rx} hrefFor={{ base: withParams(PATH, sp, { rx: null }) }} />
@@ -53,28 +53,28 @@ export default async function QueriesPage({ searchParams }: { searchParams: Prom
               <Kpi label="Average Google ranking" tech="Avg position" value={sel.pos == null ? "0" : sel.pos.toFixed(1)} cur={sel.pos} prev={selP.pos} invert />
               <Kpi label="Share of all your clicks" tech="Share of site clicks" value={fmt("pct", all.clicks ? sel.clicks / all.clicks : 0)} cur={all.clicks ? sel.clicks / all.clicks : 0} prev={allP.clicks ? selP.clicks / allP.clicks : 0} />
             </Kpis></div>
-            <Band title="Charts" sub="Hover for details, click any bar, point or bubble for more." />
+            <Band title="Charts" />
             <Grid>
-              <Card title="Ranking vs click rate for each search" tech="Position vs CTR" sub="Each bubble is a query, sized by impressions. Bottom-left queries rank well but get few clicks." span={7}>
+              <Card title="Ranking vs click rate for each search" tech="Position vs CTR" sub="Bubble = impressions." info="Each bubble is a query, sized by impressions. Bottom-left queries rank well but get few clicks." span={7}>
                 <Scatter points={rows.filter((r) => r.impressions >= 5).slice(0, 80).map((r) => ({ x: Math.max(1, r.pos), y: r.ctr, s: r.impressions, label: r.query, show: r.clicks >= (rows[0]?.clicks ?? 0) * 0.5 && r.clicks > 0, c: g.isBrand(r.query) ? C[4] : isQuestion(r.query) ? C[2] : C[0] }))} xLabel="Average position (log scale)" yLabel="CTR" xf="dec1" logX quad={[["Rank well, few clicks", 0, 0]]} />
                 <Note>Pink = brand · green = questions · blue = other.</Note>
               </Card>
               <Card title="Which searches bring the clicks" tech="Clicks by query" sub="Share of this filter's clicks." span={5}>
                 <Treemap items={[...rows].sort((a, b) => b.impressions - a.impressions).slice(0, 14).filter((r) => r.clicks > 0).map((r, i) => ({ label: r.query, value: r.clicks, color: C[i % C.length] }))} />
               </Card>
-              <Card title="Search groups: this month vs last" tech="Segments: this period vs last" sub="Clicks per segment, previous period as the thin grey line." span={6}>
+              <Card title="Search groups: this month vs last" tech="Segments: this period vs last" sub="Clicks per segment; grey line = previous period." span={6}>
                 <CompareBars rows={topSegs.map((x) => ({ label: x.sg.name, cur: x.cur.clicks, prev: x.prev.clicks }))} />
               </Card>
-              <Card title="How high each search group ranks" tech="Position mix per segment" sub="Where each segment's impressions rank." span={6}>
+              <Card title="How high each search group ranks" tech="Position mix per segment" span={6}>
                 <Stack100 rows={posMix} names={BUCKETS.map((b) => `Position ${b[0]}`)} colors={[C[2], C[0], C[3], C[7]]} />
               </Card>
             </Grid>
-            <Band title="Tables and lists" sub="The data behind the charts. Filter with the chips, sort any column." />
+            <Band title="Tables and lists" />
             <Grid>
               <Card title="Searches that match your filter" tech="Matching queries" sub={`Last ${g.p.days} days vs previous ${g.p.days} days.`}>
                 <QueryTable rows={rows} site={siteOf(g)} limit={25} empty="No query matches this filter in the period." />
               </Card>
-              <Card title="Search groups compared side by side" tech="All segments compared" sub="Every built-in segment with its share of clicks.">
+              <Card title="Search groups compared side by side" tech="All segments compared">
                 <Table limit={50} facets={[]} rows={segStats.map((x) => ({ seg: x.sg.name, queries: x.qs, clicks: x.cur.clicks, chg: x.cur.clicks, prev: x.prev.clicks, impressions: x.cur.impressions, ctr: x.cur.ctr, pos: x.cur.pos, share: all.clicks ? x.cur.clicks / all.clicks : 0 }))}
                   cols={[{ k: "seg", label: "Segment" }, { k: "queries", label: "Queries", num: true }, { k: "clicks", label: "Clicks", num: true, bar: C[0] }, { k: "chg", label: "Change", num: true, kind: "delta", prevKey: "prev" }, { k: "impressions", label: "Impressions", num: true }, { k: "ctr", label: "CTR", num: true, f: "pct" }, { k: "pos", label: "Position", num: true, f: "dec1" }, { k: "share", label: "Share of clicks", num: true, f: "pct" }]} />
               </Card>

@@ -40,7 +40,7 @@ function GridCard({ g }: { g: Grid }) {
           <div key={String(l)} className="rounded-lg bg-surface-muted p-2"><dt className="text-muted">{l}</dt><dd className="text-sm font-semibold tabular-nums">{v}</dd></div>
         ))}
       </dl>
-      <p className="mt-2 text-[11px] text-muted">Outlined = the business · green top 3 · amber 4-10 · red 11-20 · grey not found</p>
+      <p className="mt-2 text-[11px] text-muted" title="Green top 3 · amber 4-10 · red 11-20 · grey not found">Outlined = your business</p>
     </div>
   );
 }
@@ -106,7 +106,7 @@ export default async function LocalSeoPage() {
     return { label: kw, values: { top3: n(1, 3), top10: n(4, 10), top20: n(11, 20), none: pts.filter((x) => x.rank == null).length } };
   });
   const coverageChart = coverage.length > 0 && (
-    <StackedBars title="Map coverage by keyword" sub="Grid points per rank band in the latest scan of each keyword" valueLabel="Grid points" percent
+    <StackedBars title="Map coverage by keyword" sub="Latest scan of each keyword" valueLabel="Grid points" percent
       keys={[{ key: "top3", label: "Top 3", color: "var(--positive)" }, { key: "top10", label: "4-10", color: "var(--warn)" }, { key: "top20", label: "11-20", color: "var(--negative)" }, { key: "none", label: "Not in top 20", color: "var(--series-prev)" }]}
       rows={coverage.map((c) => ({ ...c, note: `${c.values.top3 + c.values.top10 + c.values.top20} of ${c.values.top3 + c.values.top10 + c.values.top20 + c.values.none} found` }))} />
   );
@@ -147,14 +147,14 @@ export default async function LocalSeoPage() {
           <div className="mt-6 grid gap-4 lg:grid-cols-3">
             <FillColumns title="Ratings" sub={distTotal ? `${fmtInt(distTotal)} rated reviews by stars` : "Reviews by stars"} valueLabel="Reviews" empty="No ratings yet."
               bins={dist.map((d) => ({ label: `${d.stars}★`, value: d.count, detail: stars(d.stars), color: d.stars >= 4 ? "var(--positive)" : d.stars === 3 ? "var(--series-prev)" : "var(--negative)" }))} />
-            <Donut title="Sentiment" sub="From the stars: 4-5 positive, 3 neutral, 1-2 negative" center={sentimentTotal ? `${Math.round((st.positive / sentimentTotal) * 100)}%` : "—"} centerLabel="positive"
+            <Donut title="Sentiment" center={sentimentTotal ? `${Math.round((st.positive / sentimentTotal) * 100)}%` : "—"} centerLabel="positive"
               items={[{ label: `Positive · ${fmtInt(st.positive)}`, value: st.positive, color: "var(--positive)" }, { label: `Neutral · ${fmtInt(st.neutral)}`, value: st.neutral, color: "var(--series-prev)" }, { label: `Negative · ${fmtInt(st.negative)}`, value: st.negative, color: "var(--negative)" }]} />
             <Donut title="Owner replies" sub={`${fmtInt(st.unansweredNegative)} unhappy review${st.unansweredNegative === 1 ? "" : "s"} (3★ or fewer) without a reply`} center={fmtPercent(st.replyRate, 0)} centerLabel="reply rate"
               items={[{ label: `Replied · ${fmtInt(st.replied)}`, value: st.replied, color: "var(--positive)" }, { label: `Other, no reply · ${fmtInt(st.notReplied - st.unansweredNegative)}`, value: Math.max(0, st.notReplied - st.unansweredNegative), color: "var(--series-prev)" }, { label: `Unhappy, no reply · ${fmtInt(st.unansweredNegative)}`, value: st.unansweredNegative, color: "var(--negative)" }]} />
           </div>
           <div className={`mt-4 grid gap-4 ${ratingRows.length > 1 ? "lg:grid-cols-2" : ""}`}>
             <BarList title="What reviewers mention" valueLabel="Reviews" emptyText="No topics reported." items={(p?.topics ?? []).slice(0, 6).map((t) => ({ label: t.topic, value: t.count }))} />
-            {ratingRows.length > 1 && <RatingCompare title="Rating vs nearby businesses" sub="Your Google profile against the competitors on the Competitors tab" rows={ratingRows} />}
+            {ratingRows.length > 1 && <RatingCompare title="Rating vs nearby businesses" sub="You vs the businesses on the Competitors tab" rows={ratingRows} />}
           </div>
 
           <div className="mt-6">

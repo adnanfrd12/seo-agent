@@ -15,7 +15,7 @@ export default async function ToolkitPage() {
   const ran = TOOLS.filter((t) => last.has(t.slug)).length;
   return (
     <>
-      <TabHeader source={null} title="SEO Toolkit" description="On-demand SEO tools that run on this client's real website and stored data. Each run is saved with its date and cost, and opening a tool never spends anything." guide={[
+      <TabHeader source={null} title="SEO Toolkit" description="On-demand SEO tools for this client. Opening a tool costs nothing." guide={[
         { term: "Run", text: "Owners and admins run a tool with its button. Paid steps (Google searches, AI) go through the daily API budget and show their cost first." },
         { term: "Method", text: "Checks, thresholds and page structures adapted from the open-source claude-seo skills (MIT licence)." },
       ]} />

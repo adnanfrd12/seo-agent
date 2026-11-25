@@ -55,18 +55,31 @@ export const DATA_VIEWS: { key: string; label: string; screen?: string; evidence
 ];
 
 const BRIEF_ENDPOINT = "ai_brief";
+const VIEW_ENDPOINT = "ai_view";
 const BRIEF_TTL_MS = 3 * 60 * 60 * 1000;
+/** Nova answers from a brief up to this old while a fresh one is built in the background. */
+const BRIEF_STALE_MAX_MS = 24 * 60 * 60 * 1000;
+
+/** When any of the client's sources last synced (a cached brief or view older than this is out of date). Memoised
+ * for a few seconds so one answer (brief + several views) asks once. */
+const syncMemo = new Map<string, { at: number; value: Promise<number> }>();
+function lastSync(admin: SupabaseClient, clientId: string): Promise<number> {
+  const m = syncMemo.get(clientId);
+  if (m && Date.now() - m.at < 20_000) return m.value;
+  const value = Promise.resolve(admin.from("integration_connections").select("last_synced_at").eq("client_id", clientId).not("last_synced_at", "is", null).order("last_synced_at", { ascending: false }).limit(1).maybeSingle())
+    .then(({ data }) => (data?.last_synced_at ? Date.parse(data.last_synced_at) : 0), () => 0);
+  syncMemo.set(clientId, { at: Date.now(), value });
+  return value;
+}
+const cachedRow = (admin: SupabaseClient, clientId: string, endpoint: string, key: string) =>
+  admin.from("dfs_cache").select("data, fetched_at").eq("client_id", clientId).eq("endpoint", endpoint).eq("params_hash", key).maybeSingle();
+const isFresh = (fetchedAt: string, synced: number) => { const at = Date.parse(fetchedAt); return Date.now() - at < BRIEF_TTL_MS && synced <= at; };
 
 /** The compact evidence package, rebuilt when older than a few hours or after a sync. */
 export async function brief(admin: SupabaseClient, clientId: string, timezone: string, opts: { fresh?: boolean } = {}): Promise<Brief> {
   if (!opts.fresh) {
-    const [{ data: cached }, { data: sync }] = await Promise.all([
-      admin.from("dfs_cache").select("data, fetched_at").eq("client_id", clientId).eq("endpoint", BRIEF_ENDPOINT).eq("params_hash", "brief").maybeSingle(),
-      admin.from("integration_connections").select("last_synced_at").eq("client_id", clientId).not("last_synced_at", "is", null).order("last_synced_at", { ascending: false }).limit(1).maybeSingle(),
-    ]);
-    const at = cached ? Date.parse(cached.fetched_at) : 0;
-    const syncedAfter = sync?.last_synced_at ? Date.parse(sync.last_synced_at) > at : false;
-    if (cached && Date.now() - at < BRIEF_TTL_MS && !syncedAfter) return cached.data as Brief;
+    const [{ data: cached }, synced] = await Promise.all([cachedRow(admin, clientId, BRIEF_ENDPOINT, "brief"), lastSync(admin, clientId)]);
+    if (cached && isFresh(cached.fetched_at, synced)) return cached.data as Brief;
   }
   const end = shiftDays(todayIn(timezone), -3), period = { start: shiftDays(end, -27), end };
   const ev = await coachEvidence(admin, clientId, period);
@@ -75,6 +88,49 @@ export async function brief(admin: SupabaseClient, clientId: string, timezone: s
   const out: Brief = { builtAt: new Date().toISOString(), period, connected: [...new Set(items.map((i) => i.source))], unavailable: [...ev.unavailable, ...social.unavailable], items };
   await admin.from("dfs_cache").upsert({ client_id: clientId, endpoint: BRIEF_ENDPOINT, params_hash: "brief", params: {}, data: out, row_count: out.items.length, cost: 0, fetched_at: out.builtAt }, { onConflict: "client_id,endpoint,params_hash" });
   return out;
+}
+
+/**
+ * The brief for a chat answer, without making the user wait for a rebuild: a cached brief up to a day old is
+ * used as is (refresh: true tells the caller to rebuild it in the background for the next message). Only a
+ * missing or very old brief is built inline.
+ */
+export async function briefForChat(admin: SupabaseClient, clientId: string, timezone: string): Promise<{ brief: Brief; refresh: boolean }> {
+  const [{ data: cached }, synced] = await Promise.all([cachedRow(admin, clientId, BRIEF_ENDPOINT, "brief"), lastSync(admin, clientId)]);
+  if (cached) {
+    if (isFresh(cached.fetched_at, synced)) return { brief: cached.data as Brief, refresh: false };
+    if (Date.now() - Date.parse(cached.fetched_at) < BRIEF_STALE_MAX_MS) return { brief: cached.data as Brief, refresh: true };
+  }
+  return { brief: await brief(admin, clientId, timezone, { fresh: true }), refresh: false };
+}
+
+/** One screen's data blocks, cached like the brief (3 hours, or until the next sync), so repeat questions are instant. */
+async function cachedScreen(admin: SupabaseClient, clientId: string, screen: string): Promise<Awaited<ReturnType<typeof screenData>>> {
+  const [{ data: row }, synced] = await Promise.all([cachedRow(admin, clientId, VIEW_ENDPOINT, screen), lastSync(admin, clientId)]);
+  if (row && isFresh(row.fetched_at, synced)) return ((row.data as { blocks?: Awaited<ReturnType<typeof screenData>> }).blocks ?? []);
+  const blocks = await screenData(admin, clientId, screen);
+  await admin.from("dfs_cache").upsert({ client_id: clientId, endpoint: VIEW_ENDPOINT, params_hash: screen, params: { screen }, data: { blocks }, row_count: blocks.length, cost: 0, fetched_at: new Date().toISOString() }, { onConflict: "client_id,endpoint,params_hash" })
+    .then(() => undefined, () => undefined);
+  return blocks;
+}
+
+const refreshing = new Set<string>();
+/**
+ * Gets Nova ready for this client before the first question: rebuilds a stale brief and caches the most-used
+ * views (no AI calls, no cost). Safe to call often: it does nothing when everything is fresh.
+ */
+export async function warmNova(admin: SupabaseClient, clientId: string, timezone: string) {
+  if (refreshing.has(clientId)) return;
+  refreshing.add(clientId);
+  try {
+    const { refresh } = await briefForChat(admin, clientId, timezone);
+    await Promise.all([
+      refresh ? brief(admin, clientId, timezone, { fresh: true }) : null,
+      ...["gsc:overview", "ga4:home"].map((s) => cachedScreen(admin, clientId, s).catch(() => [])),
+    ]);
+  } finally {
+    refreshing.delete(clientId);
+  }
 }
 
 /** Social accounts (stored reads, connected or public): audience, growth, reach, posting and the best post of the period. */
@@ -135,7 +191,7 @@ export async function detail(admin: SupabaseClient, clientId: string, b: Brief, 
   const v = DATA_VIEWS.find((x) => x.key === view);
   if (!v) return cap({ error: `Unknown view "${view}". Use one of: ${DATA_VIEWS.map((x) => x.key).join(", ")}` });
   if (v.screen) {
-    const blocks = await screenData(admin, clientId, v.screen);
+    const blocks = await cachedScreen(admin, clientId, v.screen);
     if (!blocks.length) return cap({ view, data: null, note: "No stored data for this view (not connected, not synced yet, or nothing in the period)." });
     return cap({ view, blocks });
   }
@@ -186,7 +242,7 @@ export async function pageData(admin: SupabaseClient, clientId: string, b: Brief
   const rule = PAGE_DATA.find(([re]) => re.test(path))?.[1];
   const screen = screenForPath(path) ?? rule?.screen;
   if (screen) {
-    const blocks = await screenData(admin, clientId, screen);
+    const blocks = await cachedScreen(admin, clientId, screen);
     return cap({ page: path, shows: screenLabel(screen), blocks: blocks.length ? blocks : null, note: blocks.length ? undefined : "No stored data for this page yet (not connected, not synced, or nothing in the period)." });
   }
   if (rule?.view) return detail(admin, clientId, b, rule.view);

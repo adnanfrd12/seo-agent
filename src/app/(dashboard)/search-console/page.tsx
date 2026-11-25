@@ -127,7 +127,7 @@ export default async function SearchConsolePage({ searchParams }: { searchParams
   if (scope.gsc.length === 0) {
     return (
       <>
-        <TabHeader source="gsc" title={title} description="How people find your website through Google search." />
+        <TabHeader source="gsc" title={title} description="How people find your site on Google." />
         <EmptyState
           title="Search Console isn't connected"
           body="Connect your Google account and choose a Search Console site to start importing data."
@@ -158,13 +158,14 @@ export default async function SearchConsolePage({ searchParams }: { searchParams
   const header = (
     <TabHeader
       source="gsc" title={title}
-      description={`How people find your website through Google search. Site: ${resources.map((r) => r.display_name).join(", ")} · dates in Pacific Time · the latest 2–3 days are preliminary`}
+      description={`How people find your site on Google. Site: ${resources.map((r) => r.display_name).join(", ")} · dates in Pacific Time · last 2–3 days may change`}
       guide={[
           { term: "Clicks", text: "Times someone clicked your result in Google search." },
           { term: "Impressions", text: "Times your site appeared in results, whether or not it was clicked." },
           { term: "CTR (click-through rate)", text: "Clicks divided by impressions. A low CTR on a well-ranked page usually means the title or description isn't compelling." },
           { term: "Average position", text: "Where your pages typically appear (1 = top). Lower is better; position 1-10 is page one. It is an average, not a fixed rank." },
           { term: "Branded vs non-branded", text: "Branded searches include your name; non-branded searches are new customers discovering you." },
+          { term: "Hidden queries", text: "Google hides rare (anonymized) queries, so keyword rows don't add up to the totals." },
           { term: "Delay", text: "Google reports search data 2-3 days late, and the latest days can still change." },
         ]}
     />
@@ -326,9 +327,9 @@ export default async function SearchConsolePage({ searchParams }: { searchParams
       {brand && <div className="mt-6"><BrandSplit data={brand} terms={brandTerms} canEdit={["owner", "admin"].includes(client.role)} /></div>}
 
       <div className={`mt-6 grid grid-cols-1 gap-4 lg:grid-cols-2 xl:[&>*:first-child]:col-span-2 ${bd ? "lg:[&>*:last-child:nth-child(odd)]:col-span-2 xl:grid-cols-4 xl:[&>*:last-child:nth-child(odd)]:col-span-1" : "xl:grid-cols-3"}`}>
-        <PositionScatter title="Click-through vs position" sub="Keywords in the table below (follows its sort and page): high on the left is healthy, low on the left needs a better title"
+        <PositionScatter title="Click-through vs position" sub="Keywords in the table below; low on the left needs a better title"
           points={kw.rows.filter((x) => toNum(x.position) != null && Number(x.impressions) > 0).map((x) => ({ label: x.query, position: toNum(x.position)!, ctr: toNum(x.ctr) ?? 0, impressions: Number(x.impressions), clicks: Number(x.clicks) }))} />
-        <Columns title="Clicks by day of week" sub="Average per day in this period; busiest day highlighted" valueLabel="Avg clicks" bins={weekdays} />
+        <Columns title="Clicks by day of week" sub="Daily average; busiest day highlighted" valueLabel="Avg clicks" bins={weekdays} />
         {bd && (
             <Columns title="Where new queries rank" sub={`Queries first seen since ${bd.recent_start}, by average position`} valueLabel="Queries"
               bins={[["1–3", 0, 3.5], ["4–10", 3.5, 10.5], ["11–20", 10.5, 20.5], ["21–50", 20.5, 50.5], ["51+", 50.5, Infinity]].map(([label, lo, hi]) => ({
@@ -379,7 +380,7 @@ export default async function SearchConsolePage({ searchParams }: { searchParams
                 { key: "days", label: "Days shown", type: "int" },
               ]}
               initialSort={{ key: "impressions", dir: "desc" }} pageSize={8} csvName={`gsc-search-appearance-${range.start}-${range.end}`}
-              note="Search Console can't split result types by device, country or query, so filters above don't apply here. A result can carry several types, so rows overlap and don't add up to the totals." />
+              note="Filters above don't apply here. Rows overlap, so they don't add up to the totals." />
           </div>
         )}
       </section>
@@ -388,16 +389,12 @@ export default async function SearchConsolePage({ searchParams }: { searchParams
         {tablesNarrowed && (
           <p className="flex items-start gap-2 rounded-lg bg-surface p-3 text-sm text-muted ring-1 ring-border">
             <Info className="mt-0.5 size-4 shrink-0" aria-hidden />
-            Keyword and page tables show Web search; the search type filter applies to the totals and charts above.
-            Device and country filters apply everywhere.
+            Keyword and page tables always show Web search; the search type filter applies to the totals and charts above.
           </p>
         )}
 
         <div>
-          <div className="mb-2 flex flex-wrap items-center justify-between gap-2">
-            <p className="text-xs text-muted">
-              Search Console hides rare (anonymized) queries, so keyword rows don&apos;t add up to the totals above.
-            </p>
+          <div className="mb-2 flex justify-end">
             <SearchBox path={PATH} sp={sp} name="q" resetKey="kw_page" placeholder="Filter queries…" label="query filter" />
           </div>
           <DataTable<KeywordRow>

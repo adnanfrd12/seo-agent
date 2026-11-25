@@ -12,7 +12,7 @@ export function FetchKeywords({ canEdit }: { canEdit: boolean }) {
   const [pending, start] = useTransition();
   return (
     <div className="flex flex-wrap items-center gap-2">
-      <button type="button" disabled={!canEdit || pending} onClick={() => start(async () => { const r = await fetchKeywordData(); setMsg(r.ok ? { ok: true, text: r.message } : { ok: false, text: r.error }); router.refresh(); })}
+      <button type="button" title="Top 300 queries · one DataForSEO Labs request per 700 keywords · cached 24 hours" disabled={!canEdit || pending} onClick={() => start(async () => { const r = await fetchKeywordData(); setMsg(r.ok ? { ok: true, text: r.message } : { ok: false, text: r.error }); router.refresh(); })}
         className="inline-flex items-center gap-1.5 rounded-lg bg-accent px-3 py-1.5 text-sm font-medium text-accent-foreground hover:opacity-90 disabled:opacity-50">
         {pending ? <Loader2 className="size-4 animate-spin" /> : <Download className="size-4" />} Fetch DataForSEO data
       </button>

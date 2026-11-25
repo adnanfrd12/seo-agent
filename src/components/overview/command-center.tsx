@@ -105,7 +105,7 @@ export function Hero({ clientName, rangeLabel, growth, status, comp, unseenAlert
                   <span className={growth.band === "Growing" ? "text-positive" : growth.band === "Declining" ? "text-negative" : "text-warn"}>{growth.band}</span>
                   <span className="text-base font-normal text-muted"> · {growth.used} metrics</span>
                 </p>
-                <p className="mt-1.5 text-xs leading-relaxed text-muted">{growth.score} of 100 · 50 means unchanged against the previous period of equal length.</p>
+                <p className="mt-1.5 text-xs leading-relaxed text-muted">{growth.score} of 100 · 50 means no change</p>
               </div>
             </div>
           ) : (
@@ -117,7 +117,7 @@ export function Hero({ clientName, rangeLabel, growth, status, comp, unseenAlert
         <details className="group text-[13px]">
           <summary className="inline-flex cursor-pointer list-none items-center gap-1 text-muted hover:text-foreground [&::-webkit-details-marker]:hidden">How the Growth Index is calculated</summary>
           <div className="mt-2 space-y-3 rounded-[10px] border border-border bg-surface p-4">
-            <p className="leading-relaxed text-secondary">Each metric is compared with the previous period of equal length and mapped to 0-100 (50 = unchanged, +20% = 100, −20% = 0; inverted for average position). The index is the weighted average of the metrics with enough volume. It shows direction of travel, not absolute quality or Google ranking factors.</p>
+            <p className="leading-relaxed text-secondary">Each metric is compared with the previous period of equal length and scored 0–100 (50 = unchanged, +20% = 100, −20% = 0; inverted for average position). The index is the weighted average of metrics with enough volume. It shows direction, not absolute quality.</p>
             <ul className="grid gap-x-8 gap-y-2 sm:grid-cols-2">
               {growth.factors.map((f) => (
                 <li key={f.key} className="grid grid-cols-[1fr_auto] items-center gap-x-3">
@@ -192,13 +192,12 @@ function WinRows({ items, good }: { items: Win[]; good: boolean }) {
 export function ChangesPanel({ d }: { d: ReportData }) {
   return (
     <section className={panel} aria-labelledby="changes-h">
-      <PanelHead id="changes-h" title="What changed"><span className="text-xs text-muted">10%+ moves with enough volume</span></PanelHead>
+      <PanelHead id="changes-h" title="What changed"><span className="text-xs text-muted" title="Calculated from the data, not written by AI.">10%+ moves with enough volume</span></PanelHead>
       {/* stacked rather than side by side: the two lists rarely have the same length */}
       <div>
         <div><p className="px-4 pb-1 pt-3 text-xs font-medium text-positive sm:px-5">Improved</p><ul><WinRows items={monthlyWins(d)} good /></ul></div>
         <div className="border-t border-hairline"><p className="px-4 pb-1 pt-3 text-xs font-medium text-negative sm:px-5">Declined</p><ul><WinRows items={notableDeclines(d)} good={false} /></ul></div>
       </div>
-      <p className="border-t border-hairline px-4 py-2.5 text-xs text-muted sm:px-5">Calculated from the data, not written by AI.</p>
     </section>
   );
 }
@@ -239,7 +238,7 @@ export function HealthPanel({ checks }: { checks: HealthCheck[] }) {
   if (checks.length === 0) return null;
   return (
     <section className={panel} aria-labelledby="health-h">
-      <PanelHead id="health-h" title="Health"><span className="text-xs text-muted">{checks.length} checks</span></PanelHead>
+      <PanelHead id="health-h" title="Health"><span className="text-xs text-muted" title="Pass / watch / fix against fixed thresholds. Hover a check for its rule.">{checks.length} checks</span></PanelHead>
       <ul>
         {checks.map((c) => {
           const h = H[c.status];
@@ -252,7 +251,6 @@ export function HealthPanel({ checks }: { checks: HealthCheck[] }) {
           );
         })}
       </ul>
-      <p className="border-t border-hairline px-4 py-2.5 text-xs text-muted sm:px-5">Pass / watch / fix against fixed thresholds (hover a check for its rule).</p>
     </section>
   );
 }
@@ -265,7 +263,7 @@ export function CompetitorSnapshot({ comp }: { comp: CompetitorData | null }) {
     <section className={panel} aria-labelledby="comp-h">
       <PanelHead id="comp-h" title="Competitors"><Link href="/competitors" className={headLink}>Full analysis</Link></PanelHead>
       {rows.length === 0 ? (
-        <p className="px-4 py-4 text-sm text-muted sm:px-5">The competitor analysis runs automatically every 24 hours. Results appear here as soon as the first one completes.</p>
+        <p className="px-4 py-4 text-sm text-muted sm:px-5">Competitor analysis runs daily. Results appear here after the first run.</p>
       ) : (
         <div className="px-4 py-3.5 sm:px-5">
           <p className="mb-2.5 text-xs font-medium text-muted">Organic keywords ranked (top 100)</p>

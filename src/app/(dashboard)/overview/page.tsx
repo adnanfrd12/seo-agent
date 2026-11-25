@@ -119,7 +119,7 @@ export default async function OverviewPage({ searchParams }: { searchParams: Pro
         <div className="flex min-w-0 flex-col gap-6 lg:col-span-3">
           <ChangesPanel d={data} />
           {data.channels.length > 0 && (
-            <CompareBars fill title="Sessions by channel" sub="Top four GA4 channels · this period against the previous one" valueLabel="Sessions"
+            <CompareBars fill title="Sessions by channel" sub="Top 4 GA4 channels · vs the previous period" valueLabel="Sessions"
               rows={data.channels.slice(0, 4).map((c) => ({ label: c.channel, current: Number(c.sessions), previous: c.prevSessions == null ? null : Number(c.prevSessions) }))} />
           )}
         </div>
@@ -139,7 +139,7 @@ export default async function OverviewPage({ searchParams }: { searchParams: Pro
         className="group flex items-center justify-between gap-4 rounded-[10px] border border-border bg-surface px-4 py-4 transition-colors hover:border-border-strong sm:px-5">
         <span>
           <span className="block text-[15px] font-semibold">Full report</span>
-          <span className="mt-0.5 block text-[13px] text-secondary">Every metric, chapter by chapter: the same content as the PDF.</span>
+          <span className="mt-0.5 block text-[13px] text-secondary">Every metric, as in the PDF.</span>
         </span>
         <ArrowRight className="size-4 shrink-0 text-faint transition-colors group-hover:text-foreground" aria-hidden />
       </Link>

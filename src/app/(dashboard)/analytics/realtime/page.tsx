@@ -16,7 +16,7 @@ const PATH = "/analytics/realtime";
 export default async function RealtimePage({ searchParams }: { searchParams: Promise<SearchParams> }) {
   const sp = await searchParams;
   return (
-    <Ga4xScreen sp={sp} path={PATH} title="Realtime" description="Who is on the website right now: live from GA4 (last 30 minutes), refreshed every minute while this screen is open.">
+    <Ga4xScreen sp={sp} path={PATH} title="Realtime" description="Visitors in the last 30 minutes, refreshed every minute.">
       {async ({ g, wins, ctx, clientId }) => {
         const [rt, geo] = await Promise.all([ctx ? realtime(ctx, g.leadEvents) : null, loadGeo(createAdminClient(), clientId)]);
         if (!rt) return <p className="text-sm text-muted">GA4 isn&apos;t connected.</p>;
@@ -33,13 +33,13 @@ export default async function RealtimePage({ searchParams }: { searchParams: Pro
               <Kpi label="Page views (last 30 min)" tech="Views, last 30 min" value={fmt("int", rt.views)} />
               <Kpi label="Leads (last 30 min)" tech="Leads, last 30 min" value={fmt("int", leadsNow)} note={g.meta.fallbacks.length ? "Named lead events only (map-link clicks can't be filtered live)" : undefined} />
             </Kpis>
-            <Band title="Charts" sub="Hover for details, click any bar, point or bubble for more." />
+            <Band title="Charts" />
             <Grid>
-              <Card title="Visitors per minute" tech="Active users per minute" sub="runRealtimeReport with minutesAgo, refreshed every 60 seconds. This is the only live data Google offers: GA4 allows the last 30 minutes through its Realtime API; Search Console has no live data (2–3 day delay, hourly data for recent days only)." span={8}>
+              <Card title="Visitors per minute" tech="Active users per minute" info="runRealtimeReport with minutesAgo, refreshed every 60 seconds. This is the only live data Google offers: GA4 allows the last 30 minutes through its Realtime API; Search Console has no live data (2–3 day delay, hourly data for recent days only)." span={8}>
                 <ColChart id="rt-min" labels={rt.perMinute.map((_, i) => `${29 - i}m`)} series={[{ name: "Active users", values: rt.perMinute, color: C[0] }]} h={170} />
                 <Note>Live · read {new Date(rt.at).toLocaleTimeString("en-US", { hour: "numeric", minute: "2-digit", second: "2-digit" })}</Note>
               </Card>
-              <Card title="Leads as they happen" tech="Live lead feed" sub="Lead events as they arrive." span={4}>
+              <Card title="Leads as they happen" tech="Live lead feed" span={4}>
                 {rt.feed.length ? (
                   <ul className="divide-y divide-hairline text-sm">
                     {rt.feed.map((f, i) => <li key={i} className="py-2"><time className="mr-2 text-xs text-muted">{f.minutesAgo ? `${f.minutesAgo} min ago` : "just now"}</time><span className="font-mono text-xs">{f.event}</span>{f.n > 1 && <b className="ml-1 text-xs">×{f.n}</b>}<span className="block text-xs text-muted">{f.page} · {f.city} · {f.device}</span></li>)}

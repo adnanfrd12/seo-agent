@@ -22,8 +22,7 @@ export function TrackedCompetitors({ canEdit, tracked, removed }: { canEdit: boo
 
   return (
     <section aria-label="Tracked competitors" className="mt-6 rounded-[10px] border border-border bg-surface p-4">
-      <h2 className="text-sm font-semibold">Tracked competitors</h2>
-      <p className="mb-3 text-xs text-muted">Removing a competitor stops tracking it, keeps it out of automatic picks and hides its data on this page. You can restore it any time.</p>
+      <h2 className="mb-3 text-sm font-semibold">Tracked competitors</h2>
       <ul className="flex flex-wrap gap-2">
         {tracked.map((d) => (
           <li key={d} className="inline-flex items-center gap-2 rounded-full border border-border bg-surface-muted py-1 pl-3 pr-1 text-sm">

@@ -16,7 +16,7 @@ export default async function CrawlPage() {
   const v = await sxPage();
   if (!v) return null;
   const a = audit<Crawl>(v.bundle, "crawlOptimization");
-  const header = <SxHeader title="Crawl Optimization Checker" description="The code, feeds and headers that waste crawl budget, as found by SEOSignalX." project={v.bundle?.project?.name} analyzedAt={a?.result._reportAnalyzedAt ?? a?.updatedAt} />;
+  const header = <SxHeader title="Crawl Optimization Checker" description="Code, feeds and headers that waste crawl budget." project={v.bundle?.project?.name} analyzedAt={a?.result._reportAnalyzedAt ?? a?.updatedAt} />;
   if (!a) return <>{header}<NoAudit label="Crawl Optimization" reason={v.bundle?.project ? null : "This client has no SEOSignalX project."} /></>;
   const r = a.result, f = r.fetchDetails ?? {};
   const score = scores(v.bundle).per.crawlOptimization?.score ?? null;
@@ -37,7 +37,7 @@ export default async function CrawlPage() {
             <ul className="grid grid-cols-2 gap-2 text-sm">{sev.map(([l, n, c]) => <li key={l} className="flex items-center justify-between rounded-lg bg-surface-muted px-3 py-2"><span className="flex items-center gap-2"><span className="size-2 rounded-full" style={{ background: c }} />{l}</span><b className="tabular-nums">{n}</b></li>)}</ul>
           </div>
         </Card>
-        <Card title="By area" sub="Found issues out of the checks in each area">
+        <Card title="By area">
           <ul className="space-y-3 p-4">
             {(r.sections ?? []).map((s) => {
               const n = s.checks.filter((c) => c.status === "found").length;
@@ -53,14 +53,14 @@ export default async function CrawlPage() {
         <Stat label="HTML status" value={`HTTP ${f.htmlStatus ?? "—"}`} sub={f.htmlStatus === 200 ? "Success" : ""} />
         <Stat label="Load time" value={f.loadTime != null ? `${f.loadTime} ms` : "—"} sub={f.loadTime != null ? (f.loadTime > 3000 ? "Slow" : "Good") : ""} />
         <Stat label="HTML size" value={f.sizeKb != null ? `${f.sizeKb} KB` : "—"} sub={f.sizeKb != null ? (f.sizeKb > 500 ? "Heavy" : "Good") : ""} />
-        <Stat label="Links" value={f.links ?? "—"} sub="Total links" />
-        <Stat label="Resources" value={f.resources ?? "—"} sub="Total resources" />
+        <Stat label="Links" value={f.links ?? "—"} />
+        <Stat label="Resources" value={f.resources ?? "—"} />
         <Stat label="Sitemaps" value={f.sitemaps ?? "—"} sub="Detected" />
         <Stat label="Word count" value={f.wordCount ?? "—"} sub={f.wordCount != null ? (f.wordCount >= 300 ? "Good" : "Thin") : ""} />
       </section>
 
       <div className="mt-6 space-y-4">
-        <Card title="Checks" sub={`Found issues are listed first, highest priority on top · ${all.length} checks`}>
+        <Card title="Checks" sub={`${all.length} checks · issues first`}>
           <ul className="divide-y divide-hairline">
             {all.map((c, i) => (
               // some SEOSignalX checks have an empty id: the position keeps keys unique

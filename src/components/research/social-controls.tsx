@@ -78,7 +78,7 @@ export function SocialSettings({ profiles, tokens, linkedinOrgId }: { profiles: 
           </div>
           <div className="flex flex-wrap items-center gap-3">
             <button className={`${btn} bg-accent text-accent-foreground hover:opacity-90`} disabled={pending}>{pending && <Loader2 className="size-4 animate-spin" />} Save</button>
-            <p className="text-xs text-muted">Tokens are encrypted and never shown again. Leave a token field empty to keep what is stored.</p>
+            <p className="text-xs text-muted">Tokens are stored encrypted. Leave a field empty to keep the saved token.</p>
           </div>
           {msg && <p role={msg.ok ? "status" : "alert"} className={`text-sm ${msg.ok ? "text-positive" : "text-negative"}`}>{msg.text}</p>}
         </form>
@@ -164,7 +164,7 @@ export function SocialConnect({ rows, canEdit }: { rows: ConnectRow[]; canEdit: 
       <header className="flex flex-wrap items-start justify-between gap-3 border-b border-hairline px-4 py-3.5 sm:px-5">
         <div className="min-w-0">
           <h2 id="connect-social-title" className="flex items-center gap-2 text-[15px] font-semibold"><Plug className="size-4" aria-hidden /> Connect social accounts</h2>
-          <p className="mt-1 max-w-3xl text-xs leading-relaxed text-muted">The account owner logs in on the platform&apos;s own page (through Composio) and approves read access. Connected accounts give full analytics: followers, reach, impressions, views and engagement. Accounts that aren&apos;t connected show public numbers only.</p>
+          <p className="mt-1 max-w-3xl text-xs leading-relaxed text-muted">Connected accounts give full analytics; others show public numbers only.</p>
         </div>
         <span className="shrink-0 rounded-full border border-border bg-surface-sunken px-2.5 py-1 text-xs font-medium text-secondary">
           <span className="tabular-nums text-foreground">{connected}</span> of {rows.length} connected

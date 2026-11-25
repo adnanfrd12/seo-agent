@@ -84,8 +84,8 @@ export default async function InsightsPage({ searchParams }: { searchParams: Pro
 
   return (
     <div>
-      <TabHeader source={null} eyebrow="AI intelligence" title="AI SEO Insights" description="Evidence-based interpretation of your GA4, Search Console, Bing, Business Profile (incl. reviews and local rankings), Clarity and imported data. The numbers are calculated by the app; the AI only interprets them." guide={[
-  { term: "Evidence", text: "Every recommendation cites numbers from your connected data. The AI interprets them; it never invents metrics." },
+      <TabHeader source={null} eyebrow="AI intelligence" title="AI SEO Insights" description="AI recommendations backed by your connected data." guide={[
+  { term: "Evidence", text: "Every recommendation cites numbers the app calculated from your connected data (GA4, Search Console, Bing, Business Profile, Clarity and imports). The AI interprets them; it never invents metrics." },
   { term: "Priority, confidence, effort", text: "Priority = expected importance, confidence = how strong the evidence is, effort = how much work it takes. Start with high priority and small effort." },
   { term: "Hypothesis vs fact", text: "The impact shown is a testable hypothesis, never a guarantee. The success metric tells you what to measure." },
   { term: "Status", text: "Mark recommendations Approved, Done or Dismissed so progress is tracked and the AI doesn't repeat finished work." },
@@ -103,7 +103,7 @@ export default async function InsightsPage({ searchParams }: { searchParams: Pro
           <GenerateButton kind="insights" start={range.start} end={range.end}
             label={latest ? `Generate latest analysis (${range.start} → ${range.end})` : "Generate AI analysis"}
             disabled={!canEdit || running} disabledReason={running ? "An analysis is already running" : "Owners and admins only"} />
-          {latest && <p className="text-xs text-muted">Showing the analysis generated {new Date(latest.created_at).toLocaleString()} for {latest.range_start} → {latest.range_end}. A new one is prepared automatically after each month closes.</p>}
+          {latest && <p className="text-xs text-muted" title="A new analysis is prepared automatically after each month closes.">Showing the analysis generated {new Date(latest.created_at).toLocaleString()} for {latest.range_start} → {latest.range_end}.</p>}
         </div>
       )}
 
@@ -140,7 +140,7 @@ export default async function InsightsPage({ searchParams }: { searchParams: Pro
       {current.length > 0 && (
         <section aria-label="Recommendation charts" className="mb-8 space-y-4">
           <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
-            <Fill><SplitBar title="Progress" sub="Status of this analysis' recommendations" total={`${done} of ${current.length}`} totalLabel="done" segments={[
+            <Fill><SplitBar title="Progress" sub="Recommendations by status" total={`${done} of ${current.length}`} totalLabel="done" segments={[
               { label: "Done", value: done, color: "var(--positive)" }, { label: "Approved", value: count((i) => i.implementation_status === "approved"), color: "color-mix(in oklab, var(--positive) 45%, var(--surface))" },
               { label: "Open", value: count((i) => !["approved", "implemented", "dismissed"].includes(i.implementation_status)), color: "var(--cat-other)" }, { label: "Dismissed", value: count((i) => i.implementation_status === "dismissed"), color: "var(--border-strong)" },
             ]} /></Fill>
@@ -150,9 +150,9 @@ export default async function InsightsPage({ searchParams }: { searchParams: Pro
             <Fill className="md:col-span-2 lg:col-span-1"><BarList title="By category" valueLabel="Recommendations" items={byCategory} /></Fill>
           </div>
           <div className="grid gap-4 md:grid-cols-2">
-            <Fill><Heatmap title="Priority and effort" sub="Recommendations in each cell · start top left (high priority, small effort)" rows={["High", "Medium", "Low"]} cols={["Small", "Medium", "Large"]}
+            <Fill><Heatmap title="Priority and effort" sub="Start top left: high priority, small effort" rows={["High", "Medium", "Low"]} cols={["Small", "Medium", "Large"]}
               cells={["high", "medium", "low"].map((p) => ["small", "medium", "large"].map((e) => count((i) => i.priority === p && i.estimated_effort === e)))} /></Fill>
-            <Fill><SplitBar title="Confidence" sub="How strong the evidence behind each recommendation is" segments={[
+            <Fill><SplitBar title="Confidence" sub="Strength of the evidence" segments={[
               { label: "High", value: count((i) => i.confidence === "high"), color: "var(--series)" }, { label: "Medium", value: count((i) => i.confidence === "medium"), color: "color-mix(in oklab, var(--series) 55%, var(--surface))" },
               { label: "Low", value: count((i) => i.confidence === "low"), color: "color-mix(in oklab, var(--series) 22%, var(--surface))" },
             ]} /></Fill>
@@ -204,7 +204,7 @@ export default async function InsightsPage({ searchParams }: { searchParams: Pro
           <h2 className="mb-2 text-sm font-semibold">Analysis history</h2>
           {spendDays.size > 0 && (
             <div className="mb-4">
-              <StackedColumns title="AI spend per day" sub="Estimated cost of the analyses below, by type" format="usd" valueLabel="USD"
+              <StackedColumns title="AI spend per day" sub="Estimated cost, by analysis type" format="usd" valueLabel="USD"
                 keys={kinds.map((k, i) => ({ key: k, label: k.replace(/_/g, " ").replace(/^./, (x) => x.toUpperCase()), color: cat(i) }))}
                 columns={[...spendDays.entries()].map(([label, values]) => ({ label, values }))} />
             </div>

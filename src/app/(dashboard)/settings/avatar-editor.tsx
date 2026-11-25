@@ -119,7 +119,7 @@ export function AvatarEditor({
               </button>
             )}
           </div>
-          <p className="w-full text-xs text-muted">JPG, PNG or WebP, up to 8 MB. You can crop it before saving.</p>
+          <p className="w-full text-xs text-muted">JPG, PNG or WebP, up to 8 MB.</p>
         </div>
       ) : (
         <div className="flex flex-col items-start gap-3">

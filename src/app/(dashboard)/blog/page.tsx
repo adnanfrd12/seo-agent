@@ -73,7 +73,7 @@ export default async function BlogPage({ searchParams }: { searchParams: Promise
     newPosts={blog.posts.filter((p) => !ownList(p) && (p.published_date ?? "") >= sixtyDays).length} allPosts={blog.posts.filter((p) => !ownList(p)).length} /> : undefined;
   const header = (
     <TabHeader source={null} eyebrow="Your website" title="Blog Content"
-      description="Every post on the website: what it targets, which area, roads and landmarks it names, how it links to your Business Profile and service pages, and how it performs in Google."
+      description="Every blog post: what it targets, its links and its Google performance."
       actions={actions}
       guide={[
         { term: "Service page", text: "The page on the site that sells the service the post is about. A post should link to it with the service as anchor text." },

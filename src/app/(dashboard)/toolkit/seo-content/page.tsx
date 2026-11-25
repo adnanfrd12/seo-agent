@@ -19,7 +19,7 @@ export default async function SeoContentTool() {
   const canEdit = ["owner", "admin"].includes(client.role);
   const stored = await loadTool<ContentRun>(await createClient(), client.id, "seo-content");
   const r = stored?.data;
-  const header = <TabHeader source={null} title="Content Quality" description="E-E-A-T, readability, thin content and AI-citation readiness for one page, or the 10 blog posts with the most Search Console clicks (last 90 days)." guide={[
+  const header = <TabHeader source={null} title="Content Quality" description="Reviews one page, or your top 10 blog posts, for content quality." guide={[
     { term: "Score", text: "60% qualitative (Experience, Expertise, Authority, Trust and AI-citation readiness, each 0-10, read by Claude Haiku) and 40% measured (length up to 1,200 words, Flesch readability, question headings)." },
     { term: "Thin", text: "Under 500 words of main content." },
     { term: "Method", text: "Google's Who/How/Why test and E-E-A-T factors as described in the open-source claude-seo seo-content skill (MIT)." },

@@ -25,8 +25,8 @@ export default async function TechnicalSeoPage() {
   const page = await researchPage();
   if (!page) return null;
   const { client, canEdit, cache } = page;
-  const header = <TabHeader source="dfs" title="Technical SEO" description="One score for the technical health of the website, a score per area and a prioritised list of exact changes, built from the crawl, Lighthouse and free checks of robots.txt, sitemaps and page HTML." guide={[
-    { term: "Technical SEO score", text: "Weighted average of the category scores. Each category starts at 100 and loses the points shown next to each failed check, so every deduction can be traced to its evidence." },
+  const header = <TabHeader source="dfs" title="Technical SEO" description="Technical health score, area scores and a prioritised list of fixes." guide={[
+    { term: "Technical SEO score", text: "Weighted average of the category scores. Each category starts at 100 and loses the points shown next to each failed check." },
     { term: "Method", text: "Categories, thresholds and priority tiers adapted from the open-source claude-seo technical audit skill (MIT licence)." },
     { term: "Priority", text: "Critical = a failure that blocks crawling, indexing or HTTPS (fix now). Otherwise impact x effort: high-impact changes that aren't hard are High; high-impact but hard, or medium-impact and easy, are Medium; the rest Low." },
     { term: "Not measured", text: "A category with no data yet is left out and the weights are re-balanced over the measured ones." },
@@ -105,7 +105,7 @@ export default async function TechnicalSeoPage() {
           </section>
 
           <div className="mt-6">
-            <ResearchTable title="Recommended changes (highest priority first)" rows={recRows as unknown as Record<string, unknown>[]} searchKeys={["problem", "change", "pagesText"]} csvName={`technical-seo-${cache.target.domain}`}
+            <ResearchTable title="Recommended changes" rows={recRows as unknown as Record<string, unknown>[]} searchKeys={["problem", "change", "pagesText"]} csvName={`technical-seo-${cache.target.domain}`}
               columns={[
                 { key: "priority", label: "Priority", type: "badge" }, { key: "category", label: "Category" }, { key: "problem", label: "Problem" }, { key: "change", label: "Exact change" },
                 { key: "pagesText", label: "Affected pages" }, { key: "pageCount", label: "Pages", type: "int" }, { key: "impact", label: "Impact", type: "badge" }, { key: "effort", label: "Effort", type: "badge" },
@@ -164,7 +164,7 @@ export default async function TechnicalSeoPage() {
                 note={checks ? `robots.txt ${checks.robots.status ?? "no response"} · ${checks.sitemaps.filter((m) => m.valid).length} valid sitemap file(s) with ${checks.sitemapUrls.toLocaleString("en-US")} URLs · HTTP→HTTPS ${checks.https.httpToHttps ? "yes" : "no"} · HSTS ${checks.https.hsts ? "yes" : "no"}` : undefined} />
             </div>
           )}
-          <p className="mt-4 text-xs text-muted">Method: each category starts at 100 and loses the points shown per failed check; the overall score is the weighted average of measured categories. Crawl details are on <Link href="/site-audit" className="underline underline-offset-2">Site Audit</Link>.</p>
+          <p className="mt-4 text-xs text-muted">Crawl details are on <Link href="/site-audit" className="underline underline-offset-2">Site Audit</Link>.</p>
         </>
       )}
     </>

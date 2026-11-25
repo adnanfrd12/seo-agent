@@ -27,12 +27,12 @@ export default async function RoadmapPage({ searchParams }: { searchParams: Prom
   } catch { setupNeeded = true; }
 
   const header = (
-    <TabHeader source={null} eyebrow="AI intelligence" title="SEO Roadmap" description="A month-by-month SEO plan built from this client's own data: objectives, priorities and tasks by category, with the evidence behind each one. Track progress here or ask Nova to change it."
+    <TabHeader source={null} eyebrow="AI intelligence" title="SEO Roadmap" description="A monthly SEO plan built from this client's data."
       guide={[
         { term: "How it's built", text: "Claude reads every connected source (Search Console, GA4, Business Profile, Bing, Clarity, DataForSEO, competitors, rank tracking, site audit, AI visibility, social) and writes tasks that cite the numbers behind them. Tasks without supporting data are dropped." },
         { term: "Refreshing", text: "A new strategy keeps completed, started, manually added and Nova tasks; only open AI tasks nobody started are replaced. Nothing is added twice." },
         { term: "Monthly", text: "Each month's strategy is prepared automatically early in the month from the latest synced data, and can be generated or refreshed by hand at any time." },
-        { term: "Nova", text: "Ask Nova (bottom right) to explain, add, update, reprioritise or reschedule tasks. Deleting tasks or replacing a strategy always asks for your confirmation first." },
+        { term: "Nova", text: "Ask Nova (bottom right) to explain, add, update, move or delete tasks and months. Nova asks for your confirmation before every change." },
       ]} />
   );
   if (setupNeeded) return (<>{header}<Unavailable title="Database update needed" body="Apply migration 20261125000025_roadmap_nova.sql in Supabase to enable the roadmap and Nova." /></>);

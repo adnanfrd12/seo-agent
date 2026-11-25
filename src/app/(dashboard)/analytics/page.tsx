@@ -85,7 +85,7 @@ export default async function Ga4Page({ searchParams }: { searchParams: Promise<
   if (scope.ga4.length === 0) {
     return (
       <>
-        <TabHeader source="ga4" title="Google Analytics 4" description="Who visits your website, how they behave and which actions they take." />
+        <TabHeader source="ga4" title="Google Analytics 4" description="Who visits your website and what they do there." />
         <EmptyState
           title="Google Analytics 4 isn't connected"
           body="Connect your Google account and choose a GA4 property to start importing data."
@@ -115,14 +115,14 @@ export default async function Ga4Page({ searchParams }: { searchParams: Promise<
   const header = (
     <TabHeader
       source="ga4" title="Google Analytics 4"
-      description={`Who visits your website, how they behave and which actions they take. Property: ${resources.map((r) => r.display_name).join(", ")}${resources[0]?.timezone ? ` · reporting time zone ${resources[0].timezone}` : ""}`}
+      description={`Property: ${resources.map((r) => r.display_name).join(", ")}${resources[0]?.timezone ? ` · time zone ${resources[0].timezone}` : ""}`}
       guide={[
-        { term: "Active users", text: "People who visited and engaged with the site. A person active on several days is counted once per day." },
-        { term: "Sessions", text: "Visits to the site. One person can have several sessions." },
-        { term: "Engagement rate", text: "The share of sessions that lasted 10+ seconds, had a key event, or viewed 2+ pages. Higher means visitors found something worth their time." },
-        { term: "Key events", text: "The actions you decided matter (form sent, call tapped, purchase). Called conversions before." },
+        { term: "Active users", text: "People who engaged with the site, counted once per day they were active." },
+        { term: "Sessions", text: "Visits to the site. One person can have several." },
+        { term: "Engagement rate", text: "Share of sessions that lasted 10+ seconds, had a key event or viewed 2+ pages." },
+        { term: "Key events", text: "The actions you count as goals (form sent, call tapped, purchase). Formerly called conversions." },
         { term: "Traffic channel", text: "How visitors arrived: Organic Search (Google/Bing), Direct, Referral (other sites), Social, Paid, Email." },
-        { term: "Landing page", text: "The first page a visitor sees. Good landing pages match the search that brought people there." },
+        { term: "Landing page", text: "The first page a visitor sees." },
       ]}
     />
   );
@@ -267,11 +267,10 @@ export default async function Ga4Page({ searchParams }: { searchParams: Promise<
       {filters}
 
       {filtered && (
-        <p className="mb-4 flex items-start gap-2 rounded-lg bg-surface p-3 text-sm text-muted ring-1 ring-border">
+        <p className="mb-4 flex items-start gap-2 rounded-lg bg-surface p-3 text-sm text-muted ring-1 ring-border"
+          title="These figures come from GA4's channel × device × country breakdown, where a session that touches more than one value is counted in each, so they can read a few percent above the unfiltered totals.">
           <Info className="mt-0.5 size-4 shrink-0" aria-hidden />
-          Filtered to {filterLabel}. These figures come from GA4&apos;s channel × device × country breakdown, where a session
-          that touches more than one value is counted in each, so they can read a few percent above the unfiltered totals.
-          Top pages and key events below cover all traffic.
+          Filtered to {filterLabel}. Figures can read a few percent high; top pages and key events cover all traffic.
         </p>
       )}
 
@@ -305,7 +304,7 @@ export default async function Ga4Page({ searchParams }: { searchParams: Promise<
           <ShareDonut title="New vs returning visitors" sub="Share of sessions · all traffic" centerLabel="sessions"
             items={userTypes.map((c) => ({ label: c.value === "new" ? "New visitors" : c.value === "returning" ? "Returning visitors" : c.value, value: Number(c.sessions) }))} />
         )}
-        <Columns title="Sessions by day of week" sub="Average per day in this period; busiest day highlighted" valueLabel="Avg sessions" bins={weekdays} />
+        <Columns title="Sessions by day of week" sub="Daily average; busiest day highlighted" valueLabel="Avg sessions" bins={weekdays} />
       </div>
 
       <div className="mt-4 grid grid-cols-1 gap-4 md:grid-cols-2 md:[&>*:last-child:nth-child(odd)]:col-span-2">

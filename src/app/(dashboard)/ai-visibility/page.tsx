@@ -48,7 +48,7 @@ export default async function AiVisibilityPage() {
   const { client, user } = await getSession();
   if (!client) return null;
   const canEdit = ["owner", "admin"].includes(client.role);
-  const header = <TabHeader source={null} title="AI Visibility" description="How ChatGPT, Perplexity, Gemini, Google AI Mode and Claude answer your customers' questions: who they name, in what order, how they describe them, and which sites they cite." guide={[
+  const header = <TabHeader source={null} title="AI Visibility" description="Who AI assistants name and cite when your customers ask questions." guide={[
     { term: "Visibility", text: "Share of answers (question × assistant) that name the business." },
     { term: "Position", text: "Order in which the business is named: #1 = first." },
     { term: "Detection rate", text: "Share of questions where at least one assistant names the business." },
@@ -284,7 +284,7 @@ export default async function AiVisibilityPage() {
                       <Columns title="Where you are named" sub={`Your position when named · not named in ${L.length - named.length} of ${L.length} answers`} bins={posBins} valueLabel="Answers" />
                     </div>
                     <MultiLine title="Performance over time" sub="Each check, you and the most-named competitors" metrics={perfMetrics} initialHidden={shown.slice(5).map((_, i) => `b${i + 5}`)} />
-                    {visTrend.some((o) => o.data.length >= 2) && <MetricTrend title="Visibility over time, one brand at a time (share of answers naming it, %)" source="AI" options={visTrend.filter((o) => o.data.length)} />}
+                    {visTrend.some((o) => o.data.length >= 2) && <MetricTrend title="Visibility over time by brand (% of answers)" source="AI" options={visTrend.filter((o) => o.data.length)} />}
                     <Heatmap title="Visibility by assistant" sub="Share of each assistant's answers that name the brand, %" rows={heatBrands.map(brandLabel)} cols={usedEngines.map((e) => ENGINES[e].label)} cells={detectCells} max={100} unit="%" />
                     <ResearchTable title="By assistant (latest answers)" rows={byEngine} pageSize={6} columns={[
                       { key: "engine", label: "Assistant" }, { key: "answers", label: "Answers", type: "int" }, { key: "named", label: "Named you", type: "int" },
@@ -318,8 +318,8 @@ export default async function AiVisibilityPage() {
                     <section className="space-y-3" aria-label="Brand lookup">
                       <div className="flex flex-wrap items-end justify-between gap-3">
                         <div className="min-w-0">
-                          <h3 className="text-sm font-semibold">Brand lookup</h3>
-                          <p className="text-xs text-muted">How often real US AI answers name your brand and the competitor brands the assistants name most (DataForSEO LLM Mentions){lookupAt ? ` · updated ${lookupAt}` : ""}. Refreshes weekly. “Named as a brand” counts ChatGPT answers that recognise the name as a business; “phrase in answer” counts the words anywhere in the answer, so a name that is also an everyday phrase is counted wherever the phrase appears.</p>
+                          <h3 className="text-sm font-semibold" title="From DataForSEO LLM Mentions. “Named as a brand” counts ChatGPT answers that recognise the name as a business; “phrase in answer” counts the words anywhere in the answer, so a name that is also an everyday phrase is counted wherever the phrase appears.">Brand lookup</h3>
+                          <p className="text-xs text-muted">Your brand and top competitors in real US AI answers{lookupAt ? ` · updated ${lookupAt}` : ""} · refreshes weekly</p>
                         </div>
                         {canEdit && <MarketRefreshButton action="brand" label="Fetch brand lookup" estimate={`≈$${(4 * BRAND_EST).toFixed(2)}`} />}
                       </div>
@@ -331,7 +331,7 @@ export default async function AiVisibilityPage() {
                             ))}
                           </div>
                           <div className={`grid gap-4 ${histMonths.length ? "lg:grid-cols-2" : ""}`}>
-                            <Donut title="Share of voice in ChatGPT" sub="Answers naming each brand as a business (brand entities)" items={lookupSov}
+                            <Donut title="Share of voice in ChatGPT" sub="Answers naming each brand as a business" items={lookupSov}
                               center={entityAll ? `${Math.round(((metricOf("entities", ownBrand)?.mentions ?? 0) / entityAll) * 100)}%` : "0%"} centerLabel="you" />
                             {histMonths.length > 0 && <StackedColumns title={`${brandHist!.data.brand} named in ChatGPT, by month`} sub="Answers naming the brand as a business, since August 2025" valueLabel="Answers"
                               keys={[{ key: "m", label: "Answers", color: "var(--series)" }]} columns={histMonths.map((m) => ({ label: histLabel(m.month), values: { m: m.mentions } }))} empty={`${brandHist!.data.brand} has not been named as a brand in ChatGPT answers since August 2025.`} />}
@@ -343,8 +343,8 @@ export default async function AiVisibilityPage() {
                     </section>
                     <section className="space-y-3" aria-label="AI market">
                       <div>
-                        <h3 className="text-sm font-semibold">AI market for your topics</h3>
-                        <p className="text-xs text-muted">From millions of real US ChatGPT and Google AI Overview answers (DataForSEO LLM Mentions){marketAll[0]?.d ? ` · topic: ${marketAll[0].d.data.topics.join(", ")} · updated ${marketAll[0].d.fetchedAt.slice(0, 10)}` : ""}. Refreshes weekly.</p>
+                        <h3 className="text-sm font-semibold" title="From millions of real US ChatGPT and Google AI Overview answers (DataForSEO LLM Mentions).">AI market for your topics</h3>
+                        <p className="text-xs text-muted">Real US ChatGPT and AI Overview answers{marketAll[0]?.d ? ` · topic: ${marketAll[0].d.data.topics.join(", ")} · updated ${marketAll[0].d.fetchedAt.slice(0, 10)}` : ""} · refreshes weekly</p>
                       </div>
                       {market.length === 0 ? <p className="rounded-[10px] border border-dashed border-border p-4 text-sm text-muted">{marketAll.length ? "No AI answers were found for this topic yet. It is checked again next week." : "Appears after the next weekly run (or “Check now” below)."}</p> : (
                         <>

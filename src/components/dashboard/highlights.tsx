@@ -15,7 +15,7 @@ const TONE = {
  * explicit "stable" message so the strip never silently disappears.
  */
 export function Highlights({ items, stableNote }: { items: Highlight[]; stableNote?: string }) {
-  const list = items.length ? items : [{ tone: "info" as const, title: "A steady period", detail: stableNote ?? "No metric moved enough to flag. The detailed numbers are below.", href: undefined, action: undefined }];
+  const list = items.length ? items : [{ tone: "info" as const, title: "A steady period", detail: stableNote ?? "No metric moved enough to flag.", href: undefined, action: undefined }];
   return (
     <section aria-label="What stands out" className="mb-6 overflow-hidden rounded-[10px] border border-border bg-surface">
       <ul className={cn("grid", list.length > 1 && "lg:grid-cols-2")}>

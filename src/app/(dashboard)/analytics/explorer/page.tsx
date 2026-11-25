@@ -47,7 +47,7 @@ export default async function LeadExplorerPage({ searchParams }: { searchParams:
   const n = ["10", "25", "0"].includes(first(sp.n) ?? "") ? Number(first(sp.n)) : 10;
   const extra = first(sp.extra) !== "0";
   return (
-    <Ga4xScreen sp={sp} path={PATH} title="Lead explorer" description="Your GA4 explorations, built automatically: any dimension as rows, each lead event as a column.">
+    <Ga4xScreen sp={sp} path={PATH} title="Lead explorer" description="Any dimension as rows, each lead event as a column.">
       {({ g, wins }) => {
         const d = DIMS[di];
         const rowsOf = (s: Src) => (s === "S" ? g.sCur() : s === "S2" ? g.s2Cur() : s === "H" ? g.hCur() : s === "G" ? g.geoCur() : s === "R" ? g.rCur() : s === "L" ? g.lCur() : s === "L2" ? g.l2Cur() : g.l3Cur());
@@ -74,7 +74,7 @@ export default async function LeadExplorerPage({ searchParams }: { searchParams:
         return (
           <>
             <Grid>
-              <Card title="Explore your leads" tech="Lead explorer" sub="The 'Source vs Leads' and 'Page vs Leads' explorations, without building them in GA. Pick any dimension for rows; lead events are the columns.">
+              <Card title="Explore your leads" info="The 'Source vs Leads' and 'Page vs Leads' explorations, without building them in GA. Pick any dimension for rows; lead events are the columns.">
                 <div className="flex flex-wrap items-end gap-4">
                   <FilterSelect label="Rows" name="rows" value={String(di)} options={DIMS.map((x, i) => ({ value: String(i), label: x.name }))} path={PATH} sp={sp} />
                   <FilterSelect label="Columns" name="cols" value={mode} options={[{ value: "events", label: "Lead events" }, { value: "types", label: "Lead types" }]} path={PATH} sp={sp} />
@@ -84,21 +84,21 @@ export default async function LeadExplorerPage({ searchParams }: { searchParams:
                   </Link>
                 </div>
               </Card>
-              <Card title="Quick views" tech="Saved layouts" sub="One click to the layouts from your GA4 explorations.">
+              <Card title="Quick views" tech="Saved layouts">
                 <div className="flex flex-wrap gap-2">
                   {LAYOUTS.map(([l, i]) => <Link key={l} href={withParams(PATH, sp, { rows: String(i) })} aria-pressed={i === di} className={cn("rounded-full border px-3 py-1 text-sm", i === di ? "border-foreground bg-foreground text-background" : "border-border hover:bg-surface-muted")}>{l}</Link>)}
                 </div>
               </Card>
             </Grid>
-            <Band title="Charts" sub="Hover for details, click any bar, point or bubble for more." />
+            <Band title="Charts" />
             <Grid>
-              <Card title={`Leads by ${d.name.toLowerCase()}`} sub="Stacked by lead event." span={7}>
+              <Card title={`Leads by ${d.name.toLowerCase()}`} span={7}>
                 <ColChart id="explorer-stack" labels={top10.map((r) => (r.key.length > 14 ? `${r.key.slice(0, 13)}…` : r.key))} series={colsK.map((k, i) => ({ name: mode === "events" ? plainEvent(g, k) : colName(k), tech: k, values: top10.map((r) => r.cells[i]), color: colColor(k) }))} />
               </Card>
               <Card title="Share of leads" sub="Area = leads." span={5}>
                 <Treemap items={all.filter((r) => r.tot).slice(0, 20).map((r, i) => ({ label: r.key, value: r.tot, color: C[i % C.length] }))} />
               </Card>
-              <Card title="Leads by type for each row" tech="Lead events per row" sub="Grouped columns, top 6 rows." span={7}>
+              <Card title="Leads by type for each row" tech="Lead events per row" sub="Top 6 rows." span={7}>
                 <ColChart id="explorer-group" stacked={false} labels={top6.map((r) => (r.key.length > 14 ? `${r.key.slice(0, 13)}…` : r.key))} series={colsK.map((k, i) => ({ name: mode === "events" ? plainEvent(g, k) : colName(k), tech: k, values: top6.map((r) => r.cells[i]), color: colColor(k) }))} />
               </Card>
               <Card title="Visits vs lead rate" tech="Sessions vs lead rate" sub="Bubble = leads." span={5}>
@@ -106,9 +106,9 @@ export default async function LeadExplorerPage({ searchParams }: { searchParams:
                   : <p className="py-6 text-sm text-muted">{d.note}</p>}
               </Card>
             </Grid>
-            <Band title="Tables and lists" sub="The data behind the charts. Filter with the chips, sort any column." />
+            <Band title="Tables and lists" />
             <Grid>
-              <Card title={`Pivot table: ${d.name} × lead ${mode}`} sub="Header row shows each column's total and share of all leads.">
+              <Card title={`Pivot table: ${d.name} × lead ${mode}`}>
                 <div className="overflow-x-auto">
                   <table className="w-full text-sm">
                     <thead className="border-b border-hairline">

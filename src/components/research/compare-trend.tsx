@@ -50,7 +50,7 @@ export function CompareTrend({ snapshots }: { snapshots: SnapshotPoint[] }) {
       </div>
       {data.length < 2 ? (
         <div className="flex h-60 items-center justify-center px-6 text-center text-sm text-muted">
-          One daily snapshot is stored so far. The trend lines appear after the next daily analysis; each day adds a point.
+          Only one daily snapshot so far. Trend lines appear after the next daily analysis.
         </div>
       ) : (
         <div className="h-64" role="img" aria-label={`${METRICS.find((m) => m.key === metric)?.label} over time for you and your competitors`}>
@@ -71,7 +71,7 @@ export function CompareTrend({ snapshots }: { snapshots: SnapshotPoint[] }) {
           </ResponsiveContainer>
         </div>
       )}
-      {metric === "relative" && data.length >= 2 && <p className="mt-2 text-xs text-muted">Ranking keywords indexed to the first stored snapshot (100). Above 100 means growth since then, whatever the site&apos;s size.</p>}
+      {metric === "relative" && data.length >= 2 && <p className="mt-2 text-xs text-muted">Ranking keywords vs the first snapshot (= 100). Above 100 means growth.</p>}
     </figure>
   );
 }

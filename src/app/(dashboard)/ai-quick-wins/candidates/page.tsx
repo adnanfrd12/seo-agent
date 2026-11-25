@@ -20,7 +20,7 @@ export default async function CandidatesPage() {
   }));
   return (
     <>
-      <PageHeader title="Candidates (debug)" description="What the rules found before Claude saw anything: every number here is computed in code from the APIs. The last run sent the ones marked Sent." />
+      <PageHeader title="Candidates (debug)" description="What the rules found in the last run, before Claude." />
       <Kpis>
         <Kpi label="Candidates found" value={String(rows.length)} note={last ? `run of ${new Date(last.at).toLocaleString()}` : "no run yet"} />
         <Kpi label="Sent to Claude" value={String(sent.size)} note="top 150 whole site · 40 per screen · all for one page" />
@@ -32,7 +32,7 @@ export default async function CandidatesPage() {
           <BarList rows={Object.entries(last?.perRule ?? {}).sort((a, b) => b[1] - a[1]).map(([r, n], i) => ({ label: ruleLabel(r), value: n, color: C[i % C.length] }))} empty="0: no run yet." />
         </Card>
       </Grid>
-      <Band title="Candidates" sub="Filter by rule or by whether the last run sent it." />
+      <Band title="Candidates" />
       <Grid>
         <Card title="Every candidate with its facts">
           <Table limit={40} rows={rows} facets={[{ k: "rule", label: "Rule" }, { k: "sent", label: "Sent" }]} empty="0 candidates: run Generate quick wins first." cols={[

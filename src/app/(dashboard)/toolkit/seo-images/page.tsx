@@ -17,7 +17,7 @@ export default async function ImagesPage() {
   const page = await researchPage();
   if (!page) return null;
   const { client, canEdit, cache } = page;
-  const header = <><BackToToolkit /><TabHeader source={null} title="Image Audit" description="Every image on the website's key pages: file size, format, width/height (layout shift), lazy loading and alt text, with the fixes that matter most for speed and image search." guide={[
+  const header = <><BackToToolkit /><TabHeader source={null} title="Image Audit" description="Checks every image on key pages for size, format and alt text." guide={[
     { term: "Size", text: "Over 200 KB is flagged, over 500 KB is critical (read from the server's Content-Length; first 80 unique images)." },
     { term: "Format", text: "WebP or AVIF are typically 25-50% smaller than JPEG/PNG at the same quality. SVG is fine for logos and icons." },
     { term: "Layout shift", text: "An image without width and height attributes makes the page jump while it loads (CLS)." },

@@ -94,7 +94,7 @@ export function TopResults({ wins }: { wins: StoredWin[] }) {
   if (!wins.length) return null;
   return (
     <div className="space-y-2">
-      <p className="text-xs text-muted">Top {wins.length} results. All of them are in the list below and at the bottom of each screen.</p>
+      <p className="text-xs text-muted">Top {wins.length} results</p>
       <ol className="space-y-2">
         {wins.map((w) => (
           <li key={w.key} className="rounded-lg border border-border bg-background p-3 text-[13px]">
@@ -196,8 +196,8 @@ export function GeneratePanel({ status, pages, lastRun, latest, recent, activeRu
         <fieldset className="mt-4" disabled={running || !canEdit}>
           <legend className="mb-1 text-[11px] font-semibold uppercase tracking-[0.06em] text-faint">Depth</legend>
           <div className="space-y-1.5 text-sm">
-            <label className="flex items-start gap-2"><input type="radio" name="depth" className="mt-1 accent-[var(--accent)]" checked={depth === "standard"} onChange={() => setDepth("standard")} /> <span>Standard (about 1–3 minutes) <span className="block text-xs text-muted">Uses stored DataForSEO data; no new DataForSEO charges.</span></span></label>
-            <label className="flex items-start gap-2"><input type="radio" name="depth" className="mt-1 accent-[var(--accent)]" checked={depth === "deep"} onChange={() => setDepth("deep")} /> <span>Deep: also check Google results for the top 20 opportunities <span className="block text-xs text-muted">Refreshes DataForSEO search volume and live results (charged by DataForSEO, within the monthly limit).</span></span></label>
+            <label className="flex items-start gap-2"><input type="radio" name="depth" className="mt-1 accent-[var(--accent)]" checked={depth === "standard"} onChange={() => setDepth("standard")} /> <span>Standard (about 1–3 minutes) <span className="block text-xs text-muted">Uses stored DataForSEO data, so no new charges.</span></span></label>
+            <label className="flex items-start gap-2"><input type="radio" name="depth" className="mt-1 accent-[var(--accent)]" checked={depth === "deep"} onChange={() => setDepth("deep")} /> <span>Deep: also check Google results for the top 20 opportunities <span className="block text-xs text-muted">Refreshes search volume too; charged within the monthly DataForSEO limit.</span></span></label>
           </div>
         </fieldset>
         <button type="button" className={cn(btnPrimary, "mt-4 h-11 w-full")} onClick={go} disabled={running || !canEdit || !sources.length} aria-busy={running}>
@@ -216,7 +216,7 @@ export function GeneratePanel({ status, pages, lastRun, latest, recent, activeRu
             {shown.status === "done" && <RunSummary run={shown} />}
             {shown.status === "done" && <TopResults wins={recent.filter((w) => w.run_id === shown.id || !run)} />}
           </div>
-        ) : <p className="text-sm text-muted">Press Generate. The steps appear here: checking data freshness → syncing each source → finding candidates → Claude writing quick wins → checking Claude&apos;s answers → saving and ranking. The run continues if you leave this page.</p>}
+        ) : <p className="text-sm text-muted">Press Generate to start. The run continues if you leave this page.</p>}
       </section>
     </div>
   );

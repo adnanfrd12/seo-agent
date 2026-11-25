@@ -32,13 +32,13 @@ export default async function RunsPage() {
   }));
   return (
     <>
-      <PageHeader title="Runs and spend" description="Every quick-wins run: who started it, the scope and sources, candidates, items kept, skipped and rejected, tokens and cost. Month-to-date spend against the budgets." />
+      <PageHeader title="Runs and spend" description="Every quick-wins run, with tokens, cost and this month's spend." />
       <Kpis>
         <Kpi label="Claude spend this month" value={`$${claude.toFixed(2)}`} note={`budget $${settings.monthlyBudget.toFixed(2)}`} />
         <Kpi label="DataForSEO for quick wins, this month" value={`$${dfsQw.toFixed(2)}`} note={`limit $${settings.dfsMonthlyBudget.toFixed(2)} · all DataForSEO use $${dfs.toFixed(2)}`} />
         <Kpi label="Runs this month" value={String(mine.length)} />
         <Kpi label="Input tokens" value={tok.input.toLocaleString()} note="uncached, this month" />
-        <Kpi label="Cache reads" value={tok.cache.toLocaleString()} note="system prompt read from cache at 10% price" />
+        <Kpi label="Cache reads" value={tok.cache.toLocaleString()} note="billed at 10% of the input price" />
         <Kpi label="Output tokens" value={tok.output.toLocaleString()} />
       </Kpis>
       <Band title="Charts" />

@@ -18,7 +18,7 @@ export default async function ReportsPage() {
   if (!client) return null;
   return (
     <div>
-      <TabHeader source={null} eyebrow="Reporting" title="Monthly Reports" description="Full monthly reports and executive summaries, rendered from stored data without the dashboard sidebar. Months with no connected data show unavailable sections, never zeros." />
+      <TabHeader source={null} eyebrow="Reporting" title="Monthly Reports" description="Full reports and executive summaries for each month." />
       {/* a card per month: 12 months fill whole rows at 1, 2 and 3 columns */}
       <ul className="grid gap-3 md:grid-cols-2 xl:grid-cols-3">
         {months(client.timezone).map((m) => (

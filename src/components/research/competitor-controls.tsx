@@ -109,7 +109,7 @@ export function CompetitorManager({ canEdit, mode, manual, excluded, suggestions
           ))}</ul>
         </div>
       )}
-      <p className="text-xs text-muted">Up to 5 competitors are tracked. Each adds about 3 cents a day to the analysis, so fewer, closer rivals give a sharper and cheaper picture.</p>
+      <p className="text-xs text-muted">Up to 5 are tracked; each adds about 3 cents a day to the analysis.</p>
       <div className="flex flex-wrap items-center gap-3">
         {canEdit && <button type="button" className={btn} disabled={!dirty || pending} onClick={() => run(() => saveCompetitors({ mode: m, competitors: list.join(","), excluded: hidden }))}>
           {pending && <Loader2 className="size-4 animate-spin" />} Save competitors</button>}

@@ -4,11 +4,11 @@ import type { SourceStatus } from "@/lib/overview/status";
 import { cn } from "@/lib/utils";
 
 const STEPS = [
-  { key: "ga4", label: "Google Analytics 4", why: "Shows who visits the site, how they behave and which actions they take.", keys: ["ga4"] },
-  { key: "gsc", label: "Google Search Console", why: "Shows the searches that bring people to you, with rankings and clicks.", keys: ["gsc"] },
-  { key: "gbp", label: "Business Profile", why: "Shows local views, calls, directions and reviews.", keys: ["lbm", "gbp"] },
-  { key: "bing", label: "Bing Webmaster Tools", why: "Adds Bing search performance and crawl health.", keys: ["bing"] },
-  { key: "clarity", label: "Microsoft Clarity", why: "Shows where visitors get stuck on the site.", keys: ["clarity"] },
+  { key: "ga4", label: "Google Analytics 4", why: "Who visits the site and what they do.", keys: ["ga4"] },
+  { key: "gsc", label: "Google Search Console", why: "The searches that bring people to you.", keys: ["gsc"] },
+  { key: "gbp", label: "Business Profile", why: "Local views, calls, directions and reviews.", keys: ["lbm", "gbp"] },
+  { key: "bing", label: "Bing Webmaster Tools", why: "Bing search performance and crawl health.", keys: ["bing"] },
+  { key: "clarity", label: "Microsoft Clarity", why: "Where visitors get stuck on the site.", keys: ["clarity"] },
   { key: "dfs", label: "Rankings, links and competitors", why: "Backlinks, organic keywords and daily competitor analysis (DataForSEO).", keys: ["dfs"] },
 ] as const;
 

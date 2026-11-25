@@ -24,7 +24,7 @@ export async function DataForSeoCard({ canEdit, clientId }: { canEdit: boolean; 
       <div className="flex flex-wrap items-start justify-between gap-3">
         <div>
           <h2 id="dfs-title" className="text-base font-semibold">DataForSEO</h2>
-          <p className="text-sm text-muted">Backlinks, organic keywords and keyword research. Paid per request, so every call is stored and capped.</p>
+          <p className="text-sm text-muted">Backlinks, organic keywords and keyword research. Paid per request.</p>
         </div>
         <span className={configured ? "text-sm font-medium text-positive" : "text-sm text-negative"}>{configured ? "Connected" : "Not configured"}</span>
       </div>

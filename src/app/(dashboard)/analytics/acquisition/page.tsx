@@ -15,7 +15,7 @@ const MEDIUMS = new Set(["organic", "cpc", "ppc", "paid", "referral", "email", "
 export default async function AcquisitionPage({ searchParams }: { searchParams: Promise<SearchParams> }) {
   const sp = await searchParams;
   return (
-    <Ga4xScreen sp={sp} path={PATH} title="Acquisition" description="Where visitors come from (channels, sources, campaigns, AI assistants and ads) and which ones bring leads.">
+    <Ga4xScreen sp={sp} path={PATH} title="Acquisition" description="Where visitors come from and which sources bring leads.">
       {({ g, wins }) => {
         const T = g.total(), Tp = g.total(true), lab = labels(g);
         const ch = g.by((x) => String(x.ch)).sort((a, b) => b.sessions - a.sessions), chp = g.by((x) => String(x.ch), undefined, true);
@@ -51,18 +51,18 @@ export default async function AcquisitionPage({ searchParams }: { searchParams: 
         });
         return (
           <>
-            <Band title="Charts" sub="Hover for details, click any bar, point or bubble for more." />
+            <Band title="Charts" />
             <Grid>
               <Card title="Visits by source over time" tech="Sessions by channel" sub="Daily, top 4 channels." span={8}>
                 <LineChart id="acq-ch" labels={lab} series={top.map((k, i) => ({ name: k, values: sDay(k), color: channelColor(k, i) }))} />
               </Card>
-              <Card title="Visitors from ChatGPT and other AI tools" tech="AI assistants" sub="Sessions from ChatGPT, Perplexity, Gemini and Copilot." span={4}>
+              <Card title="Visitors from ChatGPT and other AI tools" tech="AI assistants" info="Sessions from ChatGPT, Perplexity, Gemini and Copilot." span={4}>
                 <BarList rows={ai.map((r) => ({ label: r.k, value: r.s, color: C[6], right: `${r.s} · ${r.l} leads` }))} empty="No visits from AI assistants in this period." />
               </Card>
-              <Card title="Where each source sends visitors" tech="Channel → landing page" sub="Where each channel sends people. Band = sessions.">
+              <Card title="Where each source sends visitors" tech="Channel → landing page" sub="Band width = sessions.">
                 <Sankey flows={flows} rightColor={C[2]} />
               </Card>
-              <Card title="Sources: visits vs lead rate" tech="Sources: sessions vs lead rate" sub="Each source / medium with 5+ sessions. Bubble = leads." span={7}>
+              <Card title="Sources: visits vs lead rate" tech="Sources: sessions vs lead rate" sub="Sources with 5+ sessions. Bubble = leads." span={7}>
                 <Scatter points={sm.filter((r) => r.sessions >= 5).map((r) => ({ x: r.sessions, y: r.lr, s: Math.max(1, r.leads), label: r.key, show: r.leads > 0 || r.sessions >= sm[0].sessions * 0.3, c: r.lr >= T.lr ? C[2] : C[0] }))} xLabel="Sessions (log scale)" yLabel="Lead rate" logX yRef={T.lr} />
               </Card>
               <Card title="Visits by source" tech="Sessions by source" span={5}>
@@ -71,19 +71,19 @@ export default async function AcquisitionPage({ searchParams }: { searchParams: 
               <Card title="Sources: this month vs last" tech="Channels: this period vs last" sub="Sessions." span={6}>
                 <CompareBars rows={ch.map((r) => ({ label: r.key, cur: r.sessions, prev: prevOf(r.key) }))} />
               </Card>
-              <Card title="What caused the change in visits" tech="What changed sessions" sub="Each channel's contribution." span={6}>
+              <Card title="What caused the change in visits" tech="What changed sessions" sub="By channel." span={6}>
                 <WhatChanged id="acq-wf" unit="visits" start={Tp.sessions} items={[...new Set([...ch.map((r) => r.key), ...chp.map((r) => r.key)])].map((k) => ({ label: k, value: (ch.find((r) => r.key === k)?.sessions ?? 0) - prevOf(k) }))} />
               </Card>
-              <Card title="Share of visits by source" tech="Channel share of sessions" sub="Daily share of the top 4 channels." span={7}>
+              <Card title="Share of visits by source" tech="Channel share of sessions" sub="Top 4 channels, daily." span={7}>
                 <LineChart id="acq-share" f="pct" labels={lab} series={top.map((k, i) => ({ name: k, values: sDay(k).map((v, j) => (all[j] ? v / all[j] : null)), color: channelColor(k, i) }))} />
               </Card>
               <Card title="Phone vs computer by source" tech="Device mix by channel" span={5}>
                 <Stack100 rows={ch.map((r) => ({ label: r.key, parts: devs.map((d) => sum(g.sCur().filter((x) => x.ch === r.key && x.deviceCategory === d), (x) => Number(x.sessions))) }))} names={devs} colors={devs.map((d, i) => deviceColor(d, i))} />
               </Card>
             </Grid>
-            <Band title="Tables and lists" sub="The data behind the charts. Filter with the chips, sort any column." />
+            <Band title="Tables and lists" />
             <Grid>
-              <Card title="Where visitors come from" tech="Traffic acquisition" sub="Session default channel group (plus AI Assistant for ChatGPT, Perplexity, Gemini and the like).">
+              <Card title="Where visitors come from" tech="Traffic acquisition" info="Session default channel group, plus AI Assistant for ChatGPT, Perplexity, Gemini and the like.">
                 <Table rows={ch.map((r) => ({ key: r.key, sessions: r.sessions, chg: r.sessions, prev: prevOf(r.key), engaged: r.engaged, er: r.er, aet: r.aet, leads: r.leads, lr: r.lr }))}
                   cols={[{ k: "key", label: "Channel" }, { k: "sessions", label: "Sessions", num: true, bar: C[0] }, { k: "chg", label: "Change", num: true, kind: "delta", prevKey: "prev" }, { k: "engaged", label: "Engaged sessions", num: true }, { k: "er", label: "Engagement rate", num: true, f: "pct" }, { k: "aet", label: "Avg engagement time", num: true, f: "dur" }, { k: "leads", label: "Leads", num: true }, { k: "lr", label: "Lead rate", num: true, f: "pct" }]}
                   foot={{ key: "Total", sessions: T.sessions, engaged: T.engaged, er: T.er, aet: T.aet, leads: T.leads, lr: T.lr }} />
@@ -92,7 +92,7 @@ export default async function AcquisitionPage({ searchParams }: { searchParams: 
                 <Table limit={12} rows={sm.map((r) => ({ key: r.key, sessions: r.sessions, engaged: r.engaged, er: r.er, aet: r.aet, leads: r.leads, lr: r.lr }))}
                   cols={[{ k: "key", label: "Source / medium" }, { k: "sessions", label: "Sessions", num: true, bar: C[0] }, { k: "engaged", label: "Engaged sessions", num: true }, { k: "er", label: "Engagement rate", num: true, f: "pct" }, { k: "aet", label: "Avg engagement time", num: true, f: "dur" }, { k: "leads", label: "Leads", num: true }, { k: "lr", label: "Lead rate", num: true, f: "pct" }]} />
               </Card>
-              <Card title="Google Ads results" tech="Google Ads campaigns" sub="Cost comes from the Google Ads link (advertiserAdCost)." span={5}>
+              <Card title="Google Ads results" tech="Google Ads campaigns" info="Cost comes from the Google Ads link (advertiserAdCost)." span={5}>
                 {g.meta.config.googleAds ? <Table rows={camps} cols={[{ k: "key", label: "Campaign" }, { k: "clicks", label: "Clicks", num: true }, { k: "cost", label: "Cost", num: true, f: "money" }, { k: "leads", label: "Leads", num: true }, { k: "cpl", label: "Cost per lead", num: true, f: "money" }]} empty="No Google Ads clicks in this period." />
                   : <Missing why={`This GA4 property has no Google Ads link, so GA4 has no ad cost or clicks (advertiserAdCost). ${ch.find((r) => r.key === "Paid Search")?.sessions ? `GA4 still sees ${ch.find((r) => r.key === "Paid Search")!.sessions} Paid Search sessions and ${ch.find((r) => r.key === "Paid Search")!.leads} leads from them.` : ""}`} fix="In Google Ads: Tools → Data manager → Google Analytics (GA4) → Link this property (or in GA4 Admin → Product links → Google Ads links). Cost, clicks and cost per lead appear here from the next sync." />}
               </Card>

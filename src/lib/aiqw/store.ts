@@ -37,16 +37,22 @@ export async function listRuns(admin: SupabaseClient, clientId: string, limit = 
 /** A run still in progress (started less than 6 minutes ago: older "running" rows were cut off by the function limit). */
 export const activeRun = (runs: RunState[]) => runs.find((r) => r.status === "running" && Date.now() - Date.parse(r.startedAt) < 6 * 60_000) ?? null;
 
-/** Claude spend this calendar month (UTC) for one client: logged runs, Nova answers, roadmap generations, blog post reading and the SEO Toolkit. */
+/** Claude spend this calendar month (UTC) for one client: AI quick wins runs, Nova answers, roadmap generations,
+ * AI insights / 30-day strategy / PDF import runs, SEO Coach analyses, blog post reading and the SEO Toolkit. */
 export async function claudeMonthSpend(admin: SupabaseClient, clientId: string): Promise<number> {
   const since = new Date(); since.setUTCDate(1); since.setUTCHours(0, 0, 0, 0);
   const month = since.toISOString().slice(0, 7);
-  const [{ data }, logged] = await Promise.all([
+  const [{ data }, logged, runs, coach] = await Promise.all([
     admin.from("dfs_cache").select("params_hash, cost, data").eq("client_id", clientId).eq("endpoint", EP).or(`params_hash.like.run:%,params_hash.eq.ask:${month}`).gte("fetched_at", since.toISOString()).limit(1000),
     // blog post reading and the SEO Toolkit (ai_usage_events)
     admin.from("ai_usage_events").select("cost_usd").eq("client_id", clientId).gte("created_at", since.toISOString()).limit(10000),
+    // AI insights, 30-day strategy and PDF import runs
+    admin.from("ai_analysis_runs").select("cost_usd").eq("client_id", clientId).gte("created_at", since.toISOString()).not("cost_usd", "is", null).limit(2000),
+    // SEO Coach: the latest analysis of each kind (earlier ones this month are overwritten, so this can undercount)
+    admin.from("dfs_cache").select("cost").eq("client_id", clientId).like("endpoint", "coach_%").gte("fetched_at", since.toISOString()).limit(20),
   ]);
-  const other = (logged.data ?? []).reduce((a, r) => a + Number(r.cost_usd ?? 0), 0);
+  const other = [...(logged.data ?? []), ...(runs.data ?? [])].reduce((a, r) => a + Number(r.cost_usd ?? 0), 0)
+    + (coach.data ?? []).reduce((a, r) => a + Number(r.cost ?? 0), 0);
   return other + (data ?? []).filter((r) => !String(r.params_hash).startsWith("run:") || String((r.data as RunState).startedAt ?? "") >= since.toISOString()).reduce((a, r) => a + Number(r.cost ?? 0), 0);
 }
 

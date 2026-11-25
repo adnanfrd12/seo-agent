@@ -17,10 +17,10 @@ export default async function AiQwSettingsPage() {
   const canEdit = ["owner", "admin"].includes(client.role);
   return (
     <>
-      <PageHeader title="AI and data settings" description="Claude model, effort and budgets, the nightly run, DataForSEO features and the business facts Claude writes with. API keys stay in the server's environment, never in the browser or the database." />
+      <PageHeader title="AI and data settings" description="Claude model, budgets, the nightly run and your business facts." />
       <Grid>
-        <Card title="Test connections" sub="Every data source, the DataForSEO login and a tiny Claude request that must answer “ok”." span={7}><TestConnections canEdit={canEdit} /></Card>
-        <Card title="Import data" sub="Re-sync Search Console and GA4 now and queue Bing, Clarity and Business Profile; then regenerate quick wins." span={5}><ImportData canEdit={canEdit} /></Card>
+        <Card title="Test connections" sub="Checks every data source, DataForSEO and Claude." span={7}><TestConnections canEdit={canEdit} /></Card>
+        <Card title="Import data" sub="Re-sync every source now, then regenerate quick wins." span={5}><ImportData canEdit={canEdit} /></Card>
         <Card title="AI and data" sub={`Settings for ${client.name}.`}><AiSettingsForm initial={settings} canEdit={canEdit} defaults={{ name: nap?.name ?? "", phone: nap?.phone ?? "", towns: [nap?.city, nap?.state].filter(Boolean).join(", ") }} /></Card>
       </Grid>
     </>

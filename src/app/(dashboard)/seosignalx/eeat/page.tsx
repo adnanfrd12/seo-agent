@@ -13,7 +13,7 @@ export default async function EeatPage() {
   const v = await sxPage();
   if (!v) return null;
   const a = audit<Eeat>(v.bundle, "eeat");
-  const header = <SxHeader title="EEAT Audit" description="Experience, Expertise, Authority and Trust signals on the website, as checked by SEOSignalX." project={v.bundle?.project?.name} analyzedAt={a?.updatedAt} />;
+  const header = <SxHeader title="EEAT Audit" description="Experience, expertise, authority and trust signals on the website." project={v.bundle?.project?.name} analyzedAt={a?.updatedAt} />;
   if (!a) return <>{header}<NoAudit label="E-E-A-T" reason={v.bundle?.project ? null : "This client has no SEOSignalX project."} /></>;
   const sections = a.result.sections ?? [];
   const passed = sections.reduce((s, x) => s + (x.passed ?? 0), 0);
@@ -39,7 +39,7 @@ export default async function EeatPage() {
         </div>
       </div>
 
-      <Card className="mt-6" title="By section" sub="Checks passed in each area">
+      <Card className="mt-6" title="By section">
         <ul className="grid gap-3 p-4 md:grid-cols-2">
           {sections.map((s) => <BarRow key={s.id} label={s.title} value={(s.total ?? 0) - (s.passed ?? 0)} max={s.total ?? 0} right={`${s.passed ?? 0}/${s.total ?? 0} passed`} />)}
         </ul>

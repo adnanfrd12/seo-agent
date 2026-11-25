@@ -52,11 +52,11 @@ export default async function OpportunitiesPage({ searchParams }: { searchParams
 
   return (
     <div className="space-y-8">
-      <TabHeader source={null} eyebrow="Search Console" title="SEO Opportunities" description="Deterministic Search Console analysis: current period vs the equal-length period before it, Web search, rates re-weighted from totals." guide={[
-  { term: "Quick wins", text: "Keywords already on page one or two that get fewer clicks than they could. Improving the title, description and content is the cheapest traffic gain." },
-  { term: "Losing positions", text: "Keywords whose average position got worse versus the previous period." },
+      <TabHeader source={null} eyebrow="Search Console" title="SEO Opportunities" description="Search Console keywords and pages worth acting on." guide={[
+  { term: "Quick wins", text: "Keywords already on page one or two that get fewer clicks than they could. Improving the title, description and content is the cheapest traffic gain. Score = impressions × (10% target CTR − current CTR), a prioritisation aid, not a forecast." },
+  { term: "Losing positions", text: "Keywords whose average position got worse versus the previous period. Average position is impression-weighted, not an exact rank." },
   { term: "Decaying pages", text: "Pages whose clicks fell by more than the threshold. Usually outdated content, a new competitor, or a lost ranking." },
-  { term: "Cannibalization", text: "Several of your pages competing for the same search. Sometimes normal; consolidate only after checking intent." },
+  { term: "Cannibalization", text: "Several of your pages competing for the same search. Sometimes normal; consolidate only after checking intent, and never redirect or canonicalise without checking the destination." },
 ]} />
       <RangeSelector path="/opportunities" sp={sp} range={range} showCompare={false} />
       <form className="flex flex-wrap items-end gap-3 text-xs text-muted" action="/opportunities">
@@ -80,10 +80,10 @@ export default async function OpportunitiesPage({ searchParams }: { searchParams
             ]} /></div>
               <Fill><BarList title="Quick-win potential" valueLabel="Score · position" emptyText="No quick wins above the thresholds."
                 items={o.quick_wins.slice(0, 8).map((x) => ({ label: s(x.query), value: Number((n(x.score) ?? 0).toFixed(1)), detail: `#${fmtDecimal(n(x.position))}` }))} /></Fill>
-              <Fill><DivergingBars title="Position changes" sub="Positions gained (right) or lost (left) vs the previous period" format="dec" valueLabel="Positions" rows={moves} empty="No keyword moved beyond the threshold." /></Fill>
+              <Fill><DivergingBars title="Position changes" sub="Gained (right) or lost (left) vs the previous period" format="dec" valueLabel="Positions" rows={moves} empty="No keyword moved beyond the threshold." /></Fill>
             </div>
             {o.decaying_pages.length > 0 && (
-              <DivergingBars title="Clicks lost by decaying page" sub="Change in clicks vs the previous period" format="pct" valueLabel="Click change"
+              <DivergingBars title="Clicks lost by decaying page" sub="vs the previous period" format="pct" valueLabel="Click change"
                 rows={o.decaying_pages.slice(0, 8).map((x) => ({ label: url(x.page), value: n(x.clicks_change_pct), detail: `${fmtInt(n(x.previous_clicks))} → ${fmtInt(n(x.current_clicks))} clicks` }))} />
             )}
           </section>
@@ -133,11 +133,6 @@ export default async function OpportunitiesPage({ searchParams }: { searchParams
                 <ul className="space-y-0.5 text-xs">{(x.detail as Row[]).map((p, i) => <li key={i} className="break-all">{url(p.page)} · {fmtInt(n(p.impressions))} impr · pos {fmtDecimal(n(p.position))} · {fmtPercent(n(p.share), 0)}</li>)}</ul>) },
               { label: "Impr.", align: "right", render: (x) => fmtInt(n(x.impressions)) },
             ]} />
-          <p className="text-xs text-muted">
-            &quot;New&quot; means new within stored Search Console history. Average position is impression-weighted, not an exact rank.
-            Multiple pages ranking for one query can be normal; review intent before consolidating, and never redirect or canonicalise
-            without checking the destination. Quick-win score = impressions × (10% target CTR − current CTR), a prioritisation aid, not a forecast.
-          </p>
         </>
       )}
     </div>

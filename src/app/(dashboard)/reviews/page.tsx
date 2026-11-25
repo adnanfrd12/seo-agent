@@ -46,7 +46,8 @@ export default async function ReviewsPage() {
   const page = await researchPage();
   if (!page) return null;
   const { client, canEdit, configured, budget } = page;
-  const header = <TabHeader source="dfs" title="Reviews (all platforms)" description="Ratings and reviews of the business across review sites, refreshed automatically every week. Google, Trustpilot and Tripadvisor are read through DataForSEO; YellowPages, Nextdoor, Angi, Yelp, BBB, Houzz and Thumbtack listings are found automatically from the business's name, address and phone and read from their public pages where the site allows it. No client login is needed." guide={[
+  const header = <TabHeader source="dfs" title="Reviews (all platforms)" description="Ratings and reviews across review sites, refreshed weekly." guide={[
+    { term: "Sources", text: "Google, Trustpilot and Tripadvisor are read through DataForSEO. YellowPages, Nextdoor, Angi, Yelp, BBB, Houzz and Thumbtack listings are found from the business's name, address and phone and read from their public pages where the site allows it. No client login is needed." },
     { term: "Combined average", text: "Average star rating weighted by each platform's review count." },
     { term: "Response rate", text: "Share of the collected reviews that have an owner reply." },
     { term: "Faves", text: "Nextdoor's recommendations: neighbors who recommend the business. Nextdoor has no star ratings, so they're counted separately." },
@@ -92,15 +93,15 @@ export default async function ReviewsPage() {
       <section aria-label="Listings found automatically" className={`${card} mb-6`}>
         <div className="flex flex-wrap items-start justify-between gap-3">
           <div className="min-w-0">
-            <h2 className="text-sm font-semibold">Listings found from the business&apos;s name, address and phone</h2>
+            <h2 className="text-sm font-semibold">Listings found by name, address and phone</h2>
             {discovery ? (
               <p className="mt-1 text-xs text-muted">
                 Searched {discovery.at.slice(0, 10)} for <span className="text-foreground">{discovery.nap.name}</span>
                 {discovery.nap.phone ? ` · ${discovery.nap.phone}` : ""}{discovery.nap.city ? ` · ${discovery.nap.city}${discovery.nap.state ? `, ${discovery.nap.state}` : ""}` : ""}.
-                {" "}Repeated automatically every month; a link saved below always wins over a found one.
+                {" "}Repeats monthly; saved links take priority.
               </p>
             ) : (
-              <p className="mt-1 text-xs text-muted">Not searched yet. The weekly refresh does it automatically; or search now. YellowPages and Nextdoor are searched on the sites themselves, Yelp, BBB, Angi, Houzz and Thumbtack through Google.</p>
+              <p className="mt-1 text-xs text-muted">Not searched yet. The weekly refresh does it automatically, or search now.</p>
             )}
           </div>
           <FindListings canEdit={canEdit} estimate={`≈$${(DISCOVERY_EST + CRAWLED.length * CRAWL_EST).toFixed(2)}`} label={discovery ? "Search again" : "Find listings now"} />
@@ -146,7 +147,7 @@ export default async function ReviewsPage() {
       <div className="mt-6 grid gap-4 lg:grid-cols-2">
         <section className={card} aria-label="Reviews over time">
           <h2 className="text-sm font-semibold">Reviews over time</h2>
-          <p className="mb-3 text-xs text-muted">New reviews per month, last 12 months, by platform (from the collected newest reviews).</p>
+          <p className="mb-3 text-xs text-muted">New reviews per month, last 12 months, by platform.</p>
           <div className="flex h-40 items-end gap-1.5">
             {m12.map((m, j) => (
               <div key={m} className="flex flex-1 flex-col items-center gap-1">
@@ -191,7 +192,7 @@ export default async function ReviewsPage() {
 
       <details className={`${card} mt-6`} open={Object.keys(saved).length === 0 && canEdit}>
         <summary className="cursor-pointer text-sm font-medium">Listing links <span className="ml-2 text-accent">{canEdit ? "Edit" : "View"}</span></summary>
-        <p className="mt-2 text-xs text-muted">Links found automatically are filled in; paste a link only to correct one or to add a listing the search missed (a saved link always wins). &quot;auto&quot; platforms are read through DataForSEO; &quot;page&quot; ones from their public listing page; &quot;needs key&quot; ones need the client&apos;s credentials; &quot;link only&quot; has nothing to read.</p>
+        <p className="mt-2 text-xs text-muted">Paste a link only to fix a found one or add a missed listing; saved links win. auto = read via DataForSEO · page = read from the public listing · needs key = needs the client&apos;s credentials · link only = not read.</p>
         <div className="mt-3">
           <ProfileLinksEditor key={JSON.stringify(profiles)} canEdit={canEdit} saved={saved as Record<string, string>} defaults={profiles as Record<string, string>}
             platforms={PLATFORMS.map((p) => ({ key: p.key, label: p.label, example: p.example, access: p.access }))} />

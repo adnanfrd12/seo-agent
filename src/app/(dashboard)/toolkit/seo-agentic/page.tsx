@@ -22,7 +22,7 @@ export default async function AiReadinessPage() {
   const page = await researchPage();
   if (!page) return null;
   const { client, canEdit, cache } = page;
-  const header = <><BackToToolkit /><TabHeader source={null} title="AI Readiness" description="Can AI assistants and AI search reach, understand and quote this website? Checks llms.txt, the robots.txt rules for each AI crawler, Content-Signal, the business entity in structured data and how quotable the top pages are, next to the real AI Visibility results." guide={[
+  const header = <><BackToToolkit /><TabHeader source={null} title="AI Readiness" description="Can AI assistants reach, understand and quote this website?" guide={[
     { term: "Score", text: "Crawler access 30, entity clarity 25, passage citability 25, llms.txt 10, measured AI visibility 10 (when AI Visibility checks exist; otherwise re-balanced)." },
     { term: "Citability", text: "Per page, 0-100: self-contained 40-170 word answer paragraphs, question-style headings, lists or tables, FAQ data and enough depth. AI answers quote passages, not whole pages." },
     { term: "Training vs search bots", text: "Blocking training bots (GPTBot, Google-Extended, CCBot) is a business choice. Blocking search/user bots (OAI-SearchBot, Claude-SearchBot, PerplexityBot, ChatGPT-User) removes the site from AI answers." },
@@ -79,7 +79,7 @@ export default async function AiReadinessPage() {
           <div className="[&>div]:w-auto"><ScoreRing score={score} label="AI readiness" size={124} /></div>
           <p className="text-xs text-muted">{fixes.length} fix{fixes.length === 1 ? "" : "es"} · {a.pages.length} pages read</p>
         </div>
-        <Card title="Score breakdown" sub="Weight in brackets">
+        <Card title="Score breakdown" sub="% = weight in the score">
           <ul className="space-y-2.5">{parts.map((p) => (
             <li key={p.label} className="grid grid-cols-[minmax(0,10rem)_minmax(0,1fr)_2.5rem] items-center gap-3 text-sm">
               <span className="truncate">{p.label} <span className="text-xs text-muted">{p.w}%</span></span>
@@ -106,7 +106,6 @@ export default async function AiReadinessPage() {
               <span className={cn("shrink-0 rounded px-1.5 text-xs font-medium", b.access === "allowed" ? "bg-positive/10 text-positive" : b.access === "blocked" ? "bg-negative/10 text-negative" : "bg-warn/10 text-warn")}>{b.access}</span>
             </li>
           ))}</ul>
-          <p className="mt-2 text-xs text-muted">Rule group used: the bot&apos;s own User-agent block when present, otherwise &quot;*&quot;.</p>
         </Card>
       </div>
 
@@ -117,7 +116,7 @@ export default async function AiReadinessPage() {
       </div>
 
       <div className="mt-6">
-        <Card title="Generated llms.txt draft" sub={a.llms.present ? "The site already has an llms.txt; compare with this draft built from the scanned pages." : "Built from the home page, entity data and scanned service pages. Review, then upload to the site root as /llms.txt."}
+        <Card title="Generated llms.txt draft" sub={a.llms.present ? "The site already has one; compare it with this draft." : "Review, then upload to the site root as /llms.txt."}
           right={<div className="flex gap-2"><CopyText text={a.draft} /><DownloadText text={a.draft} filename="llms.txt" label="Download llms.txt" /></div>}>
           <pre className="max-h-96 overflow-auto whitespace-pre-wrap break-words rounded-lg bg-surface-muted p-3 text-xs">{a.draft}</pre>
         </Card>

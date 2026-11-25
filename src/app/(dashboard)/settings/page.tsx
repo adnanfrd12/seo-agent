@@ -14,19 +14,19 @@ export default async function SettingsPage() {
 
   return (
     <div>
-      <PageHeader title="Settings" description="Your profile, security, client preferences and team." />
+      <PageHeader title="Settings" />
       {/* two columns on wide screens: your account on the left, the team and client on the right */}
       <div className="grid items-start gap-6 xl:grid-cols-2">
         <div className="min-w-0 space-y-6">
-        <Card title="Profile" description="Your name and photo appear in the header and team list.">
+        <Card title="Profile">
           <ProfileForm userId={user.id} email={user.email} fullName={user.fullName} avatarUrl={user.avatarUrl} />
         </Card>
-        <Card title="Password" description="Confirm your current password to set a new one.">
+        <Card title="Password">
           <PasswordForm email={user.email} />
         </Card>
         </div>
         <div className="min-w-0 space-y-6">
-        <Card title="Team" description="People who can sign in and see this client's analytics.">
+        <Card title="Team" description="People with access to this client.">
           <TeamManager members={(members ?? []) as Member[]} meId={user.id} myRole={client.role} />
         </Card>
         <Card title="Client" description={`Settings for ${client.name}.`}>

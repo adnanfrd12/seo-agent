@@ -29,7 +29,7 @@ export function ViewsByWhere({ split }: { split: Split }) {
       <header className="flex items-start justify-between gap-2 border-b border-hairline px-4 py-3 sm:px-5">
         <div>
           <h3 className="text-[15px] font-semibold">Views by where</h3>
-          <p className="mt-0.5 text-xs text-muted">Google Maps or Google Search, on a phone or a computer</p>
+          <p className="mt-0.5 text-xs text-muted">Maps or Search, on phone or computer</p>
         </div>
         <p className="text-right"><span className="block text-xl font-semibold leading-none tabular-nums">{fmtInt(total)}</span><span className="text-[11px] text-muted">total views</span></p>
       </header>

@@ -8,7 +8,7 @@ const when = (v: unknown) => (typeof v === "string" && Number.isFinite(Date.pars
 export default async function PatchesPage() {
   const v = await sxPage();
   if (!v) return null;
-  const header = <SxHeader title="Patches" description="Reversible SEO fixes prepared in SEOSignalX: draft, published and unpublished." project={v.bundle?.project?.name} />;
+  const header = <SxHeader title="Patches" description="Reversible SEO fixes prepared in SEOSignalX." project={v.bundle?.project?.name} />;
   if (!v.bundle?.project) return <>{header}<Empty title="No SEOSignalX project for this client" body="SEOSignalX has no project for this client's website." /></>;
   const list = v.bundle.patches;
   const by = (s: string) => list.filter((p) => String(p.status ?? "").toLowerCase() === s).length;
@@ -23,7 +23,7 @@ export default async function PatchesPage() {
         <Stat label="Unpublished" value={by("unpublished")} />
       </section>
       {list.length ? (
-        <Card title="Patches" sub="As listed by SEOSignalX">
+        <Card title="Patches">
           <ul className="divide-y divide-hairline">
             {list.map((p, i) => (
               <li key={String(p.id ?? i)} className="flex flex-wrap items-center justify-between gap-2 px-4 py-3 text-sm">
@@ -37,7 +37,7 @@ export default async function PatchesPage() {
           </ul>
         </Card>
       ) : (
-        <Empty title="No patches yet" body="When fixes are prepared or published in SEOSignalX for this website, they're listed here." />
+        <Empty title="No patches yet" body="Fixes prepared in SEOSignalX for this website appear here." />
       )}
     </>
   );

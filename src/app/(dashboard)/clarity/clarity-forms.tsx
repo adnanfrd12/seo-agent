@@ -40,7 +40,7 @@ export function ConnectClarity({ connected, canEdit }: { connected: boolean; can
           placeholder="Clarity → Settings → Data Export → Generate new API token" />
       </label>
       <button className={btn} disabled={pending || token.length < 20}>{pending && <Loader2 className="size-4 animate-spin" />} Connect Clarity</button>
-      <p className="text-xs text-muted">The token is checked with one API call and stored encrypted. Only a project admin can generate it.</p>
+      <p className="text-xs text-muted">Stored encrypted. Only a Clarity project admin can generate a token.</p>
       {note}
     </form>
   );

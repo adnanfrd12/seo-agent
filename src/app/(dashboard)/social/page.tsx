@@ -89,14 +89,14 @@ export default async function SocialPage({ searchParams }: { searchParams: Promi
 
   return (
     <>
-      <TabHeader source={null} eyebrow="Social media" title="Social" description="Combined performance across every connected social account first, then each platform in detail: audience, reach, views, engagement and content." guide={[
+      <TabHeader source={null} eyebrow="Social media" title="Social" description="All social accounts combined, then each platform in detail." guide={[
         { term: "Sources", text: "Connected accounts are read through Composio from each platform's official API (read-only) and refresh automatically every day. Accounts that aren't connected show public numbers only, or what an older token setup provides. Nothing is estimated." },
         { term: "Combined totals", text: "Only counts that can be added up are combined: followers, follower growth, views and impressions, engagement and posts. Reach counts unique people, who may overlap between days and platforms, so it is shown per platform only." },
         { term: "Previous period", text: "The same number of days just before the selected range. It is shown only when the stored data covers that period." },
         { term: "Engagement", text: "Daily interactions where the platform reports them per day (Facebook, LinkedIn, Pinterest, YouTube); otherwise the likes, comments and shares on posts published in the period." },
       ]} />
       <div className="mb-5 flex flex-wrap items-start justify-between gap-3">
-        <p className="text-xs text-muted">{periodText} · compared with {dateLabel(prev.start)} – {dateLabel(prev.end)} · connected accounts refresh daily</p>
+        <p className="text-xs text-muted">{periodText} · compared with {dateLabel(prev.start)} – {dateLabel(prev.end)}</p>
         <SocialRefresh canEdit={canEdit} />
       </div>
       {sp.connected && canEdit && !sp.connect_error && <p role="status" className="mb-4 rounded-lg border border-positive/40 bg-positive/10 px-3 py-2 text-sm">{PLATFORM_INFO[sp.connected as Platform]?.label ?? "The account"} is connected and its analytics were read.</p>}
@@ -115,7 +115,7 @@ export default async function SocialPage({ searchParams }: { searchParams: Promi
         {withData.length === 0 ? (
           <div className="rounded-[10px] border border-dashed border-border bg-surface px-6 py-10 text-center">
             <p className="text-sm font-medium">No social analytics yet</p>
-            <p className="mx-auto mt-1 max-w-md text-xs text-muted">Connect an account above. Its analytics appear here and in its own section as soon as the login finishes.</p>
+            <p className="mx-auto mt-1 max-w-md text-xs text-muted">Connect an account above to see its analytics here.</p>
           </div>
         ) : (
           <>
@@ -129,7 +129,7 @@ export default async function SocialPage({ searchParams }: { searchParams: Promi
             </div>
 
             <div className="grid gap-4 xl:grid-cols-[minmax(0,2fr)_minmax(0,1fr)]">
-              <MultiLine title="Audience growth" sub="Followers per platform over the period (daily where the platform reports it, else at each refresh)" metrics={[{ key: "followers", label: "Followers", series: followerLines }]} />
+              <MultiLine title="Audience growth" sub="Followers per platform (daily where reported)" metrics={[{ key: "followers", label: "Followers", series: followerLines }]} />
               <ShareDonut title="Audience by platform" sub="Share of total followers" items={withData.filter((f) => f.followers).map((f) => ({ label: f.label, value: f.followers! }))} centerLabel="followers" top={8} />
             </div>
 
@@ -249,7 +249,7 @@ function PlatformSection({ p, f, row, url, connected, ready, canEdit, token, cur
           <div className="rounded-lg border border-dashed border-border px-4 py-8 text-center">
             <p className="text-sm font-medium">{connected ? (row?.status === "needs" ? "Connected, but no stats can be read" : "Connected. Reading the analytics…") : `${info.label} isn't connected`}</p>
             <p className="mx-auto mt-1 max-w-lg text-xs text-muted">
-              {connected ? (row?.status === "needs" ? "Fix the connection as described above, then the stats appear here." : "The first read runs in the background and appears here within a minute or two (reload the page).")
+              {connected ? (row?.status === "needs" ? "Fix the connection as described above, then the stats appear here." : "The first read runs in the background; reload in a minute or two.")
                 : ready ? `Connect the ${info.label} account to see followers, reach, views, engagement${p === "instagram" || p === "youtube" || p === "threads" ? ", audience demographics" : ""} and post performance.`
                 : setupNote(p)}
             </p>
@@ -263,7 +263,7 @@ function PlatformSection({ p, f, row, url, connected, ready, canEdit, token, cur
               {tiles.slice(0, 12).map((t) => <StatCard key={t.label} label={t.label} value={t.value} sub={t.sub} tone={t.tone} />)}
             </div>
             {trendOptions.length > 0 ? <MetricTrend title={`${info.label} over time`} source={connected ? "Composio" : undefined} options={trendOptions} />
-              : <Notice icon={<Info className="size-3.5" />} tone="muted">{connected ? `${info.label} doesn't provide a daily breakdown through its API; the trend builds from the daily snapshots this dashboard stores.` : "The trend appears after the second snapshot."}</Notice>}
+              : <Notice icon={<Info className="size-3.5" />} tone="muted">{connected ? `${info.label}'s API has no daily breakdown; the trend builds from daily snapshots.` : "The trend appears after the second snapshot."}</Notice>}
             {(row!.demographics?.length ?? 0) > 0 && (
               <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-3">
                 {row!.demographics!.map((d) => <BarList key={d.dimension} title={d.dimension} valueLabel={d.dimension.includes("%") ? "%" : "Count"} items={d.items.map((i) => ({ label: i.label, value: i.value }))} limit={6} />)}

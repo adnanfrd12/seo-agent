@@ -14,7 +14,7 @@ const PATH = "/search-console/sitemaps";
 export default async function SitemapsPage({ searchParams }: { searchParams: Promise<SearchParams> }) {
   const sp = await searchParams;
   return (
-    <GscScreen sp={sp} path={PATH} title="Sitemaps and rich results" description="The page lists sent to Google, how much of each is indexed, problems inside them, and extra result features found.">
+    <GscScreen sp={sp} path={PATH} title="Sitemaps and rich results" description="Your sitemaps, how much is indexed, and rich results found.">
       {({ g, wins }) => {
         const sms = g.sitemaps.map((s) => {
           const idx = s.urls.filter((u) => g.latest(u)?.verdict === "PASS").length, insp = s.urls.filter((u) => g.latest(u)).length;
@@ -40,29 +40,29 @@ export default async function SitemapsPage({ searchParams }: { searchParams: Pro
         const inspectedAny = Object.keys(g.insp).length > 0;
         return (
           <>
-            <Band title="Charts" sub="Hover for details, click any bar, point or bubble for more." />
+            <Band title="Charts" />
             <Grid>
-              <Card title="How much of each sitemap is on Google" tech="Indexed share per sitemap" sub="Indexed = URLs whose latest inspection is PASS." span={6}>
+              <Card title="How much of each sitemap is on Google" tech="Indexed share per sitemap" info="Indexed = URLs whose latest inspection is PASS." span={6}>
                 {sms.length ? <Stack100 rows={sms.map((s) => ({ label: pathOf(s.path), parts: [s.idx, Math.max(0, s.urls.length - s.idx)] }))} names={["Indexed", "Not indexed or not inspected yet"]} colors={[C[2], "var(--cat-other)"]} />
                   : <Missing why="No sitemap is submitted in Search Console for this site." fix="Submit the sitemap (e.g. /sitemap.xml or /sitemap_index.xml) in Search Console → Sitemaps." />}
               </Card>
-              <Card title="Extra result features found" tech="Valid rich result items" sub="By type, from the latest URL inspection of each page." span={6}>
+              <Card title="Extra result features found" tech="Valid rich result items" sub="By type." info="By type, from the latest URL inspection of each page." span={6}>
                 {rich.size ? <Donut parts={[...rich].map(([t, v], i) => ({ label: t, value: v.items - v.errors, color: C[i % C.length] }))} /> : <Missing why={inspectedAny ? "No inspected page has structured data Google recognises as a rich result." : "URL inspections are still running."} fix="Add structured data (FAQ, Review, Breadcrumb, LocalBusiness) to key pages; it shows here after the next inspection round." />}
               </Card>
-              <Card title="Clicks from extra result features" tech="Rich result clicks, weekly" sub="Clicks where a rich result was shown (searchAppearance filter).">
+              <Card title="Clicks from extra result features" tech="Rich result clicks, weekly" info="Clicks where a rich result was shown.">
                 {apps.length ? <LineChart id="gsc-rich-wk" labels={weeks.map(sd)} series={wk} /> : <Missing why="Google reported no rich-result appearances for this site in the last 180 days." fix="Add structured data that earns rich results (FAQ, reviews, breadcrumbs, video)." />}
               </Card>
             </Grid>
-            <Band title="Tables and lists" sub="The data behind the charts. Filter with the chips, sort any column." />
+            <Band title="Tables and lists" />
             <Grid>
-              <Card title="Your sitemaps (page lists sent to Google)" tech="Submitted sitemaps" sub="From sitemaps.list. Indexed counts are computed from inspections because the API's own count is deprecated. Submit and resubmit in Search Console → Sitemaps.">
+              <Card title="Your sitemaps (page lists sent to Google)" tech="Submitted sitemaps" sub="Submit and resubmit in Search Console → Sitemaps." info="Indexed counts are computed from URL inspections because the API's own count is deprecated. Submit and resubmit in Search Console → Sitemaps.">
                 <Table rows={sms.map((s) => ({ path: pathOf(s.path), type: s.isIndex ? "Index" : s.type, status: s.status, statusTone: s.statusTone, read: s.lastDownloaded ? sd(s.lastDownloaded.slice(0, 10)) : "never", sub: s.submitted || s.urls.length, idx: s.idx, pct: s.urls.length ? s.idx / s.urls.length : 0, err: s.errors, warn: s.warnings }))}
                   cols={[{ k: "path", label: "Sitemap", kind: "mono" }, { k: "type", label: "Type" }, { k: "status", label: "Status", kind: "tag" }, { k: "read", label: "Last read" }, { k: "sub", label: "Submitted", num: true }, { k: "idx", label: "Indexed", num: true }, { k: "pct", label: "Indexed %", num: true, f: "pct" }, { k: "err", label: "Errors", num: true }, { k: "warn", label: "Warnings", num: true }]} empty="0: no sitemaps submitted." />
               </Card>
-              <Card title="Problems in your sitemaps" tech="Sitemap health" sub="URLs in sitemaps that shouldn't be there (from our crawl and the inspections)." span={6}>
+              <Card title="Problems in your sitemaps" tech="Sitemap health" info="URLs in sitemaps that shouldn't be there (from our crawl and the inspections)." span={6}>
                 <Table rows={health} cols={[{ k: "issue", label: "Issue" }, { k: "example", label: "Example", kind: "mono" }, { k: "urls", label: "URLs", num: true }]} empty="Every sitemap URL loads, is indexable and is its own canonical." />
               </Card>
-              <Card title="Extra result features (FAQs, breadcrumbs, reviews)" tech="Rich results detected" sub="From richResultsResult in URL inspections." span={6}>
+              <Card title="Extra result features (FAQs, breadcrumbs, reviews)" tech="Rich results detected" span={6}>
                 <Table rows={[...rich].map(([t, v]) => ({ t, valid: v.items - v.errors, w: v.warnings, inv: v.errors }))} cols={[{ k: "t", label: "Type" }, { k: "valid", label: "Valid items", num: true }, { k: "w", label: "Warnings", num: true }, { k: "inv", label: "Invalid", num: true }]} empty="0: no rich result items detected yet." />
               </Card>
             </Grid>

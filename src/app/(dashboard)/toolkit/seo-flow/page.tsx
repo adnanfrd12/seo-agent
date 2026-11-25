@@ -31,7 +31,7 @@ export default async function FlowPage() {
   return (
     <>
       <BackToToolkit />
-      <TabHeader source={null} title="FLOW Prompt Library" description="41 evidence-led AI prompts organised by the FLOW loop: Find, Leverage, Optimize, Win, plus Local. Pick a stage, copy a prompt (with this client's details filled in) and paste it into Claude or ChatGPT with your evidence." guide={[
+      <TabHeader source={null} title="FLOW Prompt Library" description="41 ready-to-copy AI prompts, with this client's details filled in." guide={[
         { term: "Find", text: "Keyword research, audience, topical planning and prioritisation." },
         { term: "Leverage", text: "Backlinks and off-site authority." },
         { term: "Optimize", text: "On-page rewrites, schema, CTR, content audits, AI visibility." },

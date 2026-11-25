@@ -185,9 +185,8 @@ export async function LbmSections({ supabase, resourceIds, range }: {
         </div>
         {latestByTerm.size === 0 ? <p className="text-sm text-muted">No geogrid scans stored yet.</p> : (
           <>
-            <p className="mb-3 text-xs text-muted">
-              AGR = average rank where the business appears · ATGR = average rank over all points (not found counts as 21) · SoLV = share of points in the top 3.
-              Lower AGR/ATGR and higher SoLV are better.
+            <p className="mb-3 text-xs text-muted" title="AGR = average rank where the business appears · ATGR = average rank over all points (not found counts as 21) · SoLV = share of points in the top 3. Lower AGR/ATGR and higher SoLV are better.">
+              AGR: average rank where you appear · ATGR: average over all points · SoLV: share of points in the top 3
             </p>
             <GeoCards initial={9} cards={[...latestByTerm.values()].map((g): GeoCard => {
               const hist = historyByTerm.get(g.search_term) ?? [];
@@ -244,7 +243,7 @@ export async function LbmSections({ supabase, resourceIds, range }: {
       {months.length > 0 && (
         <section className={card} aria-labelledby="kw-h">
           <h2 id="kw-h" className="mb-1 text-base font-semibold">All search keywords by month</h2>
-          <p className="mb-3 text-xs text-muted">Every keyword Google reported for the profile. “&lt; N” means Google only gives a threshold for low counts.</p>
+          <p className="mb-3 text-xs text-muted">“&lt; N” = a low count Google gives only as a threshold.</p>
           <div className="space-y-2">
             {months.map((m, i) => {
               const list = keywords.filter((k) => k.month === m)

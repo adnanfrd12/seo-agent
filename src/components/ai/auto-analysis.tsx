@@ -48,7 +48,7 @@ export function AutoAnalysis({ kind, start, end, autoStart, running }: {
         {state === "working" ? (
           <>
             <p className="font-medium">Preparing your {kind === "insights" ? "AI analysis" : "30-day strategy"} for {start} → {end}…</p>
-            <p className="text-muted">This usually takes a minute or two. The page updates by itself when it&apos;s ready.</p>
+            <p className="text-muted">Usually a minute or two; the page updates by itself.</p>
           </>
         ) : (
           <p className="text-negative">{error}</p>

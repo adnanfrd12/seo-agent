@@ -16,7 +16,7 @@ const P = (v: number) => `${Math.round(v * 100)}%`;
 export default async function CannibalPage({ searchParams }: { searchParams: Promise<SearchParams> }) {
   const sp = await searchParams;
   return (
-    <GscScreen sp={sp} path={PATH} title="Cannibalization" description="Searches where several of your own pages compete, and how often Google switches which one it shows.">
+    <GscScreen sp={sp} path={PATH} title="Cannibalization" description="Searches where your own pages compete with each other.">
       {({ g, wins }) => {
         const cs = cannibal(g);
         const top = cs[0];
@@ -39,18 +39,18 @@ export default async function CannibalPage({ searchParams }: { searchParams: Pro
                   : <p className="text-sm text-muted">No search is split between two of your pages (each holding 10%+ of its impressions) in this period.</p>}
               </Card>
             </Grid>
-            <Band title="Charts" sub="Hover for details, click any bar, point or bubble for more." />
+            <Band title="Charts" />
             <Grid>
-              <Card title="Searches split between your own pages" tech="Query → competing pages" sub="Impressions flowing from each query to the pages Google showed." span={7}>
+              <Card title="Searches split between your own pages" tech="Query → competing pages" info="Impressions flowing from each query to the pages Google showed." span={7}>
                 {flows.length ? <Sankey flows={flows} rightColor={C[1]} /> : <Missing why="No search had two of your pages each holding 10%+ of its impressions (20+ impressions)." fix="Nothing to fix; this fills in if pages start competing." />}
               </Card>
               <Card title="Google keeps switching which page it shows" tech="Ranking page switches, weekly" sub={top ? `Which page Google showed for '${top.query}' each week (share of impressions).` : "Weekly share of impressions per page for the most split query."} span={5}>
                 {top ? <Stack100 rows={top.weekly.map((w) => ({ label: `Week of ${sd(addDays(from, w.w * 7))}`, parts: tPages.map((p) => w.pages[p] ?? 0) }))} names={tPages.map(pathOf)} /> : <Missing why="No competing pages in this period." fix="Nothing to fix." />}
               </Card>
             </Grid>
-            <Band title="Tables and lists" sub="The data behind the charts. Filter with the chips, sort any column." />
+            <Band title="Tables and lists" />
             <Grid>
-              <Card title="Your own pages competing against each other" tech="Queries ranking with several pages" sub="Each query's impressions split across competing pages, and how often the ranking page switched in 8 weeks.">
+              <Card title="Your own pages competing against each other" tech="Queries ranking with several pages" info="Each query's impressions split across competing pages, and how often the ranking page switched in 8 weeks.">
                 <Table site={siteOf(g)} limit={30} rows={cs.flatMap((c) => c.pages.map((p) => ({ q: c.query, page: pathOf(p.page), share: p.share, pos: p.pos, sw: c.switches })))} cols={[{ k: "q", label: "Query", wrap: true }, { k: "page", label: "Page", kind: "page" }, { k: "share", label: "Share of impressions", num: true, f: "pct", bar: C[1] }, { k: "pos", label: "Position", num: true, f: "dec1" }, { k: "sw", label: "Page switches", num: true }]} empty="0: no query is split between your own pages." />
               </Card>
             </Grid>

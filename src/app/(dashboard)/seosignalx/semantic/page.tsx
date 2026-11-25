@@ -35,7 +35,7 @@ export default async function SemanticPage() {
   const v = await sxPage();
   if (!v) return null;
   const a = audit<Sem>(v.bundle, "semantic");
-  const header = <SxHeader title="Semantic Audit" description="In-depth semantic & on-page analysis of the home page, by SEOSignalX." project={v.bundle?.project?.name} analyzedAt={a?.result._reportAnalyzedAt ?? a?.updatedAt} />;
+  const header = <SxHeader title="Semantic Audit" description="Semantic and on-page analysis of the home page." project={v.bundle?.project?.name} analyzedAt={a?.result._reportAnalyzedAt ?? a?.updatedAt} />;
   if (!a) return <>{header}<NoAudit label="Semantic" reason={v.bundle?.project ? null : "This client has no SEOSignalX project."} /></>;
   const r = a.result;
   const maxCloud = Math.max(1, ...(r.keywordCloud ?? []).map((k) => k.size));
@@ -57,7 +57,7 @@ export default async function SemanticPage() {
       </nav>
 
       <div className="mt-3 space-y-4 [&>section]:scroll-mt-16">
-        <Card title={<span id="summary">Summary overview</span>} sub="Keyword cloud and occurrence distribution">
+        <Card title={<span id="summary">Summary overview</span>}>
           <div className="grid gap-6 p-4 md:grid-cols-2">
             <div>
               <p className="mb-2 text-[11px] font-semibold uppercase tracking-wider text-muted">Page optimized for</p>
@@ -74,13 +74,13 @@ export default async function SemanticPage() {
           {r.summaryAlert && <p className="border-t border-hairline px-4 py-3 text-sm">{r.summaryAlert}</p>}
         </Card>
 
-        <Card title={<span id="seo">SEO analysis of the page</span>} sub="Technical and editorial on-page criteria">
+        <Card title={<span id="seo">SEO analysis of the page</span>}>
           <Table head={["Criterion", "Value", "Result"]}>
             {(r.seoAnalysis ?? []).map((c) => <tr key={c.criterion}><td className={`${td} font-medium`}>{c.criterion}</td><td className={`${td} max-w-xl break-words text-secondary`}>{c.value}{c.note && <p className="text-xs text-muted">{c.note}</p>}</td><td className={td}><Result status={c.status} /></td></tr>)}
           </Table>
         </Card>
 
-        <Card title={<span id="page-map">Page title hierarchy</span>} sub={`Heading structure of the page · ${r.headingHierarchy?.length ?? 0} headings`}>
+        <Card title={<span id="page-map">Page title hierarchy</span>} sub={`${r.headingHierarchy?.length ?? 0} headings`}>
           <ul className="max-h-[32rem] divide-y divide-hairline overflow-y-auto text-sm">
             {(r.headingHierarchy ?? []).map((h, i) => <li key={i} className="flex gap-3 px-4 py-1.5" style={{ paddingLeft: `${16 + (Number(h.tag.slice(1)) - 1) * 14}px` }}><span className="w-7 shrink-0 font-mono text-xs uppercase text-blue-600 dark:text-blue-400">{h.tag}</span><span>{h.text}</span></li>)}
           </ul>
@@ -120,7 +120,7 @@ export default async function SemanticPage() {
           </Table>
         </Card>
 
-        <Card title={<span id="performance">Performance</span>} sub="Measured by SEOSignalX while fetching the page">
+        <Card title={<span id="performance">Performance</span>}>
           <Table head={["Metric", "Value", "Result", "What it means"]}>
             {(r.performance ?? []).map((p) => <tr key={p.metric}><td className={`${td} font-medium`}>{p.metric}</td><td className={`${td} tabular-nums`}>{p.value}</td><td className={td}><Result status={p.status} /></td><td className={`${td} text-xs text-muted`}>{p.explanation}</td></tr>)}
           </Table>

@@ -9,7 +9,7 @@ export default async function RobotsPage() {
   const v = await sxPage();
   if (!v) return null;
   const a = audit<Robots>(v.bundle, "robots");
-  const header = <SxHeader title="Robots.txt Analyzer" description="What search engines may crawl, and which rules are missing, as found by SEOSignalX." project={v.bundle?.project?.name} analyzedAt={a?.result._reportAnalyzedAt ?? a?.updatedAt} />;
+  const header = <SxHeader title="Robots.txt Analyzer" description="What search engines may crawl, and which rules are missing." project={v.bundle?.project?.name} analyzedAt={a?.result._reportAnalyzedAt ?? a?.updatedAt} />;
   if (!a) return <>{header}<NoAudit label="Robots.txt" reason={v.bundle?.project ? null : "This client has no SEOSignalX project."} /></>;
   const r = a.result;
   const checks = r.checks ?? [];

@@ -15,7 +15,7 @@ const Steps = ({ items }: { items: string[] }) => (items.length ? <ol className=
 const GRID2 = "grid gap-3 xl:grid-cols-2 xl:[&>*:last-child:nth-child(odd)]:col-span-2";
 
 const Card = ({ children }: { children: React.ReactNode }) => <div className="space-y-2 rounded-[10px] border border-border bg-surface p-4 [overflow-wrap:anywhere]">{children}</div>;
-const Meta = ({ r }: { r: CoachResult }) => <p className="text-xs text-muted">Written {r.generatedAt.slice(0, 10)} by Claude Sonnet 5.5 from {r.evidenceCount} stored data points ({r.period.start} to {r.period.end}). Suggestions are hypotheses to test, not guarantees.</p>;
+const Meta = ({ r }: { r: CoachResult }) => <p className="text-xs text-muted">Written {r.generatedAt.slice(0, 10)} from {r.evidenceCount} stored data points ({r.period.start} to {r.period.end}). Hypotheses to test, not guarantees.</p>;
 
 function CoachView({ r }: { r: CoachResult<"coach"> }) {
   const o = r.output as CoachOutput<"coach">;
@@ -65,8 +65,8 @@ function TopicsView({ r }: { r: CoachResult<"topics"> }) {
       <p className="max-w-[110ch] text-sm">{o.summary}</p>
       {o.topics.length > 0 && (
         <div className="grid gap-4 md:grid-cols-2">
-          <Fill><Donut title="Topics by search intent" sub="What the searcher wants from each topic" items={intentItems} center={String(o.topics.length)} centerLabel="topics" /></Fill>
-          <Fill><SplitBar title="New pages or improvements" sub="Whether each topic needs a new page or a better existing one" segments={[
+          <Fill><Donut title="Topics by search intent" sub="What the searcher wants" items={intentItems} center={String(o.topics.length)} centerLabel="topics" /></Fill>
+          <Fill><SplitBar title="New pages or improvements" segments={[
             { label: "New page", value: newPages, color: "var(--series)" }, { label: "Improve existing page", value: o.topics.length - newPages, color: "color-mix(in oklab, var(--series) 40%, var(--surface))" },
           ]} /></Fill>
         </div>
@@ -96,17 +96,17 @@ function CompetitorsView({ r }: { r: CoachResult<"competitors"> }) {
 }
 
 const MODES: { key: CoachMode; tab: string; command: string; title: string; blurb: string; label: string }[] = [
-  { key: "coach", tab: "SEO Coach", command: "/seo-coach", title: "Learn how to start with SEO", blurb: "A plain-language walkthrough of where this site stands and what a beginner should do first, in order.", label: "the coach" },
-  { key: "priorities", tab: "First moves", command: "/seo-audit", title: "What 1-2 things will drive more traffic?", blurb: "The one or two actions with the best mix of impact and effort, backed by this site's own data, plus what to ignore for now.", label: "first moves" },
-  { key: "topics", tab: "Content topics", command: "/keyword-research", title: "Find topics worth writing about", blurb: "Pages to write or improve, found in the site's search data, keyword gaps, rankings and AI-answer gaps.", label: "content topics" },
-  { key: "competitors", tab: "Competitor strategy", command: "/competitor-analysis", title: "Understand your competitors' strategy", blurb: "What the main competitors do well, where they beat this site, where it can win, and the moves to make.", label: "competitor strategy" },
+  { key: "coach", tab: "SEO Coach", command: "/seo-coach", title: "Learn how to start with SEO", blurb: "Where the site stands and what to do first.", label: "the coach" },
+  { key: "priorities", tab: "First moves", command: "/seo-audit", title: "What 1-2 things will drive more traffic?", blurb: "The best actions for the effort, and what to ignore for now.", label: "first moves" },
+  { key: "topics", tab: "Content topics", command: "/keyword-research", title: "Find topics worth writing about", blurb: "Pages to write or improve, from your search data and gaps.", label: "content topics" },
+  { key: "competitors", tab: "Competitor strategy", command: "/competitor-analysis", title: "Understand your competitors' strategy", blurb: "What competitors do well, where you can win and what to do.", label: "competitor strategy" },
 ];
 
 export default async function CoachPage() {
   const { client } = await getSession();
   if (!client) return null;
   const canEdit = ["owner", "admin"].includes(client.role);
-  const header = <TabHeader source={null} title="SEO Coach" description="Guided answers written from this site's own stored data: where to start, what to do first, what to write about, and how competitors win." />;
+  const header = <TabHeader source={null} title="SEO Coach" description="Guided SEO answers from this site's own data." />;
   if (!process.env.ANTHROPIC_API_KEY) return <>{header}<EmptyState title="AI isn't configured" body="Add ANTHROPIC_API_KEY to the environment (and Vercel), then redeploy." /></>;
   const stored = await loadCoach(await createClient(), client.id);
   const view = (m: CoachMode) => {
@@ -120,7 +120,7 @@ export default async function CoachPage() {
   return (
     <>
       {header}
-      <p className="mb-4 text-xs text-muted">Uses your Anthropic key with {COACH_MODEL.replace("claude-", "Claude ").replace("sonnet-5-5", "Sonnet 5.5")}. Each analysis costs about 15 cents, is stored, and opening this page never spends anything.</p>
+      <p className="mb-4 text-xs text-muted" title="Uses your Anthropic key. Each analysis is stored, and opening this page never spends anything.">About 15 cents per analysis ({COACH_MODEL.replace("claude-", "Claude ").replace("sonnet-5-5", "Sonnet 5.5")}). Viewing is free.</p>
       <Tabs label="Coach analyses" items={MODES.map((m) => ({
         key: m.key, label: m.tab,
         content: (

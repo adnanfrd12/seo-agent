@@ -31,9 +31,9 @@ export function IssueRecordings({ set, issues, site }: { set: RecordingSet | nul
     <section aria-label="Issue recordings" className="space-y-3">
       <div className="flex flex-wrap items-end justify-between gap-3">
         <div>
-          <h2 className="text-base font-semibold">What’s going on: recordings of each issue</h2>
+          <h2 className="text-base font-semibold">Recordings of each issue</h2>
           <p className="text-sm text-muted">
-            Real visitor sessions from the last 3 days where the issue happened{set ? ` · pulled automatically ${new Date(set.fetchedAt).toLocaleString()}` : ""}. Recordings open in Clarity’s player.
+            Visitor sessions from the last 3 days{set ? ` · pulled ${new Date(set.fetchedAt).toLocaleString()}` : ""}
           </p>
         </div>
         {withRecs.some((i) => i.recs.length) && <CopyBrief text={brief(site, withRecs.filter((i) => i.recs.length))} />}

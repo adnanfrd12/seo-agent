@@ -31,7 +31,7 @@ export function AlertsPanel({ alerts }: { alerts: AlertRow[] }) {
         {unseen > 0 && <button className="text-[13px] font-medium text-secondary hover:text-foreground disabled:opacity-60" disabled={pending} onClick={() => start(async () => { await markAlertsSeen(); router.refresh(); })}>Mark all read</button>}
       </div>
       {alerts.length === 0 ? (
-        <p className="px-4 py-4 text-sm text-muted sm:px-5">Nothing unusual. A daily check watches traffic, rankings, links, reviews, competitors and data syncs, and reports significant changes here.</p>
+        <p className="px-4 py-4 text-sm text-muted sm:px-5" title="A daily check watches traffic, rankings, links, reviews, competitors and data syncs.">Nothing unusual. Significant changes show up here.</p>
       ) : (
         <ul>
           {alerts.slice(0, 6).map((a) => {

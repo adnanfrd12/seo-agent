@@ -33,7 +33,7 @@ export default async function FullReportPage({ searchParams }: { searchParams: P
         <ArrowLeft className="size-3.5" aria-hidden /> Overview
       </Link>
       <h1 className="mt-2 text-2xl font-semibold tracking-[-0.015em]">Full report</h1>
-      <p className="mb-8 mt-1.5 text-sm text-secondary">{client.name} · {range.start} → {range.end} · every metric, chapter by chapter, {basisLabel}. The same content goes into the PDF.</p>
+      <p className="mb-8 mt-1.5 text-sm text-secondary">{client.name} · {range.start} → {range.end} · {basisLabel}</p>
       <ReportBody d={data} opts={{ variant: "dashboard", basisLabel }} />
     </div>
   );

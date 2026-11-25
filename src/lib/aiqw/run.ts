@@ -20,7 +20,7 @@ import { SOURCE_LABEL, type Candidate, type Depth, type RunState, type Scope, ty
 import { scoreOf, validateItem } from "./validate";
 
 /** Rough cost of one chunk on each model, used for the budget check before a run. */
-const EST_PER_CHUNK = { "claude-opus-5-5": 0.6, "claude-sonnet-5-5": 0.3 } as const;
+export const EST_PER_CHUNK = { "claude-opus-5-5": 0.6, "claude-sonnet-5-5": 0.3 } as const;
 /** A live run must finish inside the 300-second function limit: no new chunk starts this long after the run began. */
 const CHUNK_DEADLINE_MS = 170_000;
 const DAY = 86_400_000;

@@ -42,7 +42,7 @@ async function Tools({ screen }: { screen: string }) {
       <div className="flex flex-wrap items-start justify-between gap-3">
         <div className="min-w-0">
           <h2 id={`ai-${screen}`} className="text-[11px] font-semibold uppercase tracking-[0.08em] text-accent">AI quick wins for this screen</h2>
-          <p className="mt-0.5 text-xs text-muted">{screenLabel(screen)} · written by Claude from this screen&apos;s data; every number comes from the data.</p>
+          <p className="mt-0.5 text-xs text-muted">{screenLabel(screen)}</p>
         </div>
         <ScreenRunButton screen={screen} canEdit={canEdit} />
       </div>

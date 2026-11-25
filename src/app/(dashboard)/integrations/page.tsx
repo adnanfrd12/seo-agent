@@ -73,7 +73,7 @@ export default async function IntegrationsPage({
 
   return (
     <>
-      <PageHeader title="Integrations" description="Connect Google accounts once; data then syncs automatically. All access is read-only; Disconnect deletes the data read from that account." />
+      <PageHeader title="Integrations" description="Connect accounts once; data then syncs automatically. Access is read-only." />
       {sp.connected && sp.connected in PROVIDER_META && (
         <p role="status" className="mb-4 rounded-lg bg-surface p-3 text-sm text-positive ring-1 ring-border">
           {PROVIDER_META[sp.connected as ProviderId].label} connected. Choose what to track below.
@@ -97,7 +97,7 @@ export default async function IntegrationsPage({
           <IntegrationCard key={p} provider={p} status={status[p] ?? EMPTY} canEdit={canEdit} available={p !== "gbp" || gbpConfigured()} />
         ))}
       </div>
-      {fresh.length > 0 && <div className="mt-4"><Freshness title="Data freshness" sub="Time since each connected source last synced · Search Console and Business Profile data itself lags a few days" rows={fresh} /></div>}
+      {fresh.length > 0 && <div className="mt-4"><Freshness title="Data freshness" sub="Search Console and Business Profile data lag a few days" rows={fresh} /></div>}
       {canEdit && <ScheduledJobs />}
       <DataForSeoCard canEdit={canEdit} clientId={client.id} />
       <ClaudeCard canEdit={canEdit} clientId={client.id} timezone={client.timezone} />
@@ -105,7 +105,7 @@ export default async function IntegrationsPage({
         <div className="flex flex-wrap items-start justify-between gap-3">
           <div>
             <h2 id="bing-title" className="text-base font-semibold">Bing Webmaster Tools</h2>
-            <p className="text-sm text-muted">Bing search clicks, impressions, queries, pages, positions, crawl health, sitemaps and keyword volumes.</p>
+            <p className="text-sm text-muted">Bing search performance, crawl health and keyword volumes.</p>
           </div>
           <span className={bingConnected ? "text-sm font-medium text-positive" : "text-sm text-muted"}>{bingConnected ? "Connected" : "Not connected"}</span>
         </div>
@@ -119,15 +119,14 @@ export default async function IntegrationsPage({
           <BingPanel connected={bingConnected} canEdit={canEdit} hasEnvKey={Boolean(process.env.BING_WEBMASTER_API_KEY?.trim())} selected={bingSelected} suggest={siteHints} />
         </div>
         <p className="mt-3 text-xs text-muted">
-          Bing serves about 16 months of daily clicks and impressions and weekly query and page statistics; each daily sync refreshes all of it.
-          Data appears on the <a href="/bing" className="text-foreground underline decoration-border-strong underline-offset-2 hover:decoration-foreground">Bing Webmaster</a> page, the Overview and the PDF report.
+          Bing serves about 16 months of history, refreshed daily. See the <a href="/bing" className="text-foreground underline decoration-border-strong underline-offset-2 hover:decoration-foreground">Bing Webmaster</a> page.
         </p>
       </section>
       <section className="mt-4 rounded-[10px] border border-border bg-surface p-5" aria-labelledby="lbm-title">
         <div className="flex flex-wrap items-start justify-between gap-3">
           <div>
             <h2 id="lbm-title" className="text-base font-semibold">Local Brand Manager</h2>
-            <p className="text-sm text-muted">Google Business Profile performance, search keywords, reviews and geogrid rankings through Local Brand Manager&apos;s API.</p>
+            <p className="text-sm text-muted">Business Profile performance, keywords, reviews and geogrid rankings.</p>
           </div>
           <span className={lbmConnected ? "text-sm font-medium text-positive" : "text-sm text-muted"}>{lbmConnected ? "Connected" : "Not connected"}</span>
         </div>
@@ -143,8 +142,7 @@ export default async function IntegrationsPage({
           <div className="mt-4 border-t border-border pt-4"><LbmBulkSetup /></div>
         )}
         <p className="mt-3 text-xs text-muted">
-          Local Brand Manager serves the most recent ~25 days of daily metrics and the latest months of keywords, so history builds up with each daily sync.
-          Data appears on the <a href="/business-profile" className="text-foreground underline decoration-border-strong underline-offset-2 hover:decoration-foreground">Google Business Profile</a> page, the Overview and the PDF report.
+          Only the last ~25 days of daily metrics are available, so history builds up with each daily sync. See the <a href="/business-profile" className="text-foreground underline decoration-border-strong underline-offset-2 hover:decoration-foreground">Google Business Profile</a> page.
         </p>
       </section>
       <section className="mt-4 rounded-[10px] border border-border bg-surface p-5" aria-labelledby="clarity-title">
@@ -157,17 +155,12 @@ export default async function IntegrationsPage({
         {!clarityConnected && <ConsentPanel p={platformById("microsoft_clarity")!} className="mt-3" />}
         <div className="mt-3"><ConnectClarity connected={clarityConnected} canEdit={canEdit} /></div>
         <p className="mt-3 text-xs text-muted">
-          Clarity&apos;s official Data Export API returns only the last 1–3 days (10 requests per project per day), so the dashboard stores one day per
-          daily sync and builds history over time. There is no official API for session recordings, so recording insights come from the reviewer
-          observations below. Data is shown on the <a href="/clarity" className="text-foreground underline decoration-border-strong underline-offset-2 hover:decoration-foreground">Microsoft Clarity</a> page.
+          Clarity&apos;s API returns only the last 1–3 days, so history builds up with each daily sync. See the <a href="/clarity" className="text-foreground underline decoration-border-strong underline-offset-2 hover:decoration-foreground">Microsoft Clarity</a> page.
         </p>
       </section>
       <section className="mt-4 rounded-[10px] border border-border bg-surface p-5">
         <h2 className="text-base font-semibold">Clarity recording reviews</h2>
-        <p className="mt-1 text-sm text-muted">
-          Watch recordings in Clarity (filter by rage or dead clicks), then log what you saw. The AI analysis uses these as human observations;
-          it never claims to have watched a recording itself.
-        </p>
+        <p className="mt-1 text-sm text-muted">Log what you see in Clarity recordings; the AI analysis uses these notes.</p>
         <div className="mt-4"><ReviewForm /></div>
       </section>
     </>

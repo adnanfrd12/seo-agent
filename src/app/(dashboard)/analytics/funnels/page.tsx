@@ -16,7 +16,7 @@ const BQ = "Link GA4 to BigQuery (GA4 Admin → Product links → BigQuery links
 export default async function FunnelsPage({ searchParams }: { searchParams: Promise<SearchParams> }) {
   const sp = await searchParams;
   return (
-    <Ga4xScreen sp={sp} path={PATH} title="Funnels, paths, cohorts" description="How visitors move from their first page to a lead, and how many come back in the weeks after.">
+    <Ga4xScreen sp={sp} path={PATH} title="Funnels, paths, cohorts" description="How visitors move toward a lead, and how many come back.">
       {async ({ g, wins, ctx, clientId }) => {
         const admin = createAdminClient();
         const views = [...group(g.pages.filter(g.inCur), (x) => String(x.pagePath))].map(([k, v]) => ({ k, n: sum(v, (x) => Number(x.screenPageViews)) })).sort((a, b) => b.n - a.n);
@@ -30,21 +30,21 @@ export default async function FunnelsPage({ searchParams }: { searchParams: Prom
         const devs = f ? Object.keys(f.byDevice) : [];
         return (
           <>
-            <Band title="Charts" sub="Hover for details, click any bar, point or bubble for more." />
+            <Band title="Charts" />
             <Grid>
-              <Card title="From first visit to lead" tech="Lead funnel" sub="From landing to form submission, from your own events (runFunnelReport, open funnel, users)." span={7}>
+              <Card title="From first visit to lead" tech="Lead funnel" sub="Landing page to form submission." info="From landing to form submission, from your own events (runFunnelReport, open funnel, users)." span={7}>
                 {f ? <Funnel steps={f.steps.map((s, i) => [s, f.total[i]])} /> : <Missing why={`GA4's funnel report couldn't be read: ${fun.error ?? "no answer"}.`} fix="Press Sync now; if it keeps failing, reconnect Google Analytics on the Integrations page." />}
                 {f && !forms.length && <Note>No form lead event is counted yet, so the last step is 000. Add one (Lead setup → Tracking gaps).</Note>}
                 {f && <Note>Service and city pages: {service.length ? service.slice(0, 6).join(", ") + (service.length > 6 ? "…" : "") : "none found"}. Contact pages: {contact.join(", ") || "none found"}.</Note>}
               </Card>
-              <Card title="Common routes to a lead" tech="Top paths to a lead" sub="Most common page sequences ending in a lead (BigQuery export)." span={5}>
+              <Card title="Common routes to a lead" tech="Top paths to a lead" info="Most common page sequences ending in a lead (BigQuery export)." span={5}>
                 <Missing why="The order of pages in each visit is only in the BigQuery export; the Data API gives totals, not sequences." fix={BQ} />
               </Card>
-              <Card title="How many visitors come back" tech="Weekly retention cohorts" sub="Percent of each week's new users who came back (cohortSpec).">
+              <Card title="How many visitors come back" tech="Weekly retention cohorts" sub="% of each week's new users who came back." info="Percent of each week's new users active again in each later week (cohortSpec).">
                 {c ? <Heat rows={c.names.map((n) => `${shortDate(n)} cohort`)} cols={wk} m={c.m.map((r) => r.map((v) => v ?? 0))} color={C[2]} f="raw" suffix="%" /> : <Missing why={`GA4's cohort report couldn't be read: ${coh.error ?? "no answer"}.`} fix="Press Sync now; if it keeps failing, reconnect Google Analytics on the Integrations page." />}
-                {c && <Note>Week 0 is the week of the first visit (always 100%). Values are % of that week&apos;s new users active again in each later week.</Note>}
+                {c && <Note>Week 0 is the week of the first visit (always 100%).</Note>}
               </Card>
-              <Card title="Where people go after the first page" tech="First page → next step" sub="Where people go after their landing page (BigQuery session paths).">
+              <Card title="Where people go after the first page" tech="First page → next step" info="Where people go after their landing page (BigQuery session paths).">
                 <Missing why="The page or lead that follows each landing page is only in the BigQuery export (session paths)." fix={BQ} />
               </Card>
               <Card title="From first visit to lead, by device" tech="Funnel by device" sub="Share of users reaching each step." span={6}>

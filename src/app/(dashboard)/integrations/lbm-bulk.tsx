@@ -96,8 +96,7 @@ export function LbmBulkSetup() {
         <button className="text-xs text-muted hover:text-foreground" onClick={() => setRows(null)}>Close</button>
       </div>
       <p className="text-xs text-muted">
-        Each selected location becomes its own dashboard client (you&apos;re the owner) with Local Brand Manager connected
-        {bingAvailable ? " and, where its website matches a verified Bing site, Bing too" : ""}. Locations already used by a client are greyed out.
+        Each selected location becomes a client you own, with Local Brand Manager{bingAvailable ? " and its matching Bing site" : ""} connected.
         GA4 and Search Console still need a Google sign-in per client.
       </p>
       <div className="flex flex-wrap items-center gap-x-4 gap-y-2 text-sm">

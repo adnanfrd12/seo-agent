@@ -133,8 +133,7 @@ export function IntegrationCard({
       {!available ? (
         <div className="space-y-2 text-sm text-muted">
           <p>
-            {meta.label} connects with its own Google OAuth client. Add GOOGLE_GBP_CLIENT_ID,
-            GOOGLE_GBP_CLIENT_SECRET and TOKEN_ENCRYPTION_KEY to the environment, then redeploy.
+            Add GOOGLE_GBP_CLIENT_ID, GOOGLE_GBP_CLIENT_SECRET and TOKEN_ENCRYPTION_KEY to the environment, then redeploy.
           </p>
           <button className={btn} disabled>Connect Account</button>
         </div>

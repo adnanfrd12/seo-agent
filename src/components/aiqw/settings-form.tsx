@@ -27,13 +27,13 @@ export function AiSettingsForm({ initial, canEdit, defaults }: { initial: AiQwSe
   return (
     <form className="space-y-5" onSubmit={(e) => { e.preventDefault(); save(); }}>
       <fieldset disabled={!canEdit || pending} className="grid gap-4 md:grid-cols-2">
-        <Field label="Claude model" hint="Opus 5.5: $4 / $20 per million input / output tokens. Sonnet 5.5: $2 / $10. Test both on your own clients.">
+        <Field label="Claude model" hint="Opus 5.5: $4 / $20 per million input / output tokens. Sonnet 5.5: $2 / $10.">
           <select className={input} value={s.model} onChange={(e) => set("model", e.target.value as ModelId)}>{(Object.keys(MODELS) as ModelId[]).map((m) => <option key={m} value={m}>{MODELS[m].label}</option>)}</select>
         </Field>
-        <Field label="Effort" hint="Medium is the default. Higher effort thinks longer and costs more output tokens.">
+        <Field label="Effort" hint="Medium is the default; higher effort costs more output tokens.">
           <select className={input} value={s.effort} onChange={(e) => set("effort", e.target.value as AiQwSettings["effort"])}>{EFFORTS.map((x) => <option key={x}>{x}</option>)}</select>
         </Field>
-        <Field label="Monthly Claude budget for this client ($)" hint="A run is refused (with a message) when it would go over.">
+        <Field label="Monthly Claude budget for this client ($)" hint="A run that would go over it is refused.">
           <input type="number" min={0} step={1} className={input} value={s.monthlyBudget} onChange={(e) => set("monthlyBudget", Number(e.target.value))} />
         </Field>
         <Field label="Monthly DataForSEO limit for quick wins ($)" hint="Deep runs, the nightly run and the Keywords screen stop fetching at this amount.">
@@ -41,9 +41,9 @@ export function AiSettingsForm({ initial, canEdit, defaults }: { initial: AiQwSe
         </Field>
         <label className="flex items-start gap-2 text-sm md:col-span-2">
           <input type="checkbox" className="mt-0.5 size-4 accent-[var(--accent)]" checked={s.nightly} onChange={(e) => set("nightly", e.target.checked)} />
-          <span><b>Nightly run</b><span className="block text-xs text-muted">Every night at 02:00 US Central (07:00 UTC) with the Message Batches API (half price); results are collected at 11:00 UTC and the morning email lists the top 5 new quick wins, those resolved, and results of items done 28+ days ago.</span></span>
+          <span title="Every night at 02:00 US Central (07:00 UTC) with the Message Batches API (half price); results are collected at 11:00 UTC and the morning email lists the top 5 new quick wins, those resolved, and results of items done 28+ days ago."><b>Nightly run</b><span className="block text-xs text-muted">Every night at 02:00 US Central (half price), then a morning email.</span></span>
         </label>
-        <Field label="Morning email recipients" hint="Comma separated. Empty = the workspace's owners and admins. Needs RESEND_API_KEY and ALERT_EMAIL_FROM on the server.">
+        <Field label="Morning email recipients" hint="Comma separated. Empty = owners and admins. Needs RESEND_API_KEY and ALERT_EMAIL_FROM on the server.">
           <input className={input} value={s.emailTo.join(", ")} onChange={(e) => set("emailTo", e.target.value.split(/[,\s]+/).filter(Boolean))} placeholder="owner@business.com" />
         </Field>
       </fieldset>
@@ -54,7 +54,7 @@ export function AiSettingsForm({ initial, canEdit, defaults }: { initial: AiQwSe
           <label key={k} className="flex items-start gap-2 text-sm"><input type="checkbox" className="mt-0.5 size-4 accent-[var(--accent)]" checked={s.dfs[k]} onChange={(e) => set("dfs", { ...s.dfs, [k]: e.target.checked })} /> {DFS_FEATURES[k]}</label>
         ))}
         <div className="grid gap-4 pt-2 md:grid-cols-2">
-          <Field label="DataForSEO location" hint='A DataForSEO location name, e.g. "United States" or "Houston,Texas,United States". Empty = the client research target.'><input className={input} value={s.locationName} onChange={(e) => set("locationName", e.target.value)} /></Field>
+          <Field label="DataForSEO location" hint='e.g. "United States" or "Houston,Texas,United States". Empty = the client research target.'><input className={input} value={s.locationName} onChange={(e) => set("locationName", e.target.value)} /></Field>
           <Field label="DataForSEO language code" hint='e.g. "en". Empty = the research target.'><input className={input} value={s.languageCode} onChange={(e) => set("languageCode", e.target.value)} /></Field>
         </div>
       </fieldset>

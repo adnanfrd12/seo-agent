@@ -15,7 +15,7 @@ export default async function EcommercePage() {
   const page = await researchPage();
   if (!page) return null;
   const { client, canEdit, cache } = page;
-  const header = <><BackToToolkit /><TabHeader source={null} title="E-commerce SEO" description="Product and category page SEO (Product schema, faceted navigation, product feeds). It only applies when the website sells products online, so the scan checks for a product catalogue first." /></>;
+  const header = <><BackToToolkit /><TabHeader source={null} title="E-commerce SEO" description="Product and category page SEO, for websites that sell online." /></>;
   if (!cache.target) return <>{header}<EmptyState title="No website yet" body="Set the client's website so it can be scanned." action={{ href: "/integrations", label: "Open Integrations" }} /></>;
   const supabase = await createClient();
   const stored = await loadScan<E>(supabase, client.id, TK.ecommerce);
@@ -34,8 +34,8 @@ export default async function EcommercePage() {
       <div className="grid gap-4 lg:grid-cols-2">
         <Card title={shop ? "Product catalogue detected" : "Not applicable: no product catalogue detected"}>
           <p className="text-sm text-secondary">{shop
-            ? "The site exposes products, so product-page SEO applies. Use the Page Analyzer on product URLs and the Technical SEO page for schema checks."
-            : `${cache.target.domain} is a lead-generation service site (quotes, calls, visits), not an online shop. Product schema, category facets and merchant feeds don't apply; the Local SEO, Service x Area Planner and Technical SEO tools cover what matters here.`}</p>
+            ? "Product-page SEO applies. Use the Page Analyzer on product URLs and the Technical SEO page for schema checks."
+            : `${cache.target.domain} is a service site, not an online shop. Local SEO, the Service x Area Planner and Technical SEO cover what matters here.`}</p>
         </Card>
         <Card title="What was checked">
           <ul className="space-y-2 text-sm">{rows.map((r) => (

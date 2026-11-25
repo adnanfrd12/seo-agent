@@ -16,7 +16,7 @@ export default async function SeoCompetitorPagesTool() {
   const canEdit = ["owner", "admin"].includes(client.role);
   const stored = await loadTool<CompRun>(await createClient(), client.id, "seo-competitor-pages");
   const r = stored?.data;
-  const header = <TabHeader source={null} title="Comparison Pages" description={`Outlines for "${r?.brand ?? client.name} vs <competitor>" and "<competitor> alternatives" pages, built from the competitor data already stored (shared keywords, keyword gaps, their top pages).`} guide={[
+  const header = <TabHeader source={null} title="Comparison Pages" description={`Outlines for "${r?.brand ?? client.name} vs <competitor>" and "<competitor> alternatives" pages.`} guide={[
     { term: "Fair comparisons", text: "Outlines never invent competitor prices or ratings: anything that needs evidence is listed under 'Proof needed' for you to verify before publishing." },
     { term: "Cost", text: "No DataForSEO call (stored data only); Claude Haiku drafts the outlines for well under a cent." },
   ]} />;

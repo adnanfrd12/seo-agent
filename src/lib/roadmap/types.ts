@@ -31,6 +31,8 @@ export interface RoadmapTask {
   evidence: EvidenceRef[]; steps: string[]; urls: string[]; keywords: string[]; subtasks: Subtask[];
   priority: Level; impact: Level; effort: (typeof EFFORTS)[number]; status: TaskStatus; due_date: string | null;
   source: "ai" | "manual" | "nova"; sort: number; completed_at: string | null; created_at: string; updated_at: string;
+  /** stored duplicate key (see dedupeKey); present on rows read from the database */
+  dedupe_key?: string;
 }
 
 export interface RoadmapMonth {

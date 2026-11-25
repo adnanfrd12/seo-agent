@@ -462,11 +462,10 @@ export function WhatChanged({ id, items, start, f = "int", unit, startLabel = "P
                 <span className={cn("text-xs tabular-nums", i.value >= 0 ? "text-positive" : "text-negative")}>{chgTxt(i.value, f)}</span>
               </div>); })}
           </div>
-          <p className="mt-2 text-xs text-muted">Green bars added to the total, red bars took away from it. They add up to the change shown above.</p>
         </div>
       ) : (
         <div><Waterfall items={its} start={start} f={f} unit={unit} startLabel={startLabel} endLabel={endLabel} />
-          <p className="mt-2 text-xs text-muted">How to read it: the first bar is {startLabel.toLowerCase()} ({fmt(f, start)}). Each bar after it starts where the last one ended and moves the total up (green, &quot;more&quot;) or down (red, &quot;fewer&quot;) by that item&apos;s change, so the bars step up or down like stairs. The last bar is {endLabel.toLowerCase()} ({fmt(f, end)}). The axis doesn&apos;t start at zero so small changes are visible.</p></div>
+          <p className="mt-2 text-xs text-muted" title={`The first bar is ${startLabel.toLowerCase()} (${fmt(f, start)}). Each bar after it moves the total up (green) or down (red) by that item's change. The last bar is ${endLabel.toLowerCase()} (${fmt(f, end)}).`}>The axis doesn&apos;t start at zero.</p></div>
       )}
     </div>
   );

@@ -54,7 +54,7 @@ export async function Ga4xScreen({ sp, path, title, description, users, children
           <Link href={withParams(path, sp, { leads: null })} aria-current={qualified ? "true" : undefined} className={cn("px-2 py-1", qualified ? "bg-foreground text-background" : "bg-surface text-secondary hover:bg-surface-muted")} title="Leads from bot-like traffic (day × country × browser slices with many visits and almost no engagement) are left out. Visit counts are always GA4’s own.">Qualified leads</Link>
           <Link href={withParams(path, sp, { leads: "all" })} aria-current={!qualified ? "true" : undefined} className={cn("px-2 py-1", !qualified ? "bg-foreground text-background" : "bg-surface text-secondary hover:bg-surface-muted")}>All leads</Link>
         </span>
-        {g.botSlices.size > 0 && <span className="rounded-md bg-warn-soft px-2 py-1 text-warn">{g.botSlices.size} bot-like slice{g.botSlices.size > 1 ? "s" : ""}: their leads {qualified ? "left out" : "counted"} (visits always match GA4)</span>}
+        {g.botSlices.size > 0 && <span className="rounded-md bg-warn-soft px-2 py-1 text-warn" title="Visit counts always match GA4.">{g.botSlices.size} bot-like slice{g.botSlices.size > 1 ? "s" : ""}: their leads {qualified ? "left out" : "counted"}</span>}
         {g.users?.error && <span className="rounded-md bg-negative-soft px-2 py-1 text-negative" title={g.users.error}>User counts couldn&apos;t be read</span>}
         {props && <div className="ml-auto"><FilterSelect label="Property" name="property" value={typeof sp.property === "string" ? sp.property : ""} options={props} path={path} sp={sp} /></div>}
       </div>

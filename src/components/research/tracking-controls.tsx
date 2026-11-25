@@ -67,7 +67,7 @@ export function RankControls({ canEdit, count, due, suggestions, estimate }: { c
         <button className={btn2} disabled={pending || count === 0} onClick={() => run(() => checkRanksNow(due === 0))}>
           {pending ? <Loader2 className="size-4 animate-spin" /> : <RefreshCw className="size-4" />} {due > 0 ? `Check ${due} keyword${due > 1 ? "s" : ""} now` : "Re-check all now"} <span className="opacity-70">(≈{estimate})</span>
         </button>
-        <span className="text-xs text-muted">Positions refresh on the schedule above for active clients. Each check looks at Google&apos;s top 100 results.</span>
+        <span className="text-xs text-muted">Each check reads Google&apos;s top 100 results.</span>
       </div>
       {note}
     </div>
@@ -158,7 +158,7 @@ export function AiControls({ canEdit, count, due, search, suggestions, estimate,
         <button className={btn2} disabled={pending || count === 0} onClick={() => run(() => runAiVisibilityNow(due === 0))}>
           {pending ? <Loader2 className="size-4 animate-spin" /> : <RefreshCw className="size-4" />} {due > 0 ? `Check ${due} question${due > 1 ? "s" : ""} now` : "Re-check all now"} <span className="opacity-70">(≈{estimate})</span>
         </button>
-        <span className="text-xs text-muted">Runs automatically every week. ChatGPT, Perplexity, Gemini and Google AI Mode answer through DataForSEO (inside the daily API budget); Claude uses your Anthropic key; Claude Sonnet 5.5 reads every answer for brands and sentiment.</span>
+        <span className="text-xs text-muted" title="ChatGPT, Perplexity, Gemini and Google AI Mode answer through DataForSEO (inside the daily API budget); Claude uses your Anthropic key; Claude Sonnet 5.5 reads every answer for brands and sentiment.">Runs automatically every week.</span>
       </div>
       {note}
     </div>

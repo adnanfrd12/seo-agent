@@ -161,9 +161,8 @@ export function ClientForm({ name, timezone, defaultRangeDays, canEdit, timezone
           <option value="7">Last 7 days</option><option value="30">Last 30 days</option><option value="90">Last 90 days</option>
         </select>
       </label>
-      <p className="text-xs text-muted sm:col-span-3">
-        Used for date ranges in the dashboard. GA4 figures use the property&apos;s own reporting time zone and Search Console
-        uses Pacific Time, as Google reports them.
+      <p className="text-xs text-muted sm:col-span-3" title="GA4 figures use the property's own reporting time zone and Search Console uses Pacific Time, as Google reports them.">
+        Used for dashboard date ranges. GA4 and Search Console keep their own time zones.
       </p>
       {canEdit ? (
         <div className="flex items-center gap-3 sm:col-span-3">
@@ -259,7 +258,7 @@ export function TeamManager({ members, meId, myRole }: { members: Member[]; meId
           </label>
           <label className="text-sm font-medium">Temporary password
             <input type="text" value={form.password} minLength={8} maxLength={72} onChange={(e) => setForm({ ...form, password: e.target.value })} className={input} autoComplete="new-password" />
-            <span className="mt-1 block text-xs font-normal text-muted">Only needed if they don&apos;t have an account yet. They can change it after signing in.</span>
+            <span className="mt-1 block text-xs font-normal text-muted">Only for new accounts; they can change it after signing in.</span>
           </label>
           <div className="flex flex-wrap items-center gap-3 sm:col-span-2">
             <button className={primary} disabled={pending}>{pending && <Loader2 className="size-4 animate-spin" />} Add user</button>

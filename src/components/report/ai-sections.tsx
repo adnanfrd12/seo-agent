@@ -10,7 +10,7 @@ const WEEK = ["Critical fixes & quick wins", "Keyword & content optimisation", "
 export function ClarityBlock({ d }: { d: ReportData }) {
   if (!d.clarity) {
     return <Unavailable title="Microsoft Clarity data isn't available for this period"
-      body="Connect Clarity on the Integrations page. Its API provides the last 1–3 days per call, so stored history starts from the day it is connected. Session recordings can't be retrieved through any official API; recording insights come from reviewers' logged observations." />;
+      body="Connect Clarity on the Integrations page. History starts from the day it is connected." />;
   }
   const c = d.clarity;
   const span = c.from === c.to ? c.from : `${c.from} → ${c.to}`;
@@ -52,7 +52,7 @@ export function AiInsightsBlock({ d, linked }: { d: ReportData; linked: boolean 
   const ai = d.ai;
   if (!ai?.summary) {
     return <Unavailable title="No AI analysis generated yet"
-      body="Generate one on the AI SEO Insights page. Insights are built from a structured evidence package of this report's figures; every recommendation cites its evidence, and the AI never calculates or invents metrics."
+      body="Generate one on the AI SEO Insights page."
       action={linked ? <Link href="/insights" className="text-sm font-medium text-foreground underline decoration-border-strong underline-offset-2 hover:decoration-foreground">Open AI SEO Insights →</Link> : undefined} />;
   }
   return (
@@ -71,7 +71,7 @@ export function AiInsightsBlock({ d, linked }: { d: ReportData; linked: boolean 
           { label: "Success metric", render: (r) => <span className="text-xs">{r.success_metric}</span> },
           { label: "Status", render: (r) => <span className="capitalize">{r.implementation_status}</span> },
         ]} />
-      <p className="text-xs text-muted">AI interpretation ({ai.model ?? "Claude"}) of the figures in this report. Causes are hypotheses unless stated otherwise; no ranking or revenue outcome is guaranteed.</p>
+      <p className="text-xs text-muted">AI interpretation ({ai.model ?? "Claude"}). Causes are hypotheses; outcomes aren&apos;t guaranteed.</p>
     </>
   );
 }

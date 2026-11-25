@@ -16,9 +16,9 @@ type Speed = {
 const CATS: [string, string][] = [["performance", "Performance"], ["accessibility", "Accessibility"], ["bestPractices", "Best Practices"], ["seo", "SEO"]];
 const LIMIT: Record<string, string> = { LCP: "≤ 2.5 s", FCP: "≤ 1.8 s", CLS: "≤ 0.1", TBT: "≤ 200 ms", SI: "≤ 3.4 s", TTFB: "≤ 800 ms" };
 
-function DeviceCard({ d, title, sub }: { d?: Device; title: string; sub: string }) {
+function DeviceCard({ d, title }: { d?: Device; title: string }) {
   return (
-    <Card title={title} sub={sub} right={<ScoreRing value={d?.available ? d.score ?? null : null} size={48} />}>
+    <Card title={title} right={<ScoreRing value={d?.available ? d.score ?? null : null} size={48} />}>
       <ul className="grid grid-cols-2 gap-2 p-4">
         {CATS.map(([k, label]) => {
           const val = d?.categories?.[k];
@@ -33,7 +33,7 @@ export default async function SpeedPage() {
   const v = await sxPage();
   if (!v) return null;
   const a = audit<Speed>(v.bundle, "speed");
-  const header = <SxHeader title="Speed Test Tool" description="The website's performance as tested by SEOSignalX with Google PageSpeed Insights." project={v.bundle?.project?.name} analyzedAt={a?.result.testMeta?.testedAt ?? a?.result._reportAnalyzedAt ?? a?.updatedAt} />;
+  const header = <SxHeader title="Speed Test Tool" description="Website performance from Google PageSpeed Insights." project={v.bundle?.project?.name} analyzedAt={a?.result.testMeta?.testedAt ?? a?.result._reportAnalyzedAt ?? a?.updatedAt} />;
   if (!a) return <>{header}<NoAudit label="Speed" reason={v.bundle?.project ? null : "This client has no SEOSignalX project."} /></>;
   const r = a.result;
 
@@ -41,11 +41,11 @@ export default async function SpeedPage() {
     <>
       {header}
       <div className="grid gap-4 md:grid-cols-2">
-        <DeviceCard d={r.mobile} title="Mobile Score" sub="Performance on mobile devices" />
-        <DeviceCard d={r.desktop} title="Desktop Score" sub="Performance on desktop devices" />
+        <DeviceCard d={r.mobile} title="Mobile Score" />
+        <DeviceCard d={r.desktop} title="Desktop Score" />
       </div>
 
-      <Card className="mt-6" title="Core Web Vitals" sub="Real-world performance metrics that impact user experience">
+      <Card className="mt-6" title="Core Web Vitals">
         <ul className="grid grid-cols-2 gap-3 p-4 md:grid-cols-3 xl:grid-cols-6">
           {(r.cwv ?? []).map((m) => (
             <li key={m.metric} className={cn("rounded-lg border p-3", m.good === true ? "border-emerald-500/40 bg-emerald-500/5" : m.good === false ? "border-rose-500/40 bg-rose-500/5" : "border-border bg-surface-muted")}>
@@ -60,7 +60,7 @@ export default async function SpeedPage() {
 
       <div className="mt-6 grid gap-4 lg:grid-cols-2">
         {(r.sections ?? []).map((s) => (
-          <Card key={s.id} title={s.title} sub={`Optimize your ${s.title.toLowerCase()}`}
+          <Card key={s.id} title={s.title}
             right={<span className="text-xs text-muted tabular-nums">{s.passed}/{s.evaluated ?? s.total}{s.unavailable ? ` · ${s.unavailable} not tested` : ""}</span>}>
             <ul className="divide-y divide-hairline">
               {s.checks.map((c) => <CheckRow key={c.name} status={c.status} name={c.name} desc={c.desc} badge={c.affected ? `${c.affected} affected` : undefined} />)}

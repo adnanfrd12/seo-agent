@@ -71,9 +71,9 @@ const tdR = `${td} text-right tabular-nums`;
  */
 export function BlogInsightTabs({ keywords, posts, queries, gscOn, keywordsEmpty }: { keywords: KeywordRow[]; posts: PostRow[]; queries: QueryRow[]; gscOn: boolean; keywordsEmpty?: string }) {
   const tabs = [
-    { id: "keywords", label: "Ranking keywords", count: keywords.length, sub: "Biggest keywords the blog ranks for · monthly searches from DataForSEO · the post that ranks best" },
-    { id: "posts", label: "Posts in Google", count: posts.length, sub: "Posts with the most clicks · Search Console, selected period · plus GA4 page views" },
-    { id: "queries", label: "Top queries", count: queries.length, sub: "Search Console queries that show each post · selected period" },
+    { id: "keywords", label: "Ranking keywords", count: keywords.length, sub: "Monthly searches from DataForSEO" },
+    { id: "posts", label: "Posts in Google", count: posts.length, sub: "Search Console, selected period · page views from GA4" },
+    { id: "queries", label: "Top queries", count: queries.length, sub: "Search Console, selected period" },
   ] as const;
   const [tab, setTab] = useState<(typeof tabs)[number]["id"]>("keywords");
   const [pages, setPages] = useState<Record<string, number>>({});

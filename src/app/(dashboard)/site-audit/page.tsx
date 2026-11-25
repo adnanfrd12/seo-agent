@@ -49,7 +49,7 @@ function IssueGroup({ severity, issues }: { severity: Severity; issues: AuditIss
                 <ul className="space-y-0.5 text-xs">
                   {i.urls.map((u) => <li key={u} className="break-all"><a href={u} target="_blank" rel="noopener noreferrer" className="hover:text-foreground underline decoration-border-strong underline-offset-2 hover:decoration-foreground">{u}</a></li>)}
                 </ul>
-                {i.count > i.urls.length && <p className="text-xs text-muted">Showing {i.urls.length} of {fmtInt(i.count)}. The full list is in the pages table below (filter by errors).</p>}
+                {i.count > i.urls.length && <p className="text-xs text-muted">Showing {i.urls.length} of {fmtInt(i.count)}. Full list in the pages table below.</p>}
               </div>
             </details>
           </li>
@@ -211,11 +211,11 @@ export default async function SiteAuditPage() {
   const page = await researchPage();
   if (!page) return null;
   const { client, canEdit, configured, cache, budget } = page;
-  const header = <TabHeader source="dfs" title="Site Audit" description="A crawl of the website that finds technical problems hurting search visibility: broken pages, missing titles and descriptions, duplicates, redirects and thin content." guide={[
+  const header = <TabHeader source="dfs" title="Site Audit" description="Crawls the website to find technical problems that hurt search visibility." guide={[
     { term: "Errors", text: "Problems that can stop pages from being found or shown properly (broken pages, missing titles). Fix these first." },
     { term: "Warnings", text: "Problems that weaken results (duplicate titles, redirects, missing descriptions). Worth fixing after the errors." },
     { term: "Notices", text: "Smaller improvements, such as thin content or missing image descriptions." },
-    { term: "On-page score", text: "A 0-100 score from the crawler for how well the pages follow on-page best practice. Compare it between audits rather than judging one number." },
+    { term: "On-page score", text: "The crawler's 0-100 score for on-page best practice. Compare it between audits rather than judging one number." },
   ]} />;
   if (!configured) return <>{header}<EmptyState title="DataForSEO isn't configured" body="Add DATAFORSEO_LOGIN and DATAFORSEO_PASSWORD to the environment, then redeploy." action={{ href: "/integrations", label: "Open Integrations" }} /></>;
   if (!cache.target) return <>{header}<EmptyState title="No website to audit yet" body="Connect Bing, Search Console or Business Profile for this client so the website can be detected, or ask an owner or admin to set it." action={{ href: "/integrations", label: "Open Integrations" }} /></>;
@@ -336,7 +336,7 @@ export default async function SiteAuditPage() {
                 <Fill><SplitBar title="Page health" sub={sample} total={r.pages ? `${Math.round((r.cleanPages / r.pages) * 100)}%` : "—"} totalLabel="healthy" segments={[
                   { label: "No problems", value: r.cleanPages, color: "var(--positive)" }, { label: "Warnings only", value: warnPages, color: "var(--warn)" }, { label: "With errors", value: errPages, color: "var(--negative)" },
                 ]} /></Fill>
-                <Fill><StackedBars title="Problems by click depth" sub="Error and warning instances at each depth" valueLabel="Instances" rows={depthProblems}
+                <Fill><StackedBars title="Problems by click depth" valueLabel="Instances" rows={depthProblems}
                   keys={[{ key: "errors", label: "Errors", color: "var(--negative)" }, { key: "warnings", label: "Warnings", color: "var(--warn)" }]} empty="No errors or warnings on the listed pages." /></Fill>
               </div>
             )}

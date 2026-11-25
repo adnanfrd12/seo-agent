@@ -97,11 +97,11 @@ export function ScreenTasks({ screen, wins, unit = "leads/mo", href = "/analytic
   const cols: Col[] = [{ k: "rank", label: "#", num: true }, { k: "title", label: "Change", wrap: true }, { k: "page", label: "Page", kind: "page" }, { k: "where", label: "Where on the page", wrap: true }, { k: "gain", label: "Est. gain", num: true, f: "dec1" }, { k: "effort", label: "Effort" }];
   return (
     <>
-      <Band title="Quick wins and tasks for this screen" sub="What to change based on the data above." />
-      <Card title={`Quick wins and tasks: ${screen}`} sub="Changes to make based on this screen's data, ranked by gain ÷ effort.">
+      <Band title="Quick wins and tasks for this screen" />
+      <Card title={`Quick wins and tasks: ${screen}`} sub="Ranked by gain ÷ effort.">
         {wins.length ? <Table cols={cols} rows={wins.slice(0, 10).map((w) => ({ rank: w.rank, title: w.title, page: w.page, where: w.where, gain: w.gain, effort: w.effort }))} limit={10} />
-          : <p className="py-4 text-sm text-muted">Nothing to change here right now: none of the rules for this screen found a page or setting that holds leads back.</p>}
-        <p className="mt-3 text-xs text-muted">Est. gain is in {unit}. <Link href={href} className="underline underline-offset-2 hover:text-foreground">See every quick win with its evidence and steps</Link>.</p>
+          : <p className="py-4 text-sm text-muted">Nothing to change here right now.</p>}
+        <p className="mt-3 text-xs text-muted">Est. gain in {unit}. <Link href={href} className="underline underline-offset-2 hover:text-foreground">See every quick win with its evidence and steps</Link>.</p>
       </Card>
     </>
   );

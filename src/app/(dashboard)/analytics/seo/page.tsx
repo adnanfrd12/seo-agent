@@ -36,7 +36,7 @@ const pathOf = (u: string) => { try { return cleanUrl(new URL(u).pathname + new 
 export default async function SeoJoinPage({ searchParams }: { searchParams: Promise<SearchParams> }) {
   const sp = await searchParams;
   return (
-    <Ga4xScreen sp={sp} path={PATH} title="SEO: Search Console + GA4" description="Google search clicks and positions next to the visits and leads they bring, page by page, plus an estimate of leads per search query.">
+    <Ga4xScreen sp={sp} path={PATH} title="SEO: Search Console + GA4" description="Google search clicks next to the visits and leads they bring.">
       {async ({ g, wins, clientId }) => {
         const org = (x: { ch?: unknown }) => x.ch === "Organic Search";
         const sCur = g.sCur().filter(org), lCur = g.lCur().filter(org), lPrev = g.lPrev().filter(org);
@@ -63,17 +63,17 @@ export default async function SeoJoinPage({ searchParams }: { searchParams: Prom
         const lab = labels(g);
         return (
           <>
-            <Band title="Charts" sub="Hover for details, click any bar, point or bubble for more." />
+            <Band title="Charts" />
             <Grid>
               <Card title="Leads from each search engine" tech="Organic leads by search engine" span={6}>
                 {engines.length ? <BarList rows={engines.map((r) => ({ label: r.k, value: r.n, color: C[2] }))} />
                   : <BarList rows={sessEngines.map((r) => ({ label: r.k, value: r.n, color: C[0], right: `${r.n} visits · 0 leads` }))} empty="No organic search visits in this period." />}
-                {!engines.length && sessEngines.length > 0 && <Note>No organic search visit ended in a lead in this period, so the bars show visits per search engine.</Note>}
+                {!engines.length && sessEngines.length > 0 && <Note>No organic visit led to a lead in this period, so the bars show visits.</Note>}
               </Card>
               <Card title="Google search visits and leads each day" tech="Organic sessions and leads, daily" span={6}>
                 <LineChart id="seo-day" labels={lab} series={[{ name: "Organic sessions", values: g.daily(sCur, (x) => Number(x.sessions)), color: C[0], area: true }, { name: "Organic leads", values: g.daily(lCur, (x) => Number(x.eventCount)), color: C[2] }]} />
               </Card>
-              <Card title="Google clicks vs leads per page" tech="Search Console clicks vs GA4 leads" sub="Each landing page. Pages low on the chart get search traffic but few leads." span={7}>
+              <Card title="Google clicks vs leads per page" tech="Search Console clicks vs GA4 leads" sub="Pages low on the chart get clicks but few leads." span={7}>
                 {noGsc ? <Missing why="Search Console isn't connected for this client in the portal." fix="Connect Google Search Console on the Integrations page and pick the site." />
                   : <Scatter points={rows.filter((r) => r.gc > 0).slice(0, 40).map((r) => ({ x: r.gc, y: r.leads, s: Math.max(1, r.sessions), label: r.key, show: r.leads > 0 || r.gc >= (rows[0]?.gc ?? 0) * 0.5, c: r.leads ? C[2] : C[1] }))} xLabel="Search Console clicks (log scale)" yLabel="Organic leads" yf="int" logX />}
               </Card>
@@ -81,14 +81,15 @@ export default async function SeoJoinPage({ searchParams }: { searchParams: Prom
                 <CompareBars color={C[2]} rows={[...new Set([...leads.keys(), ...leadsP.keys()])].map((k) => ({ label: k, cur: leads.get(k) ?? 0, prev: leadsP.get(k) ?? 0 })).sort((a, b) => b.cur - a.cur).slice(0, 8)} />
               </Card>
             </Grid>
-            <Band title="Tables and lists" sub="The data behind the charts. Filter with the chips, sort any column." />
+            <Band title="Tables and lists" />
             <Grid>
-              <Card title="Google search traffic and leads per page" tech="Organic landing pages: Search Console and GA4 together" sub={`Search Console clicks, impressions and position next to GA4 organic sessions and leads, matched by cleaned URL.${g.meta.config.searchConsole ? "" : " (Joined here from the portal's own Search Console data; the GA4 property itself has no Search Console link.)"}`}>
+              <Card title="Google search traffic and leads per page" tech="Organic landing pages: Search Console and GA4 together" sub="Matched by cleaned URL."
+                info={`Search Console clicks, impressions and position next to GA4 organic sessions and leads, matched by cleaned URL.${g.meta.config.searchConsole ? "" : " (Joined here from the portal's own Search Console data; the GA4 property itself has no Search Console link.)"}`}>
                 {noGsc ? <Missing why="Search Console isn't connected for this client in the portal, so there are no clicks, impressions or positions to put next to GA4." fix="Connect Google Search Console on the Integrations page and pick the site." /> :
                   <Table site={g.meta.streamUrl} limit={15} rows={rows} cols={[{ k: "key", label: "Landing page", kind: "page" }, { k: "gc", label: "GSC clicks", num: true, bar: C[0] }, { k: "gi", label: "GSC impressions", num: true }, { k: "gp", label: "Position", num: true, f: "dec1" }, { k: "sessions", label: "GA4 organic sessions", num: true }, { k: "leads", label: "Leads", num: true, bar: C[2] }, { k: "lr", label: "Lead rate", num: true, f: "pct" }]} />}
-                <Note>Search Console data is 2–3 days behind and is never live.</Note>
+                <Note>Search Console data is 2–3 days behind.</Note>
               </Card>
-              <Card title="Leads per Google search (estimate)" tech="Estimated leads by query" sub="A page's organic leads split across its queries by click share. An estimate, labelled as one." span={6}>
+              <Card title="Leads per Google search (estimate)" tech="Estimated leads by query" sub="A page's organic leads split across its queries by click share." span={6}>
                 {noGsc ? <Missing why="Search Console isn't connected." fix="Connect Google Search Console on the Integrations page." />
                   : <Table limit={15} rows={estRows} cols={[{ k: "q", label: "Query" }, { k: "v", label: "Est. leads", num: true, f: "dec1" }]} empty="No organic lead in this period came from a page with Search Console query data." />}
               </Card>

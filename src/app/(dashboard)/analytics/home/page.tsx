@@ -17,7 +17,7 @@ const PATH = "/analytics/home";
 export default async function Ga4HomePage({ searchParams }: { searchParams: Promise<SearchParams> }) {
   const sp = await searchParams;
   return (
-    <Ga4xScreen sp={sp} path={PATH} users title="Home" description="Visitors, engagement and leads at a glance, with what changed and where leads come from.">
+    <Ga4xScreen sp={sp} path={PATH} users title="Home" description="Visitors, engagement and leads at a glance.">
       {async ({ g, wins, ctx, clientId }) => {
         const T = g.total(), Tp = g.total(true), U = g.users?.totals;
         const dU = g.daily(g.D, (x) => Number(x.activeUsers)), dN = g.daily(g.D, (x) => Number(x.newUsers));
@@ -61,17 +61,17 @@ export default async function Ga4HomePage({ searchParams }: { searchParams: Prom
                 missing={!fs ? "000: GA4 has no form_start event in this period, so abandonment can't be worked out. Turn on Enhanced measurement → Form interactions in GA4 (Admin → Data streams)." : fl > fs ? `There are more form submissions (${fl}) than form starts (${fs}): ${g.eventsOfType("Forms").join(" and ")} probably count the same form, so abandonment can't be worked out. Mark one of them as "Not a lead" on Lead setup (see Insights and data quality → Data checks).` : undefined} />
             </Kpis></div>
 
-            <Band title="Charts" sub="Hover for details, click any bar, point or bubble for more." />
+            <Band title="Charts" />
             <Grid>
-              <Card title="What changed recently" tech="Notable changes" sub="Generated daily by comparing each slice with its expected value.">
+              <Card title="What changed recently" tech="Notable changes" info="Generated daily by comparing each slice with its expected value.">
                 <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-4">{insights.map((c) => <Insight key={c.title} {...c} />)}</div>
                 {!insights.length && <p className="text-sm text-muted">Nothing unusual in this period.</p>}
               </Card>
-              <Card title="Visitors per day" tech="Active users" sub="Daily, with the previous period dashed." span={8}>
+              <Card title="Visitors per day" tech="Active users" span={8}>
                 <LineChart id="home-users" labels={labels(g)} series={[{ name: "This period", values: dU, color: C[0], area: true }, { name: "Previous period", values: g.daily(g.D, (x) => Number(x.activeUsers), true), color: C[0], dash: true }]} />
               </Card>
-              <Card title="People on your site right now" tech="Active users in last 30 minutes" span={4}
-                sub={<><b className="text-lg text-foreground">{rt ? fmt("int", sum(rt.perMinute.slice(-5), (v) => v)) : "000"}</b> right now · Live from the GA4 Realtime API (last 30 minutes, refreshed every minute)</>}>
+              <Card title="People on your site right now" tech="Active users in last 30 minutes" span={4} info="Live from the GA4 Realtime API (last 30 minutes, refreshed every minute)."
+                sub={<><b className="text-lg text-foreground">{rt ? fmt("int", sum(rt.perMinute.slice(-5), (v) => v)) : "000"}</b> right now</>}>
                 {rt?.error ? <p className="text-sm text-negative">{rt.error}</p> : rt && <ColChart id="home-rt" labels={rt.perMinute.map((_, i) => String(i - 29))} series={[{ name: "Active users per minute", values: rt.perMinute, color: C[0] }]} h={150} />}
                 {rt && !rt.error && <Note>Top country: {rt.byCountry[0]?.[0] ?? "–"} · Top page: {rt.byPage[0]?.[0] ?? "–"}</Note>}
               </Card>
@@ -93,17 +93,17 @@ export default async function Ga4HomePage({ searchParams }: { searchParams: Prom
                   <Gauge v={fs && fl <= fs ? fl / fs : null} label="Form completion" color={C[4]} sub={!fs ? "No form_start event" : fl > fs ? "More submissions than starts (double-counted form)" : undefined} />
                 </div>
               </Card>
-              <Card title="Where your leads come from" tech="Where leads come from" sub="Channel → lead type. Band width = number of leads." span={7}>
+              <Card title="Where your leads come from" sub="Channel → lead type. Band width = leads." span={7}>
                 <Sankey flows={flows} rightColor={typeColor("Forms")} />
               </Card>
               <Card title="Leads by town (map)" tech="Leads by city" sub="Bubble size = leads. Approximate positions." span={5}>
                 <BubbleMap pts={pts} color={C[2]} label="leads" />
                 <Note>City positions © OpenStreetMap contributors.</Note>
               </Card>
-              <Card title="Leads each day (calendar)" tech="Daily leads calendar" sub={`Last ${cal.length} days. Darker = more leads.`} span={6}>
+              <Card title="Leads each day (calendar)" tech="Daily leads calendar" sub={`Last ${cal.length} days.`} span={6}>
                 <CalHeat values={cal} start={calStart} color={C[2]} label="leads" />
               </Card>
-              <Card title="Sources: visits vs how many become leads" tech="Channels: traffic vs lead rate" sub="Bubble = leads. Top-right channels bring volume and convert." span={6}>
+              <Card title="Sources: visits vs how many become leads" tech="Channels: traffic vs lead rate" sub="Bubble = leads." info="Bubble = leads. Top-right channels bring volume and convert." span={6}>
                 <Scatter points={ch.filter((r) => r.sessions > 0).map((r, i) => ({ x: r.sessions, y: r.lr, s: Math.max(1, r.leads), label: r.key, show: true, c: channelColor(r.key, i) }))} xLabel="Sessions (log scale)" yLabel="Lead rate" logX yRef={T.lr} />
               </Card>
             </Grid>

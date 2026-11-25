@@ -27,8 +27,8 @@ export async function ScheduledJobs() {
     <section className="mt-4 rounded-[10px] border border-border bg-surface p-5" aria-labelledby="jobs-title">
       <div className="flex flex-wrap items-start justify-between gap-3">
         <div>
-          <h2 id="jobs-title" className="text-base font-semibold">Automatic updates</h2>
-          <p className="text-sm text-muted">Everything below runs on its own every day (times in your browser&apos;s locale, from UTC schedules). Nobody has to press a button for the dashboards to stay current.</p>
+          <h2 id="jobs-title" className="text-base font-semibold" title="Third-party data is never real-time: Search Console is 2-3 days behind, GA4 finalises within 24-48 hours, and Business Profile a few days. Each dashboard shows when its data was last synced.">Automatic updates</h2>
+          <p className="text-sm text-muted">Everything here runs daily on its own. Times are local.</p>
         </div>
         <span className={backlog > 0 ? "text-sm text-warn" : "text-sm font-medium text-positive"}>{backlog > 0 ? `${backlog} sync jobs queued` : "Queue empty"}</span>
       </div>
@@ -40,14 +40,13 @@ export async function ScheduledJobs() {
               <span className="mt-0.5">{!r ? <Clock className="size-4 text-muted" aria-label="Not run yet" /> : r.ok === false ? <CircleAlert className="size-4 text-negative" aria-label="Failed" /> : <CheckCircle2 className="size-4 text-positive" aria-label="Succeeded" />}</span>
               <div className="min-w-0 flex-1">
                 <p className="font-medium">{SCHEDULE[job].label}</p>
-                <p className="text-xs text-muted">{r ? `Last run ${when(r.started_at)}${r.ok === false ? ` failed: ${r.error ?? "unknown error"}` : `: ${describe(job, r.summary)}`}` : "No scheduled run recorded yet (runs are logged from the latest update on)."}</p>
+                <p className="text-xs text-muted">{r ? `Last run ${when(r.started_at)}${r.ok === false ? ` failed: ${r.error ?? "unknown error"}` : `: ${describe(job, r.summary)}`}` : "No scheduled run recorded yet."}</p>
               </div>
               <span className="text-xs text-muted">Next: {when(nextRun(job))}</span>
             </li>
           );
         })}
       </ul>
-      <p className="mt-2 text-xs text-muted">Third-party data is never real-time: Search Console is 2-3 days behind, GA4 finalises within 24-48 hours, and Business Profile a few days. Each dashboard shows when its data was last synced.</p>
     </section>
   );
 }
