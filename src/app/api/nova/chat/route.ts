@@ -19,18 +19,22 @@ const body = z.object({
   conversationId: z.uuid().nullable().optional(),
   message: z.string().trim().min(1).max(4000),
   /** the dashboard page open while chatting (label is display text only; data is chosen from the path on the server) */
-  page: z.object({ path: z.string().regex(/^\/[A-Za-z0-9_\-/]{0,150}$/), label: z.string().trim().max(120) }).nullable().optional(),
+  page: z.object({ path: z.string().regex(/^\/[A-Za-z0-9_\-/]{0,150}$/), label: z.string().trim().max(120), text: z.string().max(8000).optional() }).nullable().optional(),
 });
 type Action = { tool: string; ok: boolean; summary: string; detail?: string };
+class Done extends Error {}
+/** The API needs the conversation to start with a user turn. */
+const fromUser = (ms: Anthropic.MessageParam[]) => { const i = ms.findIndex((m) => m.role === "user"); return i < 0 ? ms : ms.slice(i); };
 
 function system(name: string, clientName: string, role: string, canEdit: boolean, today: string, page: { path: string; label: string } | null) {
   return `You are Nova, the AI SEO strategist inside the SEO Insights dashboard, working alongside ${name || "the user"} on the client "${clientName}".
 
 Today is ${today}; the current roadmap month is ${monthLabel(monthOf(today))}. The user's role is ${role}${canEdit ? "" : " (view-only: you can analyse and explain, and mark tasks done, but not add, edit or delete roadmap items)"}.
 
-${page ? `The user has the dashboard page "${page.label.replace(/["\n]/g, " ")}" (${page.path}) open. "This page", "this screen" or "here" means it: call get_page_data to read what it shows before answering.\n\n` : ""}What you do: answer questions about the client's connected analytics, analyse website and social performance, compare competitors, find problems and growth opportunities, write personalised strategies, explain roadmap tasks, and manage the roadmap (add, update, complete, reprioritise and reschedule tasks, add checklists, update monthly strategies) with your tools.
+${page ? `The user has the dashboard page "${page.label.replace(/["\n]/g, " ")}" (${page.path}) open. Call get_page_data only when the question is about that page ("this page", "this screen", "here", or what they see on it); otherwise don't bring the page up.\n\n` : ""}What you do: answer questions about the client's connected analytics, analyse website and social performance, compare competitors, find problems and growth opportunities, write personalised strategies, explain roadmap tasks, and manage the roadmap (add, update, complete, reprioritise and reschedule tasks, add checklists, update monthly strategies) with your tools.
 
 Rules:
+- Answer exactly what the user asked, at the depth they asked. Don't volunteer a data summary or analysis they didn't ask for. Use tools only when the answer needs data that isn't in the brief.
 - Ground everything in the client's data: the evidence brief below, or what your tools return. Never invent metrics, pages, keywords, competitors, findings or results. If the data isn't there, say what is missing and what to connect.
 - Use get_client_analytics, get_competitor_analysis or get_historical_performance when the brief isn't detailed enough. Fetch only what the question needs.
 - Before changing tasks, read them with get_roadmap or get_roadmap_tasks so you use real task ids. Avoid duplicates.
@@ -38,6 +42,14 @@ Rules:
 - When you add tasks, make them specific to this client (why, with the numbers; concrete steps; affected pages and keywords from the data; a due date in the month).
 - Small numbers are noise; estimates (DataForSEO) are estimates; effects are hypotheses, never guarantees.
 - Write clearly for a business owner: short paragraphs, bullet lists, and tables for comparisons. Use Markdown. Keep answers focused; no filler.`;
+}
+
+/** Greetings, thanks and "who are you": answered quickly without loading the client's data or tools. */
+const SMALL_TALK = /^(hi+|hello+|hey+|hiya|howdy|yo|good (morning|afternoon|evening|day)|thanks?( a lot| so much| very much)?|thank you( so much| very much)?|thx|ty|bye|goodbye|see you|how are you( doing)?|how'?s it going|what'?s up|who are you|what can you do|what do you do)[\s!.?,]*$/i;
+
+function smallTalkSystem(name: string, clientName: string, canEdit: boolean) {
+  return `You are Nova, the AI SEO strategist inside the SEO Insights dashboard, talking with ${name || "the user"} about the client "${clientName}".
+Reply naturally and briefly (1-3 sentences) to greetings, thanks or questions about yourself. When it fits, mention in one short line what you can help with: questions about their analytics and search performance, competitors, ideas and strategies, and ${canEdit ? "managing the SEO roadmap and its tasks" : "explaining the SEO roadmap"}. Don't quote any numbers or data here. Plain text, no headings.`;
 }
 
 export async function POST(req: Request) {
@@ -95,6 +107,15 @@ export async function POST(req: Request) {
       let text = "", cost = 0;
       const actions: Action[] = [];
       try {
+        if (SMALL_TALK.test(p.data.message.trim())) {
+          const s = anthropic().messages.stream({
+            model: settings.model, max_tokens: 400, output_config: { effort: "low" },
+            system: smallTalkSystem(firstName, client.name, ctx.canEdit), messages: fromUser(messages.slice(-6)),
+          }, { signal: req.signal });
+          s.on("text", (delta) => { text += delta; send({ t: "text", v: delta }); });
+          cost += callCost(settings.model, (await s.finalMessage()).usage);
+          throw new Done();
+        }
         const b = await getBrief();
         const sys: Anthropic.TextBlockParam[] = [
           { type: "text", text: system(firstName, client.name, client.role, ctx.canEdit, today, ctx.page) },
@@ -128,7 +149,8 @@ export async function POST(req: Request) {
           if (text && !text.endsWith("\n")) { text += "\n\n"; send({ t: "text", v: "\n\n" }); }
         }
       } catch (e) {
-        if (!(e instanceof Anthropic.APIUserAbortError)) {
+        if (e instanceof Done) { /* answered */ }
+        else if (!(e instanceof Anthropic.APIUserAbortError)) {
           const m = aiErrorMessage(e);
           send({ t: "error", message: m });
           if (!text) text = `(${m})`;
@@ -142,5 +164,5 @@ export async function POST(req: Request) {
       try { controller.close(); } catch { /* closed */ }
     },
   });
-  return new Response(stream, { headers: { "content-type": "application/x-ndjson; charset=utf-8", "cache-control": "no-store" } });
+  return new Response(stream, { headers: { "content-type": "application/x-ndjson; charset=utf-8", "cache-control": "no-store, no-transform", "x-accel-buffering": "no" } });
 }

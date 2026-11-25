@@ -9,6 +9,7 @@ import {
 import { deleteRoadmapTask, generateRoadmap, setRoadmapTaskStatus, toggleRoadmapSubtask } from "@/app/(dashboard)/roadmap/actions";
 import { ConfirmDialog, Dialog, DialogBody, DialogFooter, dialogBtn, disconnectIcon } from "@/components/dashboard/dialog";
 import { TaskForm } from "@/components/roadmap/task-form";
+import { NovaDots, StepProgress } from "@/components/nova/answer-progress";
 import { addMonths, CATEGORIES, isOpen, monthLabel, ROADMAP_CHANGED, STATUS_LABEL, STATUSES, type Category, type RoadmapMonth, type RoadmapTask, type TaskStatus } from "@/lib/roadmap/types";
 import { cn } from "@/lib/utils";
 
@@ -358,6 +359,7 @@ function GenerateDialog({ open, month, refresh, taskCount, focus, onClose, onDon
   const [pending, start] = useTransition();
   const [value, setValue] = useState(focus);
   const [err, setErr] = useState<string | null>(null);
+  const [startedAt, setStartedAt] = useState(0);
   const label = useMemo(() => monthLabel(month), [month]);
   return (
     <Dialog open={open} onClose={onClose} busy={pending} size="md"
@@ -368,13 +370,18 @@ function GenerateDialog({ open, month, refresh, taskCount, focus, onClose, onDon
         <label className="block text-sm font-medium text-foreground" htmlFor="focus">Focus (optional)</label>
         <input id="focus" value={value} onChange={(e) => setValue(e.target.value)} maxLength={400} placeholder="e.g. more backlinks and local SEO" disabled={pending}
           className="mt-1.5 h-9 w-full rounded-lg border border-border bg-background px-3 text-sm text-foreground outline-none focus-visible:ring-2 focus-visible:ring-accent" />
-        {pending && <p className="mt-3 flex items-center gap-2 text-sm text-secondary"><Loader2 className="size-4 animate-spin" aria-hidden /> Reading the data and writing the strategy…</p>}
+        {pending && startedAt > 0 && (
+          <div className="mt-4 space-y-2.5">
+            <p className="flex items-center gap-2.5 text-sm text-secondary"><NovaDots /> Reading the data and writing the strategy…</p>
+            <StepProgress startedAt={startedAt} expectedS={150} label="Usually about 2 minutes" />
+          </div>
+        )}
         {err && <p role="alert" className="mt-3 rounded-lg bg-negative-soft px-3 py-2 text-[13px] text-negative">{err}</p>}
       </DialogBody>
       <DialogFooter>
         <button type="button" className={dialogBtn.secondary} onClick={onClose} disabled={pending}>Cancel</button>
         <button type="button" data-autofocus className={dialogBtn.primary} disabled={pending}
-          onClick={() => { setErr(null); start(async () => { const r = await generateRoadmap(month, value); if (r.ok) onDone({ ok: true, text: r.message }); else setErr(r.error); }); }}>
+          onClick={() => { setErr(null); setStartedAt(Date.now()); start(async () => { const r = await generateRoadmap(month, value); if (r.ok) onDone({ ok: true, text: r.message }); else setErr(r.error); }); }}>
           {pending ? <Loader2 className="size-4 animate-spin" aria-hidden /> : <Sparkles className="size-4" aria-hidden />} {refresh ? "Refresh" : "Generate"}
         </button>
       </DialogFooter>

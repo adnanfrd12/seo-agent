@@ -6,7 +6,7 @@ import {
   ArrowUp, CalendarPlus, Check, ChevronDown, ChevronLeft, CircleAlert, FileSearch, History, ListPlus, Loader2, Maximize2, MessageSquarePlus, Minimize2,
   PenLine, Square, Store, Trash2, TrendingDown, X,
 } from "lucide-react";
-import { AnswerProgress, AnswerTime } from "@/components/nova/answer-progress";
+import { AnswerTime, StepProgress, WorkingIndicator } from "@/components/nova/answer-progress";
 import { Markdown } from "@/components/nova/markdown";
 import { NAV } from "@/lib/analytics/nav";
 import { ROADMAP_CHANGED } from "@/lib/roadmap/types";
@@ -15,7 +15,7 @@ import { cn } from "@/lib/utils";
 type Action = { tool: string; ok: boolean; summary: string };
 type Activity = { id: string; name: string; status: "running" | "done" | "failed"; summary?: string; startedAt?: number };
 type Confirm = { id: string; title: string; detail: string; state: "pending" | "busy" | "done" | "cancelled" | "failed"; result?: string };
-type Msg = { id: string; role: "user" | "assistant"; content: string; actions?: Action[]; activity?: Activity[]; confirms?: Confirm[]; streaming?: boolean; error?: string; startedAt?: number; finishedAt?: number };
+type Msg = { id: string; role: "user" | "assistant"; content: string; actions?: Action[]; activity?: Activity[]; confirms?: Confirm[]; streaming?: boolean; error?: string; startedAt?: number; finishedAt?: number; stopped?: boolean };
 type Conv = { id: string; title: string; updated_at: string };
 
 const TOOL_LABEL: Record<string, string> = {
@@ -33,6 +33,13 @@ const SUGGESTIONS = [
 ];
 
 const PAGE_PROMPT = "What does this page show for my site right now, and what should I do about it?";
+const ABOUT_PAGE = /\b(this|the|current) (page|screen|tab|view)\b|\bhere\b|\bwhat (i|we) (see|am seeing|are seeing)\b/i;
+/** The text visible in the page's main area (not Nova), for questions about the page. */
+function visiblePageText(): string | undefined {
+  const main = document.querySelector("main");
+  const t = main?.innerText.replace(/[ \t]+/g, " ").replace(/\n{2,}/g, "\n").trim();
+  return t ? t.slice(0, 6000) : undefined;
+}
 
 /** The open dashboard page, named like the sidebar ("Google Search Console: Pages"). */
 function pageFor(path: string): { path: string; label: string } {
@@ -76,6 +83,7 @@ export function Nova({ firstName, clientName, canEdit }: { firstName: string | n
   const [messages, setMessages] = useState<Msg[]>([]);
   const [input, setInput] = useState("");
   const [busy, setBusy] = useState(false);
+  const [stopReady, setStopReady] = useState(false);
   const [convs, setConvs] = useState<Conv[] | null>(null);
   const abort = useRef<AbortController | null>(null);
   const scroller = useRef<HTMLDivElement>(null);
@@ -89,18 +97,23 @@ export function Nova({ firstName, clientName, canEdit }: { firstName: string | n
   const send = useCallback(async (raw: string) => {
     const text = raw.trim();
     if (!text || busy) return;
-    setInput(""); setView("chat"); setBusy(true);
+    setInput(""); setView("chat"); setBusy(true); setStopReady(false);
+    setTimeout(() => setStopReady(true), 1200);
     setMessages((ms) => [...ms, { id: uid(), role: "user", content: text }, { id: uid(), role: "assistant", content: "", activity: [], confirms: [], streaming: true, startedAt: Date.now() }]);
     const ac = new AbortController(); abort.current = ac;
     try {
-      const res = await fetch("/api/nova/chat", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ conversationId, message: text, page }), signal: ac.signal });
+      const res = await fetch("/api/nova/chat", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ conversationId, message: text, page: { ...page, text: text === PAGE_PROMPT || ABOUT_PAGE.test(text) ? visiblePageText() : undefined } }), signal: ac.signal });
       if (!res.ok || !res.body) {
         const j = await res.json().catch(() => ({ error: "Nova couldn't answer. Try again." }));
         patchLast((m) => ({ ...m, streaming: false, error: j.error ?? "Nova couldn't answer. Try again." }));
         return;
       }
+      if (!(res.headers.get("content-type") ?? "").includes("ndjson")) {
+        patchLast((m) => ({ ...m, error: "Nova couldn't answer: your session may have expired. Reload the page and try again." }));
+        return;
+      }
       const reader = res.body.getReader(), dec = new TextDecoder();
-      let buf = "", didChange = false;
+      let buf = "", didChange = false, finished = false;
       for (;;) {
         const { value, done } = await reader.read();
         if (done) break;
@@ -112,6 +125,7 @@ export function Nova({ firstName, clientName, canEdit }: { firstName: string | n
           let e: Record<string, unknown>;
           try { e = JSON.parse(line); } catch { continue; }
           if (e.t === "start" || e.t === "done") { if (e.conversationId) setConversationId(String(e.conversationId)); }
+          if (e.t === "done") finished = true;
           if (e.t === "text") patchLast((m) => ({ ...m, content: m.content + String(e.v) }));
           if (e.t === "tool") patchLast((m) => {
             const act = m.activity ?? [];
@@ -125,8 +139,10 @@ export function Nova({ firstName, clientName, canEdit }: { firstName: string | n
         }
       }
       if (didChange) router.refresh();
+      if (!finished) patchLast((m) => ({ ...m, error: "The connection dropped before Nova finished. Open the conversation from history or try again." }));
     } catch (err) {
-      if ((err as Error).name !== "AbortError") patchLast((m) => ({ ...m, error: "The connection was interrupted. Try again." }));
+      if ((err as Error).name === "AbortError") patchLast((m) => ({ ...m, stopped: true }));
+      else patchLast((m) => ({ ...m, error: "The connection was interrupted. Try again." }));
     } finally {
       patchLast((m) => ({ ...m, streaming: false, finishedAt: Date.now() }));
       setBusy(false); abort.current = null; setConvs(null);
@@ -278,14 +294,14 @@ export function Nova({ firstName, clientName, canEdit }: { firstName: string | n
                       <div className="flex gap-2.5">
                         <Orb size={28} />
                         <div className="min-w-0 flex-1 space-y-2.5 pt-0.5">
-                          <ActivityList activity={m.activity} actions={m.actions} />
+                          <ActivityList activity={m.activity} actions={m.actions} live={Boolean(m.streaming)} />
                           {m.content && <Markdown text={m.content} />}
-                          {m.streaming && m.content && <span className="inline-block h-4 w-1.5 animate-pulse rounded-sm bg-accent align-middle" aria-hidden />}
                           {m.streaming && m.startedAt && (
-                            <AnswerProgress startedAt={m.startedAt} activity={m.activity ?? []} hasText={Boolean(m.content)}
-                              label={(() => { const run = m.activity?.find((a) => a.status === "running"); return run ? `${TOOL_LABEL[run.name] ?? "Working"}…` : m.content ? "Writing the answer…" : "Thinking…"; })()} />
+                            <WorkingIndicator startedAt={m.startedAt}
+                              label={(() => { const run = m.activity?.find((a) => a.status === "running"); return run ? `${TOOL_LABEL[run.name] ?? "Working"}…` : m.content ? "Writing…" : "Thinking…"; })()} />
                           )}
-                          {!m.streaming && m.startedAt && m.finishedAt && !m.error && <AnswerTime ms={m.finishedAt - m.startedAt} />}
+                          {m.stopped && !m.content && <p className="text-[13px] text-muted">Stopped before Nova answered. If it finished in the background, the answer is in the conversation history.</p>}
+                          {!m.streaming && m.startedAt && m.finishedAt && !m.error && <AnswerTime ms={m.finishedAt - m.startedAt} stopped={m.stopped} />}
                           {(m.confirms ?? []).map((c) => <ConfirmCard key={c.id} c={c} canAct={canEdit} onDecide={(d) => decide(m.id, c, d)} />)}
                           {m.error && <p role="alert" className="flex items-start gap-2 rounded-lg bg-negative-soft px-3 py-2 text-[13px] text-negative"><CircleAlert className="mt-0.5 size-4 shrink-0" />{m.error}</p>}
                         </div>
@@ -315,7 +331,7 @@ export function Nova({ firstName, clientName, canEdit }: { firstName: string | n
                 onKeyDown={(e) => { if (e.key === "Enter" && !e.shiftKey && !e.nativeEvent.isComposing) { e.preventDefault(); void send(input); } }}
                 className="max-h-40 min-h-[36px] flex-1 resize-none bg-transparent py-2 text-[14px] leading-snug outline-none placeholder:text-faint disabled:opacity-60" />
               {busy
-                ? <button type="button" onClick={() => abort.current?.abort()} aria-label="Stop" className="grid size-9 shrink-0 place-items-center rounded-xl bg-foreground text-surface hover:opacity-90"><Square className="size-3.5 fill-current" /></button>
+                ? <button type="button" onClick={() => abort.current?.abort()} disabled={!stopReady} aria-label="Stop answering" title="Stop answering" className="grid size-9 shrink-0 place-items-center rounded-xl bg-foreground text-surface transition hover:opacity-90 disabled:opacity-40"><Square className="size-3.5 fill-current" /></button>
                 : <button type="submit" disabled={!input.trim()} aria-label="Send" className="nova-send grid size-9 shrink-0 place-items-center rounded-xl text-white transition disabled:opacity-40"><ArrowUp className="size-[18px]" strokeWidth={2.5} /></button>}
             </div>
             <p className="mt-1.5 px-1 text-[11px] text-faint">Nova uses this client&apos;s connected data and can make mistakes. Deleting tasks or replacing a strategy always asks you first.</p>
@@ -331,26 +347,30 @@ function IconBtn({ label, onClick, children, active, className }: { label: strin
 }
 
 /** What Nova did: a live list while it works, then a collapsible summary. */
-function ActivityList({ activity, actions }: { activity?: Activity[]; actions?: Action[] }) {
+function ActivityList({ activity, actions, live }: { activity?: Activity[]; actions?: Action[]; live?: boolean }) {
   const [open, setOpen] = useState(false);
-  const items = activity?.length ? activity.map((a) => ({ key: a.id, status: a.status, text: a.summary ?? `${TOOL_LABEL[a.name] ?? a.name}${a.status === "failed" ? " (didn't work)" : ""}` }))
-    : (actions ?? []).map((a, i) => ({ key: String(i), status: a.ok ? "done" as const : "failed" as const, text: a.summary }));
+  const items = activity?.length ? activity.map((a) => ({ key: a.id, status: a.status, startedAt: a.startedAt, long: a.name === "generate_monthly_strategy", text: a.summary ?? `${TOOL_LABEL[a.name] ?? a.name}${a.status === "failed" ? " (didn't work)" : ""}` }))
+    : (actions ?? []).map((a, i) => ({ key: String(i), status: a.ok ? "done" as const : "failed" as const, startedAt: undefined as number | undefined, long: false, text: a.summary }));
   if (!items.length) return null;
   const running = items.some((i) => i.status === "running");
+  const expanded = open || running || Boolean(live);
   const writes = items.filter((i) => /^(Added|Updated|Completed|Reopened|Generated|Deleted|Waiting)/.test(i.text) && i.status === "done").length;
   return (
     <div className="rounded-xl border border-hairline bg-surface-sunken text-[12.5px]">
-      <button type="button" onClick={() => setOpen((v) => !v)} aria-expanded={open || running} className="flex w-full items-center gap-2 px-3 py-2 text-left text-secondary hover:text-foreground">
-        {running ? <Loader2 className="size-3.5 animate-spin text-accent" /> : <Check className="size-3.5 text-positive" />}
-        <span className="min-w-0 flex-1 truncate">{running ? items.find((i) => i.status === "running")!.text + "…" : `${items.length} step${items.length > 1 ? "s" : ""}${writes ? ` · ${writes} roadmap change${writes > 1 ? "s" : ""}` : ""}`}</span>
-        {!running && <ChevronDown className={cn("size-3.5 transition-transform", !open && "-rotate-90")} />}
+      <button type="button" onClick={() => setOpen((v) => !v)} disabled={Boolean(live)} aria-expanded={expanded} className="flex w-full items-center gap-2 px-3 py-2 text-left text-secondary hover:text-foreground disabled:cursor-default">
+        {live ? <Loader2 className="size-3.5 animate-spin text-accent" /> : <Check className="size-3.5 text-positive" />}
+        <span className="min-w-0 flex-1 truncate">{live ? "What Nova is doing" : `${items.length} step${items.length > 1 ? "s" : ""}${writes ? ` · ${writes} roadmap change${writes > 1 ? "s" : ""}` : ""}`}</span>
+        {!live && <ChevronDown className={cn("size-3.5 transition-transform", !open && "-rotate-90")} />}
       </button>
-      {(open || running) && (
+      {expanded && (
         <ul className="space-y-1 border-t border-hairline px-3 py-2">
           {items.map((i) => (
             <li key={i.key} className="flex items-start gap-2">
               {i.status === "running" ? <Loader2 className="mt-0.5 size-3 shrink-0 animate-spin text-muted" /> : i.status === "failed" ? <X className="mt-0.5 size-3 shrink-0 text-negative" /> : <Check className="mt-0.5 size-3 shrink-0 text-positive" />}
-              <span className={cn("leading-snug", i.status === "failed" ? "text-negative" : "text-secondary")}>{i.text}</span>
+              <span className="min-w-0 flex-1">
+                <span className={cn("leading-snug", i.status === "failed" ? "text-negative" : "text-secondary")}>{i.text}{i.status === "running" ? "…" : ""}</span>
+                {i.status === "running" && i.long && i.startedAt && <span className="mt-1.5 block"><StepProgress startedAt={i.startedAt} expectedS={150} label="Usually about 2 minutes" /></span>}
+              </span>
             </li>
           ))}
         </ul>

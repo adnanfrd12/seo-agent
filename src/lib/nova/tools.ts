@@ -24,7 +24,7 @@ export interface NovaCtx {
   canEdit: boolean;
   brief: () => Promise<Brief>;
   /** the dashboard page the user has open while chatting */
-  page: { path: string; label: string } | null;
+  page: { path: string; label: string; text?: string } | null;
 }
 export interface ToolOutcome {
   content: string;
@@ -145,7 +145,10 @@ export async function runTool(ctx: NovaCtx, name: string, raw: unknown): Promise
     switch (tool) {
       case "get_page_data": {
         if (!ctx.page) return { content: json({ error: "No page context: ask the user which data they mean." }), isError: true };
-        return { content: await pageData(ctx.admin, ctx.client.id, await ctx.brief(), ctx.page.path), action: { tool, ok: true, summary: `Read this page: ${ctx.page.label}` } };
+        const data = await pageData(ctx.admin, ctx.client.id, await ctx.brief(), ctx.page.path);
+        // what the user sees on screen (explanations, settings, tables) alongside the stored data behind it
+        const content = ctx.page.text ? `${data}\n\nTEXT VISIBLE ON THE PAGE (as the user sees it):\n${ctx.page.text}` : data;
+        return { content, action: { tool, ok: true, summary: `Read this page: ${ctx.page.label}` } };
       }
       case "get_client_data_sources": return { content: json(dataSources(await ctx.brief())), action: { tool, ok: true, summary: "Checked connected data sources" } };
       case "get_client_analytics": {

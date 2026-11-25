@@ -216,10 +216,19 @@ a.lift:hover, button.lift:hover { border-color: var(--border-strong); }
 /* answer progress bar: brand gradient flowing left while Nova works */
 .nova-progress { background: linear-gradient(90deg, #ff8a4c, var(--accent) 60%, #d93a6c); background-size: 200% 100%; animation: nova-flow 1.6s linear infinite; }
 @keyframes nova-flow { to { background-position: -200% 0; } }
+/* "thinking" dots: four brand-orange dots that pulse in turn while the group slowly turns */
+.nova-dots { position: relative; display: inline-block; width: 18px; height: 18px; flex-shrink: 0; animation: nova-turn 2.4s linear infinite; }
+.nova-dots > span { position: absolute; width: 5px; height: 5px; border-radius: 9999px; background: var(--accent); animation: nova-pulse 1.2s ease-in-out infinite; }
+.nova-dots > span:nth-child(1) { top: 0; left: 6.5px; }
+.nova-dots > span:nth-child(2) { top: 6.5px; right: 0; animation-delay: 0.15s; }
+.nova-dots > span:nth-child(3) { bottom: 0; left: 6.5px; animation-delay: 0.3s; }
+.nova-dots > span:nth-child(4) { top: 6.5px; left: 0; animation-delay: 0.45s; }
+@keyframes nova-pulse { 0%, 100% { opacity: 0.35; transform: scale(0.7); } 50% { opacity: 1; transform: scale(1.15); } }
+@keyframes nova-turn { to { transform: rotate(360deg); } }
 .nova-send:not(:disabled):hover { filter: brightness(1.06); }
 .nova-hero { background: radial-gradient(130% 150% at 100% 0%, color-mix(in oklab, var(--accent) 13%, transparent), transparent 62%), var(--surface-sunken); }
 .nova-md :where(h3, h4) + * { margin-top: 0.35rem; }
-@media (prefers-reduced-motion: reduce) { .nova-launcher .nova-orb, .nova-progress { animation: none; transition: none; } .nova-panel { transition: none !important; } }
+@media (prefers-reduced-motion: reduce) { .nova-launcher .nova-orb, .nova-progress, .nova-dots, .nova-dots > span { animation: none; transition: none; } .nova-dots > span { opacity: 0.8; } .nova-panel { transition: none !important; } }
 
 /* ---------------------------------------------------------------- modal dialogs (components/dashboard/dialog) */
 @keyframes dialog-in { from { opacity: 0; transform: translateY(8px) scale(0.98); } }
