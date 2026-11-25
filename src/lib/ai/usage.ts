@@ -4,7 +4,8 @@ import { todayIn } from "@/lib/analytics/range";
 
 /**
  * Claude spend for one client, from every place the dashboard records it: Nova messages, roadmap generations,
- * AI quick wins runs, AI insights / 30-day strategy runs and SEO Coach analyses. Each record keeps its own
+ * AI quick wins runs, AI insights / 30-day strategy / PDF import runs, SEO Coach analyses, and the usage log
+ * (ai_usage_events) for blog post reading and the SEO Toolkit. Each record keeps its own
  * time and cost, so totals by day, month, feature and model are exact for these features.
  */
 export interface UsageEvent { at: string; feature: string; model: string | null; cost: number }
@@ -12,20 +13,35 @@ export interface UsageEvent { at: string; feature: string; model: string | null;
 const num = (v: unknown) => { const n = Number(v); return Number.isFinite(n) ? n : 0; };
 const dayIn = (iso: string, tz: string) => new Intl.DateTimeFormat("en-CA", { timeZone: tz, year: "numeric", month: "2-digit", day: "2-digit" }).format(new Date(iso));
 
+export type UsageFeature = "blog_geo" | "toolkit_content" | "toolkit_brief" | "toolkit_comparison";
+const FEATURE_LABEL: Record<string, string> = { blog_geo: "Blog post reading", toolkit_content: "SEO Toolkit", toolkit_brief: "SEO Toolkit", toolkit_comparison: "SEO Toolkit" };
+
+/** Logs one run's Claude cost (features without a run table of their own). Never throws: a failed log must not fail the run. */
+export async function recordClaudeUse(admin: SupabaseClient, clientId: string, feature: UsageFeature, model: string, cost: number, calls = 1) {
+  if (!(cost > 0)) return;
+  try {
+    const { error } = await admin.from("ai_usage_events").insert({ client_id: clientId, feature, model, calls, cost_usd: Number(cost.toFixed(5)) });
+    if (error) console.error(`ai_usage_events: ${error.message}`);
+  } catch (e) { console.error("ai_usage_events", e); }
+}
+
 export async function claudeUsage(admin: SupabaseClient, clientId: string, timezone: string) {
-  const [nova, roadmap, aiqw, runs, coach] = await Promise.all([
+  const [nova, roadmap, aiqw, runs, coach, logged] = await Promise.all([
     admin.from("nova_messages").select("created_at, cost_usd").eq("client_id", clientId).eq("role", "assistant").gt("cost_usd", 0).limit(5000),
     admin.from("roadmap_changes").select("created_at, after").eq("client_id", clientId).eq("action", "month.generate").limit(1000),
     admin.from("dfs_cache").select("data, cost, fetched_at").eq("client_id", clientId).eq("endpoint", "aiqw").like("params_hash", "run:%").limit(1000),
     admin.from("ai_analysis_runs").select("created_at, kind, model, cost_usd").eq("client_id", clientId).not("cost_usd", "is", null).limit(2000),
     admin.from("dfs_cache").select("endpoint, data, cost, fetched_at").eq("client_id", clientId).like("endpoint", "coach_%").limit(20),
+    // before migration 20261125000026 is applied this returns an error and simply adds nothing
+    admin.from("ai_usage_events").select("created_at, feature, model, calls, cost_usd").eq("client_id", clientId).limit(5000),
   ]);
   const events: UsageEvent[] = [
     ...(nova.data ?? []).map((r) => ({ at: r.created_at, feature: "Nova chat", model: null, cost: num(r.cost_usd) })),
     ...(roadmap.data ?? []).map((r) => { const a = (r.after ?? {}) as { cost_usd?: unknown; model?: string }; return { at: r.created_at, feature: "SEO Roadmap", model: a.model ?? null, cost: num(a.cost_usd) }; }),
     ...(aiqw.data ?? []).map((r) => { const d = (r.data ?? {}) as { startedAt?: string; usage?: { cost?: number; model?: string } }; return { at: d.startedAt ?? r.fetched_at, feature: "AI Quick Wins", model: d.usage?.model ?? null, cost: num(d.usage?.cost ?? r.cost) }; }),
-    ...(runs.data ?? []).map((r) => ({ at: r.created_at, feature: r.kind === "strategy" ? "30-Day Strategy" : r.kind === "insights" ? "AI SEO Insights" : "PDF import", model: r.model ?? null, cost: num(r.cost_usd) })),
+    ...(runs.data ?? []).map((r) => ({ at: r.created_at, feature: r.kind === "strategy" ? "30-Day Strategy" : r.kind === "insights" ? "AI SEO Insights" : "PDF report reading", model: r.model ?? null, cost: num(r.cost_usd) })),
     ...(coach.data ?? []).map((r) => { const d = (r.data ?? {}) as { generatedAt?: string; model?: string; cost?: number }; return { at: d.generatedAt ?? r.fetched_at, feature: "SEO Coach", model: d.model ?? null, cost: num(d.cost ?? r.cost) }; }),
+    ...(logged.data ?? []).map((r) => ({ at: r.created_at as string, feature: FEATURE_LABEL[r.feature as string] ?? String(r.feature), model: (r.model as string) ?? null, cost: num(r.cost_usd) })),
   ].filter((e) => e.cost > 0 && e.at);
 
   const today = todayIn(timezone), month = today.slice(0, 7);

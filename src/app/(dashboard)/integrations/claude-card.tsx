@@ -7,7 +7,7 @@ import { claudeMonthSpend } from "@/lib/aiqw/store";
 import { createAdminClient } from "@/lib/supabase/admin";
 
 const usd = (n: number) => `$${n < 10 ? n.toFixed(2) : n.toFixed(0)}`;
-const modelName = (id: string) => (id in MODELS ? MODELS[id as keyof typeof MODELS].label.replace(/ \(.*\)$/, "") : id.replace(/^claude-/, "Claude ").replace(/-(\d)-(\d)$/, " $1.$2"));
+const modelName = (id: string) => (id in MODELS ? MODELS[id as keyof typeof MODELS].label.replace(/ \(.*\)$/, "") : id.replace(/^claude-(\w)/, (_, c: string) => `Claude ${c.toUpperCase()}`).replace(/-(\d)-(\d)$/, " $1.$2"));
 
 /** Claude (Anthropic API): the model in use, the monthly budget, and spend in total, this month, today and by feature. */
 export async function ClaudeCard({ canEdit, clientId, timezone }: { canEdit: boolean; clientId: string; timezone: string }) {
@@ -25,7 +25,7 @@ export async function ClaudeCard({ canEdit, clientId, timezone }: { canEdit: boo
       <div className="flex flex-wrap items-start justify-between gap-3">
         <div>
           <h2 id="claude-title" className="text-base font-semibold">Claude (Anthropic)</h2>
-          <p className="text-sm text-muted">Writes Nova&apos;s answers, the SEO roadmap, AI quick wins, insights, the 30-day strategy and the SEO Coach. Paid per use.</p>
+          <p className="text-sm text-muted">Writes Nova&apos;s answers, the SEO roadmap, AI quick wins, insights, the 30-day strategy, the SEO Coach and the SEO Toolkit, and reads PDF reports and blog posts. Paid per use.</p>
         </div>
         <span className={configured ? "text-sm font-medium text-positive" : "text-sm text-negative"}>{configured ? "Connected" : "Not configured"}</span>
       </div>
@@ -76,7 +76,7 @@ export async function ClaudeCard({ canEdit, clientId, timezone }: { canEdit: boo
               keys={[{ key: "cost", label: "Claude", color: "var(--series)" }]}
               columns={usage.perDay.map((d) => ({ label: new Date(`${d.day}T00:00:00Z`).toLocaleDateString("en-US", { month: "short", day: "numeric", timeZone: "UTC" }), values: { cost: d.cost } }))} />
           </div>
-          <p className="mt-3 text-xs text-muted">Totals cover the features above, each recorded with its own cost when it runs. Blog writing, the SEO Toolkit and PDF report reading don&apos;t record their cost yet.</p>
+          <p className="mt-3 text-xs text-muted">Every Claude feature records its own cost when it runs: Nova, the roadmap, AI quick wins, insights, strategy, SEO Coach, PDF report reading, blog post reading and the SEO Toolkit. Blog and toolkit costs are recorded from Nov 25, 2026. The monthly budget limits Nova and the AI runs; blog reading and the toolkit have their own per-run limits.</p>
         </>
       )}
     </section>

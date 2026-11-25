@@ -1,6 +1,7 @@
 import "server-only";
 import type { SupabaseClient } from "@supabase/supabase-js";
 import { aiErrorMessage } from "@/lib/ai/claude";
+import { recordClaudeUse } from "@/lib/ai/usage";
 import { loadAudit } from "@/lib/dataforseo/audit";
 import { localIdentity } from "@/lib/dataforseo/local";
 import { resolveTarget } from "@/lib/dataforseo/research";
@@ -47,11 +48,19 @@ async function pool<T>(items: T[], size: number, fn: (x: T) => Promise<void>) {
   await Promise.all(Array.from({ length: Math.min(size, items.length) }, async () => { while (i < items.length) await fn(items[i++]); }));
 }
 
-export async function syncBlog(
-  admin: SupabaseClient, clientId: string,
-  opts: { deadline?: number; force?: boolean; geo?: boolean; maxCost?: number; via?: "auto" | "crawler" } = {},
-): Promise<BlogRun> {
+type SyncOpts = { deadline?: number; force?: boolean; geo?: boolean; maxCost?: number; via?: "auto" | "crawler" };
+
+export async function syncBlog(admin: SupabaseClient, clientId: string, opts: SyncOpts = {}): Promise<BlogRun> {
   const run: BlogRun = { source: null, listed: 0, fetched: 0, removed: 0, geoRead: 0, geoPending: 0, cost: 0, errors: [], stopped: null };
+  try {
+    return await syncInto(run, admin, clientId, opts);
+  } finally {
+    // whatever was read before an early stop or error was still paid for
+    await recordClaudeUse(admin, clientId, "blog_geo", GEO_MODEL, run.cost, Math.max(1, run.geoRead));
+  }
+}
+
+async function syncInto(run: BlogRun, admin: SupabaseClient, clientId: string, opts: SyncOpts): Promise<BlogRun> {
   const deadline = opts.deadline ?? Date.now() + 240_000;
   const maxCost = opts.maxCost ?? RUN_COST_LIMIT;
   const target = await resolveTarget(admin, clientId);

@@ -3,13 +3,14 @@
 import { revalidatePath } from "@/lib/revalidate";
 import { getSession } from "@/lib/analytics/client-context";
 import { aiErrorMessage } from "@/lib/ai/claude";
+import { recordClaudeUse } from "@/lib/ai/usage";
 import { BudgetError } from "@/lib/dataforseo/budget";
 import { DfsError } from "@/lib/dataforseo/client";
 import { resolveTarget } from "@/lib/dataforseo/research";
 import { createAdminClient } from "@/lib/supabase/admin";
-import { defaultBriefKeyword, runBrief } from "@/lib/toolkit/brief";
+import { BRIEF_MODEL, defaultBriefKeyword, runBrief } from "@/lib/toolkit/brief";
 import { runCluster } from "@/lib/toolkit/cluster";
-import { runComparison } from "@/lib/toolkit/comparison";
+import { COMP_MODEL, runComparison } from "@/lib/toolkit/comparison";
 import { runContent } from "@/lib/toolkit/content";
 import { analyzePage } from "@/lib/toolkit/page";
 import { ownUrl, saveTool } from "@/lib/toolkit/store";
@@ -44,6 +45,7 @@ export async function runToolkit(slug: ToolSlug, input: string): Promise<Result>
         const url = value ? ownUrl(value, target.domain) : null;
         if (value && !url) return { ok: false, error: `Enter a page on ${target.domain}, or leave empty for the top 10 blog posts.` };
         const r = await runContent(admin, client.id, url);
+        await recordClaudeUse(admin, client.id, "toolkit_content", r.model, r.cost, Math.max(1, r.pages.filter((pg) => pg.ai).length));
         await saveTool(admin, client.id, slug, r, r.cost, { url });
         message = `Reviewed ${r.pages.length} page${r.pages.length === 1 ? "" : "s"} (AI cost ${usd(r.cost)}).`;
         break;
@@ -52,6 +54,7 @@ export async function runToolkit(slug: ToolSlug, input: string): Promise<Result>
         const kw = value.toLowerCase() || (await defaultBriefKeyword(admin, client.id));
         if (!kw) return { ok: false, error: "Enter a keyword." };
         const r = await runBrief(admin, client.id, kw, target);
+        await recordClaudeUse(admin, client.id, "toolkit_brief", BRIEF_MODEL, r.cost.ai);
         await saveTool(admin, client.id, slug, r, r.cost.serp + r.cost.ai, { keyword: kw });
         message = `Brief for "${kw}" ready (SERP ${usd(r.cost.serp)} + AI ${usd(r.cost.ai)}).`;
         break;
@@ -70,6 +73,7 @@ export async function runToolkit(slug: ToolSlug, input: string): Promise<Result>
       }
       case "seo-competitor-pages": {
         const r = await runComparison(admin, client.id, target, client.name);
+        await recordClaudeUse(admin, client.id, "toolkit_comparison", COMP_MODEL, r.cost);
         await saveTool(admin, client.id, slug, r, r.cost);
         message = `${r.pages.length} page outlines drafted (AI cost ${usd(r.cost)}).`;
         break;
