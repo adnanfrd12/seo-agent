@@ -27,6 +27,11 @@ export interface ComposioRead {
 }
 
 const DAY_S = 86_400;
+/** LinkedIn API versions (YYYYMM), newest first: the current month back a year. */
+function liVersions(): string[] {
+  const d = new Date();
+  return Array.from({ length: 12 }, (_, i) => { const x = new Date(Date.UTC(d.getUTCFullYear(), d.getUTCMonth() - i, 1)); return `${x.getUTCFullYear()}${String(x.getUTCMonth() + 1).padStart(2, "0")}`; });
+}
 const body = (v: unknown) => (typeof v === "string" && v.trim() ? v.trim().slice(0, 1200) : null);
 const unwrap = (d: unknown): unknown => (d && typeof d === "object" && "response_data" in d ? (d as { response_data: unknown }).response_data : d);
 const n = (v: unknown) => (typeof v === "number" && Number.isFinite(v) ? v : typeof v === "string" && /^-?\d+(\.\d+)?$/.test(v.trim()) ? Number(v) : null);
@@ -166,20 +171,55 @@ export async function readComposio(clientId: string, p: Platform, connectedAccou
       expansions: ["attachments.media_keys"], media_fields: ["url", "preview_image_url", "type"] }, "Posts") : null;
     const tweets = findArray(tl, ["data", "tweets"]);
     // pictures come back once, under includes.media, keyed by media_key
-    const pics = new Map(findArray((tl as Record<string, unknown> | null)?.includes ?? tl, ["media"]).map((m) => [String(m.media_key), pickStr(m, ["url", "preview_image_url"])]));
-    const picOf = (t: Record<string, unknown>) => { const keys = (t.attachments as { media_keys?: unknown[] } | undefined)?.media_keys ?? []; for (const k of keys) { const u = pics.get(String(k)); if (u) return u; } return null; };
-    out.recent = tweets.map((t) => ({ id: String(t.id), title: String(t.text ?? "").slice(0, 160), text: body(t.text), image: picOf(t), url: username ? `https://x.com/${username}/status/${t.id}` : null, date: day(t.created_at),
+    const pics = new Map(findArray((tl as Record<string, unknown> | null)?.includes ?? tl, ["media"]).map((m) => [String(m.media_key), { url: pickStr(m, ["url", "preview_image_url"]), kind: pickStr(m, ["type"]) }]));
+    const mediaOf = (t: Record<string, unknown>) => ((t.attachments as { media_keys?: unknown[] } | undefined)?.media_keys ?? []).map((k) => pics.get(String(k))).filter(Boolean) as { url: string | null; kind: string | null }[];
+    const picOf = (t: Record<string, unknown>) => mediaOf(t).find((m) => m.url)?.url ?? null;
+    const kindOf = (t: Record<string, unknown>) => { const m = mediaOf(t); return m.some((x) => x.kind === "video" || x.kind === "animated_gif") ? "video" : m.length ? "photo" : "text"; };
+    out.recent = tweets.map((t) => ({ id: String(t.id), title: String(t.text ?? "").slice(0, 160), text: body(t.text), image: picOf(t), type: kindOf(t), url: username ? `https://x.com/${username}/status/${t.id}` : null, date: day(t.created_at),
       views: pick(t, ["impression_count"]), likes: pick(t, ["like_count"]), comments: pick(t, ["reply_count"]), shares: (pick(t, ["retweet_count"]) ?? 0) + (pick(t, ["quote_count"]) ?? 0) }));
     if (tweets.length && tweets.every((t) => pick(t, ["impression_count"]) == null)) notes.push("X didn't return impression counts for these posts.");
   }
 
   else if (p === "linkedin") {
+    const LI = "https://api.linkedin.com/rest";
+    // LinkedIn retires API versions after about a year: newest first, falling back while one is "not active"
+    const versions = liVersions();
+    const rest = async (url: string, what: string) => {
+      try {
+        for (;;) {
+          try { return await proxyGet({ connectedAccountId, url, headers: { "LinkedIn-Version": versions[0], "X-Restli-Protocol-Version": "2.0.0" } }); }
+          catch (e) { if (versions.length > 1 && e instanceof Error && /NONEXISTENT_VERSION|426/.test(e.message)) { versions.shift(); continue; } throw e; }
+        }
+      } catch (e) {
+        if (e instanceof ProviderRateLimitError) throw e;
+        notes.push(`${what} isn't available for this account (${(e instanceof Error ? e.message : "refused").slice(0, 120)}).`);
+        return null;
+      }
+    };
     let org = ctx.linkedinOrgId;
-    // the page the login administers: its name, vanity name (URL) and logo label the connected account
-    let info: unknown = null;
-    try { info = await run("LINKEDIN_GET_COMPANY_INFO", { role: "ADMINISTRATOR", state: "APPROVED", count: 10 }); }
-    catch (e) { if (e instanceof ProviderRateLimitError || !org) throw e; }
-    const infoOrg = info ? JSON.stringify(info).match(/urn:li:organization:(\d+)/)?.[1] ?? (pick(info, ["id"]) != null ? String(pick(info, ["id"])) : null) : null;
+    // every page this login administers; with several, the one matching the client's saved LinkedIn link,
+    // else the one with the most posts (a set "LinkedIn org id" always wins)
+    const pages: { id: string; info: Record<string, unknown>; total: number }[] = [];
+    if (!org) {
+      const acl = findArray(await rest(`${LI}/organizationAcls?q=roleAssignee&role=ADMINISTRATOR&state=APPROVED&count=50`, "Pages you manage"), ["elements"]);
+      const ids = [...new Set(acl.map((e) => String(e.organization ?? "").split(":").pop() ?? "").filter((x) => /^\d+$/.test(x)))].slice(0, 10);
+      for (const id of ids) {
+        const info = ((await rest(`${LI}/organizations/${id}`, "Page details")) ?? {}) as Record<string, unknown>;
+        const total = ids.length > 1 ? n(((await rest(`${LI}/posts?author=${encodeURIComponent(`urn:li:organization:${id}`)}&q=author&count=1`, "Page posts")) as { paging?: { total?: unknown } } | null)?.paging?.total) ?? 0 : 0;
+        pages.push({ id, info, total });
+      }
+      const want = (handleOf(ctx.url ?? "") ?? "").toLowerCase();
+      const match = want ? pages.find((x) => String(x.info.vanityName ?? "").toLowerCase() === want || x.id === want) : undefined;
+      org = (match ?? [...pages].sort((a, b) => b.total - a.total)[0])?.id ?? null;
+      if (pages.length > 1) notes.push(`This LinkedIn login manages ${pages.length} pages; showing ${String((pages.find((x) => x.id === org)?.info.localizedName) ?? org)}${match ? " (matches the saved LinkedIn link)" : " (the one with the most posts)"}. Set "LinkedIn org id" in Profiles and API access to choose another.`);
+    }
+    // name, vanity name (URL) and logo label the connected account
+    let info: unknown = pages.find((x) => x.id === org)?.info ?? null;
+    if (!info || !pickStr(info, ["localizedName", "vanityName"])) {
+      try { info = await run("LINKEDIN_GET_COMPANY_INFO", { role: "ADMINISTRATOR", state: "APPROVED", count: 10 }); }
+      catch (e) { if (e instanceof ProviderRateLimitError || !org) throw e; }
+    }
+    const infoOrg = info ? (pick(info, ["id"]) != null ? String(pick(info, ["id"])) : JSON.stringify(info).match(/urn:li:organization:(\d+)/)?.[1] ?? null) : null;
     if (!org) {
       org = infoOrg;
       if (!org) throw new Error("The connected LinkedIn login isn't an admin of a company page.");
@@ -197,7 +237,10 @@ export async function readComposio(clientId: string, p: Platform, connectedAccou
     const size = await soft("LINKEDIN_GET_NETWORK_SIZE", { organization_id: org, edgeType: "COMPANY_FOLLOWED_BY_MEMBER" }, "Follower count");
     out.followers = size ? pick(size, ["firstDegreeSize", "first_degree_size"]) : null;
     const startMs = (now - 90 * DAY_S) * 1000, endMs = now * 1000;
-    const daily = await soft("LINKEDIN_GET_SHARE_STATS", { organizational_entity: urn, time_intervals: `(timeRange:(start:${startMs},end:${endMs}),timeGranularityType:DAY)` }, "Daily post statistics");
+    const range = `(timeRange:(start:${startMs},end:${endMs}),timeGranularityType:DAY)`;
+    const notesBefore = notes.length;
+    let daily = await soft("LINKEDIN_GET_SHARE_STATS", { organizational_entity: urn, time_intervals: range }, "Daily post statistics");
+    if (!daily) { const d = await rest(`${LI}/organizationalEntityShareStatistics?q=organizationalEntity&organizationalEntity=${encodeURIComponent(urn)}&timeIntervals=${range}`, "Daily post statistics"); if (d) { daily = d; notes.splice(notesBefore, 1); } }
     for (const el of findArray(daily, ["elements"])) {
       const d = day(n((el.timeRange as Record<string, unknown> | undefined)?.start) ?? null);
       const s = (el.totalShareStatistics ?? {}) as Record<string, unknown>;
@@ -211,21 +254,13 @@ export async function readComposio(clientId: string, p: Platform, connectedAccou
       const er = n(s.engagement); if (er != null) out.totals.engagement_rate = er * 100;
       if (Object.keys(out.totals).length) notes.push("LinkedIn post totals are lifetime figures for the page.");
     }
-    const pv = await soft("LINKEDIN_GET_ORG_PAGE_STATS", { organization: urn, timeRangeStart: startMs, timeRangeEnd: endMs, timeGranularityType: "DAY" }, "Page views");
-    for (const el of findArray(pv, ["elements"])) add(out.series, "profile_views", day(n((el.timeRange as Record<string, unknown> | undefined)?.start) ?? null), pick(el, ["pageViews", "allPageViews"]));
+    const pvBefore = notes.length;
+    let pv = await soft("LINKEDIN_GET_ORG_PAGE_STATS", { organization: urn, timeRangeStart: startMs, timeRangeEnd: endMs, timeGranularityType: "DAY" }, "Page views");
+    if (!pv) { const d = await rest(`${LI}/organizationPageStatistics?q=organization&organization=${encodeURIComponent(urn)}&timeIntervals=${range}`, "Page views"); if (d) { pv = d; notes.splice(pvBefore, 1); } }
+    for (const el of findArray(pv, ["elements"])) add(out.series, "profile_views", day(n((el.timeRange as Record<string, unknown> | undefined)?.start) ?? null), pick(((el.totalPageStatistics as { views?: { allPageViews?: unknown } } | undefined)?.views?.allPageViews) ?? el, ["pageViews", "allPageViews"]));
 
     // the page's posts (no Composio tool lists them): LinkedIn's Posts API through Composio's proxy, then each
     // post's statistics and pictures. Read-only, with the same login and scopes.
-    const LI = "https://api.linkedin.com/rest";
-    const headers = { "LinkedIn-Version": "202510", "X-Restli-Protocol-Version": "2.0.0" };
-    const rest = async (url: string, what: string) => {
-      try { return await proxyGet({ connectedAccountId, url, headers }); }
-      catch (e) {
-        if (e instanceof ProviderRateLimitError) throw e;
-        notes.push(`${what} isn't available for this account (${(e instanceof Error ? e.message : "refused").slice(0, 120)}).`);
-        return null;
-      }
-    };
     const items = findArray(await rest(`${LI}/posts?author=${encodeURIComponent(urn)}&q=author&count=50&sortBy=LAST_MODIFIED`, "Page posts"), ["elements"]);
     const urns = items.map((x) => String(x.id ?? "")).filter(Boolean);
     const list = (xs: string[]) => `List(${xs.map(encodeURIComponent).join(",")})`;
@@ -260,13 +295,26 @@ export async function readComposio(clientId: string, p: Platform, connectedAccou
       };
       walk(await soft("LINKEDIN_GET_IMAGES", { ids: imgIds }, "Post images"));
     }
+    const videoUrn = (x: Record<string, unknown>) => { const id = pickStr(content(x).media, ["id"]); return id?.startsWith("urn:li:video:") ? id : null; };
+    const vidIds = [...new Set(items.map(videoUrn).filter((u): u is string => Boolean(u)))].slice(0, 50);
+    if (vidIds.length) {
+      const walk = (v: unknown, key?: string): void => {
+        if (!v || typeof v !== "object") return;
+        const o = v as Record<string, unknown>;
+        const thumb = typeof o.thumbnail === "string" ? o.thumbnail : null;
+        const id = typeof o.id === "string" ? o.id : key;
+        if (thumb && id) pictures.set(id, thumb);
+        for (const [k, x] of Object.entries(o)) walk(x, k.startsWith("urn:li:video:") ? k : undefined);
+      };
+      walk(await soft("LINKEDIN_GET_VIDEOS", { video_ids: vidIds }, "Video thumbnails"));
+    }
     // LinkedIn's text format: @[Name](urn) mentions, {hashtag|\#|tag} and backslash escapes
     const plain = (t: unknown) => typeof t === "string" ? t.replace(/@\[([^\]]+)\]\([^)]*\)/g, "@$1").replace(/\{hashtag\|\\?#\|([^}]+)\}/g, "#$1").replace(/\\([()[\]{}@#*_~<>|\\])/g, "$1") : null;
     out.recent = items.map((x) => {
       const id = String(x.id), st = stats.get(id) ?? {}, c = content(x), art = (c.article ?? {}) as Record<string, unknown>;
       const text = body(plain(x.commentary)) ?? body(art.title);
       const kind = c.multiImage ? "images" : c.article ? "article" : c.poll ? "poll" : String(pickStr(c.media, ["id"]) ?? "").includes(":video:") ? "video" : c.media ? "image" : "text";
-      const img = imageUrn(x);
+      const img = imageUrn(x) ?? videoUrn(x);
       return { id, title: (text ?? "").slice(0, 160), text, image: img ? pictures.get(img) ?? null : null, url: `https://www.linkedin.com/feed/update/${id}/`,
         date: day(n(x.publishedAt) ?? n(x.createdAt)), type: kind,
         views: n(st.impressionCount), likes: n(st.likeCount), comments: n(st.commentCount), shares: n(st.shareCount) };
