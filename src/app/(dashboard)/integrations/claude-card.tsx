@@ -6,7 +6,7 @@ import { MODELS } from "@/lib/aiqw/settings";
 import { claudeMonthSpend } from "@/lib/aiqw/store";
 import { createAdminClient } from "@/lib/supabase/admin";
 
-const usd = (n: number) => `$${n < 10 ? n.toFixed(2) : n.toFixed(0)}`;
+const usd = (n: number) => `$${n > 0 && n < 0.01 ? n.toFixed(4) : n < 10 ? n.toFixed(2) : n.toFixed(0)}`;
 const modelName = (id: string) => (id in MODELS ? MODELS[id as keyof typeof MODELS].label.replace(/ \(.*\)$/, "") : id.replace(/^claude-(\w)/, (_, c: string) => `Claude ${c.toUpperCase()}`).replace(/-(\d)-(\d)$/, " $1.$2"));
 
 /** Claude (Anthropic API): the model in use, the monthly budget, and spend in total, this month, today and by feature. */
