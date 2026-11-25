@@ -179,8 +179,14 @@ export async function selectResources(clientId: string, provider: ProviderId, re
   const supabase = await createClient();
   // Only this provider's own connection: Business Profile locations added through Local Brand Manager are also
   // stored as "gbp" resources (on the LBM connection), and saving the Google selection must not untrack them.
-  const { data: conn } = await supabase.from("integration_connections").select("id").eq("client_id", clientId).eq("provider", provider).maybeSingle();
-  const scoped = <Q extends { eq: (c: string, v: string) => Q }>(q: Q) => (conn ? q.eq("connection_id", conn.id) : q);
+  // (integration_connections isn't readable by signed-in users because it holds account references, so the
+  // service role looks it up; callers have already checked the user is an owner/admin of this client)
+  const { data: conn } = await createAdminClient().from("integration_connections").select("id").eq("client_id", clientId).eq("provider", provider).maybeSingle();
+  if (!conn) {
+    if (resourceIds.length) throw new HttpError(400, "One or more resources were not found");
+    return { selected: 0, queued: 0 };
+  }
+  const scoped = <Q extends { eq: (c: string, v: string) => Q }>(q: Q) => q.eq("connection_id", conn.id);
 
   const { error: clearErr } = await scoped(supabase
     .from("integration_resources")
