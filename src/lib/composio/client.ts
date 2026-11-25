@@ -19,6 +19,28 @@ export class ProviderRateLimitError extends Error {
 const AUTH_RE = /(401|403|invalid[_ ]grant|unauthori[sz]ed|token.*(expired|revoked)|reauth)/i;
 const RATE_RE = /(429|rate.?limit|quota)/i;
 
+/**
+ * A read-only GET to the platform's own API through Composio's proxy, signed with the connected account's
+ * login (for endpoints Composio has no tool for). Same typed errors as executeTool.
+ */
+export async function proxyGet(a: { connectedAccountId: string; url: string; headers?: Record<string, string>; timeoutMs?: number }): Promise<unknown> {
+  const call = composio().tools.proxyExecute({
+    endpoint: a.url, method: "GET", connectedAccountId: a.connectedAccountId,
+    parameters: Object.entries(a.headers ?? {}).map(([name, value]) => ({ in: "header" as const, name, value })),
+  });
+  const timeout = new Promise<never>((_, rej) => setTimeout(() => rej(new Error(`GET ${new URL(a.url).pathname} timed out`)), a.timeoutMs ?? 60_000));
+  const res = await Promise.race([call, timeout]);
+  const status = Number((res as { status?: number }).status ?? 200);
+  const data = (res as { data?: unknown }).data;
+  if (status >= 400) {
+    const msg = `HTTP ${status}: ${JSON.stringify(data ?? "").slice(0, 300)}`;
+    if (status === 429 || RATE_RE.test(msg)) throw new ProviderRateLimitError(msg);
+    if (status === 401) throw new ProviderAuthError(msg);
+    throw new Error(msg);
+  }
+  return data;
+}
+
 interface ExecuteArgs {
   slug: string;
   toolkitVersionEnv?: string;

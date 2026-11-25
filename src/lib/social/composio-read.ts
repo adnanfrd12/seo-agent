@@ -1,5 +1,5 @@
 import "server-only";
-import { executeTool, ProviderRateLimitError } from "@/lib/composio/client";
+import { executeTool, ProviderRateLimitError, proxyGet } from "@/lib/composio/client";
 import { entityId } from "./composio";
 import { handleOf, type Platform } from "./platforms";
 import type { MetricKey, SocialDemo, SocialPost, SocialSeries } from "./metrics";
@@ -213,6 +213,65 @@ export async function readComposio(clientId: string, p: Platform, connectedAccou
     }
     const pv = await soft("LINKEDIN_GET_ORG_PAGE_STATS", { organization: urn, timeRangeStart: startMs, timeRangeEnd: endMs, timeGranularityType: "DAY" }, "Page views");
     for (const el of findArray(pv, ["elements"])) add(out.series, "profile_views", day(n((el.timeRange as Record<string, unknown> | undefined)?.start) ?? null), pick(el, ["pageViews", "allPageViews"]));
+
+    // the page's posts (no Composio tool lists them): LinkedIn's Posts API through Composio's proxy, then each
+    // post's statistics and pictures. Read-only, with the same login and scopes.
+    const LI = "https://api.linkedin.com/rest";
+    const headers = { "LinkedIn-Version": "202510", "X-Restli-Protocol-Version": "2.0.0" };
+    const rest = async (url: string, what: string) => {
+      try { return await proxyGet({ connectedAccountId, url, headers }); }
+      catch (e) {
+        if (e instanceof ProviderRateLimitError) throw e;
+        notes.push(`${what} isn't available for this account (${(e instanceof Error ? e.message : "refused").slice(0, 120)}).`);
+        return null;
+      }
+    };
+    const items = findArray(await rest(`${LI}/posts?author=${encodeURIComponent(urn)}&q=author&count=50&sortBy=LAST_MODIFIED`, "Page posts"), ["elements"]);
+    const urns = items.map((x) => String(x.id ?? "")).filter(Boolean);
+    const list = (xs: string[]) => `List(${xs.map(encodeURIComponent).join(",")})`;
+    const shareUrns = urns.filter((u) => u.startsWith("urn:li:share:")), ugcUrns = urns.filter((u) => u.startsWith("urn:li:ugcPost:"));
+    const stats = new Map<string, Record<string, unknown>>();
+    if (urns.length) {
+      let q = `${LI}/organizationalEntityShareStatistics?q=organizationalEntity&organizationalEntity=${encodeURIComponent(urn)}`;
+      if (shareUrns.length) q += `&shares=${list(shareUrns)}`;
+      if (ugcUrns.length) q += `&ugcPosts=${list(ugcUrns)}`;
+      for (const el of findArray(await rest(q, "Post statistics"), ["elements"])) {
+        const key = pickStr(el, ["share", "ugcPost"]);
+        if (key) stats.set(key, (el.totalShareStatistics ?? {}) as Record<string, unknown>);
+      }
+    }
+    const content = (x: Record<string, unknown>) => (x.content ?? {}) as Record<string, unknown>;
+    const imageUrn = (x: Record<string, unknown>) => {
+      const c = content(x), media = (c.media ?? {}) as Record<string, unknown>, multi = ((c.multiImage as { images?: Record<string, unknown>[] } | undefined)?.images ?? [])[0];
+      const art = (c.article ?? {}) as Record<string, unknown>;
+      return [pickStr(media, ["id"]), multi ? pickStr(multi, ["id"]) : null, pickStr(art, ["thumbnail"])].find((u) => u?.startsWith("urn:li:image:")) ?? null;
+    };
+    const imgIds = [...new Set(items.map(imageUrn).filter((u): u is string => Boolean(u)))].slice(0, 50);
+    const pictures = new Map<string, string>();
+    if (imgIds.length) {
+      // the batch answer is keyed by URN ({ results: { urn: { downloadUrl } } }) or a list; read both
+      const walk = (v: unknown, key?: string): void => {
+        if (!v || typeof v !== "object") return;
+        const o = v as Record<string, unknown>;
+        const url = typeof o.downloadUrl === "string" ? o.downloadUrl : null;
+        const id = typeof o.id === "string" ? o.id : key;
+        if (url && id) pictures.set(id, url);
+        for (const [k, x] of Object.entries(o)) walk(x, k.startsWith("urn:li:image:") ? k : undefined);
+      };
+      walk(await soft("LINKEDIN_GET_IMAGES", { ids: imgIds }, "Post images"));
+    }
+    // LinkedIn's text format: @[Name](urn) mentions, {hashtag|\#|tag} and backslash escapes
+    const plain = (t: unknown) => typeof t === "string" ? t.replace(/@\[([^\]]+)\]\([^)]*\)/g, "@$1").replace(/\{hashtag\|\\?#\|([^}]+)\}/g, "#$1").replace(/\\([()[\]{}@#*_~<>|\\])/g, "$1") : null;
+    out.recent = items.map((x) => {
+      const id = String(x.id), st = stats.get(id) ?? {}, c = content(x), art = (c.article ?? {}) as Record<string, unknown>;
+      const text = body(plain(x.commentary)) ?? body(art.title);
+      const kind = c.multiImage ? "images" : c.article ? "article" : c.poll ? "poll" : String(pickStr(c.media, ["id"]) ?? "").includes(":video:") ? "video" : c.media ? "image" : "text";
+      const img = imageUrn(x);
+      return { id, title: (text ?? "").slice(0, 160), text, image: img ? pictures.get(img) ?? null : null, url: `https://www.linkedin.com/feed/update/${id}/`,
+        date: day(n(x.publishedAt) ?? n(x.createdAt)), type: kind,
+        views: n(st.impressionCount), likes: n(st.likeCount), comments: n(st.commentCount), shares: n(st.shareCount) };
+    });
+    out.posts = items.length || null;
   }
 
   else if (p === "tiktok") {
@@ -289,7 +348,7 @@ export async function readComposio(clientId: string, p: Platform, connectedAccou
   }
 
   sortSeries(out.series);
-  if (!out.recent.length && p !== "linkedin") notes.push("No posts were returned for this account.");
+  if (!out.recent.length) notes.push("No posts were returned for this account.");
   out.recent = out.recent.filter((x) => x.id).slice(0, 60);
   return out;
 }
