@@ -4,12 +4,12 @@ import { getSession } from "@/lib/analytics/client-context";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { screenLabel } from "@/lib/aiqw/screens";
 import { readItems } from "@/lib/aiqw/store";
-import { AskClaude, ScreenRunButton } from "./screen-tools-client";
+import { ScreenRunButton } from "./screen-tools-client";
 import { SourceBadge } from "./badges";
 
 /**
- * Bottom of a screen: this screen's AI quick wins (from the shared list), "✨ Quick wins for this screen" and
- * "💬 Ask Claude". `screen` is the key from src/lib/aiqw/screens.ts.
+ * Bottom of a screen: this screen's AI quick wins (from the shared list) and "✨ Quick wins for this screen".
+ * Questions about the screen go to Nova ("Ask about this page"). `screen` is the key from src/lib/aiqw/screens.ts.
  */
 export function AiScreenTools({ screen }: { screen: string | null }) {
   if (!screen) return null;
@@ -26,7 +26,6 @@ function ToolsSkeleton() {
         <div className="skeleton h-8 w-48 rounded-lg" />
       </div>
       <div className="mt-3 space-y-2">{[0, 1, 2].map((i) => <div key={i} className="skeleton h-12 rounded-md" />)}</div>
-      <div className="skeleton mt-4 h-9 rounded-lg" />
     </section>
   );
 }
@@ -42,7 +41,7 @@ async function Tools({ screen }: { screen: string }) {
     <section aria-labelledby={`ai-${screen}`} className="mt-8 rounded-[10px] border border-border bg-surface p-4">
       <div className="flex flex-wrap items-start justify-between gap-3">
         <div className="min-w-0">
-          <h2 id={`ai-${screen}`} className="text-[11px] font-semibold uppercase tracking-[0.08em] text-accent">AI quick wins and questions for this screen</h2>
+          <h2 id={`ai-${screen}`} className="text-[11px] font-semibold uppercase tracking-[0.08em] text-accent">AI quick wins for this screen</h2>
           <p className="mt-0.5 text-xs text-muted">{screenLabel(screen)} · written by Claude from this screen&apos;s data; every number comes from the data.</p>
         </div>
         <ScreenRunButton screen={screen} canEdit={canEdit} />
@@ -60,10 +59,6 @@ async function Tools({ screen }: { screen: string }) {
         </ol>
       ) : <p className="mt-3 text-sm text-muted">0 AI quick wins for this screen yet: press “Quick wins for this screen”.</p>}
       <p className="mt-2 text-xs"><Link href="/ai-quick-wins" className="text-accent underline-offset-2 hover:underline">All AI quick wins, with steps and ready-to-paste text →</Link></p>
-      <div className="mt-4 border-t border-hairline pt-3">
-        <p className="mb-2 text-sm font-semibold">💬 Ask Claude about this screen</p>
-        <AskClaude screen={screen} />
-      </div>
     </section>
   );
 }

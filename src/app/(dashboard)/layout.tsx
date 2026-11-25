@@ -10,6 +10,7 @@ import { getSession } from "@/lib/analytics/client-context";
 import { createClient } from "@/lib/supabase/server";
 import { AppShell } from "@/components/layout/app-shell";
 import { HeaderContent, SidebarClient } from "@/components/layout/header-content";
+import { Nova } from "@/components/nova/nova";
 
 async function createFirstClient(formData: FormData) {
   "use server";
@@ -66,6 +67,7 @@ export default async function DashboardLayout({ children }: { children: React.Re
       <Suspense fallback={null}><RangeMemory /><NavProgress /></Suspense>
       {children}
     </AppShell>
+    <Nova firstName={user.fullName?.split(" ")[0] ?? null} clientName={client.name} canEdit={["owner", "admin"].includes(client.role)} />
     </>
   );
 }

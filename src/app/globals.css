@@ -195,6 +195,32 @@ a.lift:hover, button.lift:hover { border-color: var(--border-strong); }
 @media (prefers-reduced-motion: reduce) { .rise, .ring-arc, .lift { animation: none; transition: none; } .skeleton::after { animation: none; } .nav-progress::before { animation: none; opacity: 0.6; } }
 @media print { .rise, .ring-arc { animation: none !important; } }
 
+/* ---------------------------------------------------------------- Nova (components/nova): ink orb, brand-gradient ring */
+.nova-orb {
+  border: 2px solid transparent;
+  background:
+    radial-gradient(120% 120% at 30% 18%, #3b2a2f 0%, #19171b 52%, #0c0b0d 100%) padding-box,
+    conic-gradient(from 210deg, #ff9a5a, var(--accent), #e0457b, #ff9a5a) border-box;
+}
+.nova-launcher .nova-orb {
+  box-shadow: 0 12px 28px -10px color-mix(in oklab, var(--accent) 70%, transparent), 0 0 0 5px color-mix(in oklab, var(--accent) 12%, transparent);
+  transition: box-shadow 0.25s ease, transform 0.25s ease;
+  animation: nova-glow 4.5s ease-in-out infinite;
+}
+.nova-launcher:hover .nova-orb, .nova-launcher:focus-visible .nova-orb {
+  transform: scale(1.05);
+  box-shadow: 0 16px 34px -10px color-mix(in oklab, var(--accent) 85%, transparent), 0 0 0 7px color-mix(in oklab, var(--accent) 18%, transparent);
+}
+@keyframes nova-glow { 50% { box-shadow: 0 12px 30px -8px color-mix(in oklab, var(--accent) 80%, transparent), 0 0 0 8px color-mix(in oklab, var(--accent) 8%, transparent); } }
+.nova-send { background: linear-gradient(135deg, #ff8a4c, var(--accent) 55%, #d93a6c); }
+/* answer progress bar: brand gradient flowing left while Nova works */
+.nova-progress { background: linear-gradient(90deg, #ff8a4c, var(--accent) 60%, #d93a6c); background-size: 200% 100%; animation: nova-flow 1.6s linear infinite; }
+@keyframes nova-flow { to { background-position: -200% 0; } }
+.nova-send:not(:disabled):hover { filter: brightness(1.06); }
+.nova-hero { background: radial-gradient(130% 150% at 100% 0%, color-mix(in oklab, var(--accent) 13%, transparent), transparent 62%), var(--surface-sunken); }
+.nova-md :where(h3, h4) + * { margin-top: 0.35rem; }
+@media (prefers-reduced-motion: reduce) { .nova-launcher .nova-orb, .nova-progress { animation: none; transition: none; } .nova-panel { transition: none !important; } }
+
 /* ---------------------------------------------------------------- modal dialogs (components/dashboard/dialog) */
 @keyframes dialog-in { from { opacity: 0; transform: translateY(8px) scale(0.98); } }
 @keyframes backdrop-in { from { opacity: 0; } }
