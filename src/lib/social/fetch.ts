@@ -7,7 +7,7 @@ import { dfsConfigured, dfsPost } from "@/lib/dataforseo/client";
 import { arr, num, obj, str } from "@/lib/dataforseo/research";
 import { ProviderAuthError, ProviderRateLimitError } from "@/lib/composio/client";
 import { socialConnections, type SocialConnection } from "./composio";
-import { readComposio, WrongAccountError } from "./composio-read";
+import { readComposio } from "./composio-read";
 import type { MetricKey, SocialDemo, SocialPost, SocialSeries } from "./metrics";
 import { tregConfigured, tregProfile, tregSupports } from "./treg";
 import { handleOf, PLATFORM_INFO, PLATFORMS, platformOf, type Platform, type SocialProfiles } from "./platforms";
@@ -411,7 +411,7 @@ export async function refreshPlatform(ctx: Ctx, p: Platform, social?: Awaited<Re
       if (acc) {
         mode = "connected";
         try { f = await viaComposio(ctx, p, acc, url, typeof s.settings.linkedin_org_id === "string" ? s.settings.linkedin_org_id : null, base.posts); }
-        catch (e) { if (e instanceof WrongAccountError) throw e; if (url && tregConfigured() && tregSupports(p) && !token) { mode = "public"; f = await viaTreg(ctx, p, url); f.source = `${f.source}; connected analytics pending`; } else throw e; }
+        catch (e) { if (url && tregConfigured() && tregSupports(p) && !token) { mode = "public"; f = await viaTreg(ctx, p, url); f.source = `${f.source}; connected analytics pending`; } else throw e; }
       }
       // 2. a pasted token (old setup) or YouTube's own path
       else if (p === "youtube") f = token ? await youtubeDataApi(token, url!, await trackedKeywords(ctx.admin, ctx.clientId)) : await dfsYoutube(ctx, url!, await trackedKeywords(ctx.admin, ctx.clientId));
@@ -437,9 +437,16 @@ export async function refreshPlatform(ctx: Ctx, p: Platform, social?: Awaited<Re
       }
       const day = now.slice(0, 10);
       const point: SocialPoint = { date: day, followers: f.profile.followers, posts: f.profile.posts, views: f.profile.views, engagement: engagementOf(f.posts), reach: f.profile.reach ?? null, impressions: f.profile.impressions ?? null };
-      const history = [...base.history.filter((h) => h.date !== day), point].sort((a, b) => a.date.localeCompare(b.date)).slice(-HISTORY_MAX);
-      row = { ...base, status: "ok", mode, source: f.source, profile: f.profile, posts: f.posts.length || mode !== "connected" ? f.posts : base.posts, rankings: f.rankings ?? base.rankings, history, cost: Number((f.cost ?? 0).toFixed(4)),
-        series: mode === "connected" ? mergeSeries(prev?.series, f.series) : prev?.series, totals: f.totals ?? (mode === "connected" ? undefined : prev?.totals), demographics: f.demographics?.length ? f.demographics : prev?.demographics, notes: f.notes };
+      // a different account than the stored numbers belong to (e.g. the client connected another login than the
+      // saved profile link): its trend starts fresh instead of mixing two accounts' history
+      const norm = (h: string | null | undefined) => h?.trim().replace(/^@/, "").toLowerCase() || null;
+      const before = norm(prev?.mode === "connected" ? prev.profile.handle : handleOf(prev?.url));
+      const after = norm(mode === "connected" ? f.profile.handle : handleOf(url));
+      const switched = Boolean(prev && before && after && before !== after);
+      const kept = switched ? [] : base.history;
+      const history = [...kept.filter((h) => h.date !== day), point].sort((a, b) => a.date.localeCompare(b.date)).slice(-HISTORY_MAX);
+      row = { ...base, status: "ok", mode, source: f.source, profile: f.profile, posts: f.posts.length || mode !== "connected" || switched ? f.posts : base.posts, rankings: f.rankings ?? base.rankings, history, cost: Number((f.cost ?? 0).toFixed(4)),
+        series: mode === "connected" ? mergeSeries(switched ? undefined : prev?.series, f.series) : prev?.series, totals: f.totals ?? (mode === "connected" ? undefined : prev?.totals), demographics: f.demographics?.length ? f.demographics : switched ? undefined : prev?.demographics, notes: f.notes };
     } catch (e) {
       if (e instanceof BudgetError) throw e;
       if (e instanceof RevokedError) {
@@ -448,11 +455,6 @@ export async function refreshPlatform(ctx: Ctx, p: Platform, social?: Awaited<Re
         // nothing is saved: the stats read from the revoked account were just deleted
         return { ...base, status: "needs", needs: `${PLATFORM_INFO[p].label} access was revoked, so its data was deleted. Press Connect to log in again.`, profile: { name: null, followers: null, posts: null, views: null, likes: null }, posts: [], history: [], series: undefined, totals: undefined, demographics: undefined, notes: undefined };
       }
-      // another account's login: show what to fix, and drop the numbers read from that account since it was connected
-      if (e instanceof WrongAccountError && acc) {
-        const since = acc.createdAt.slice(0, 10);
-        row = { ...base, status: "needs", needs: e.message, profile: { name: null, followers: null, posts: null, views: null, likes: null }, posts: [], series: undefined, totals: undefined, demographics: undefined, notes: undefined, history: base.history.filter((h) => h.date < since) };
-      } else
       row = e instanceof NeedsError ? { ...base, status: "needs", needs: e.message } : { ...base, status: "error", error: (e instanceof Error ? e.message : "failed").slice(0, 300) };
       // keep the time of the last good read so the weekly schedule retries an error the next day
       if (row.status === "error" && prev?.status === "ok") row.fetchedAt = prev.fetchedAt;

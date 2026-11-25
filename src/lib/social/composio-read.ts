@@ -1,7 +1,7 @@
 import "server-only";
 import { executeTool, ProviderRateLimitError } from "@/lib/composio/client";
 import { entityId } from "./composio";
-import { handleOf, PLATFORM_INFO, type Platform } from "./platforms";
+import { handleOf, type Platform } from "./platforms";
 import type { MetricKey, SocialDemo, SocialPost, SocialSeries } from "./metrics";
 import { findArray, pick, pickStr } from "./treg";
 
@@ -24,21 +24,6 @@ export interface ComposioRead {
   notes: string[];
   /** platform account IDs (user / page / channel / open_id), kept so deletion notifications can be matched */
   ids: Record<string, string>;
-}
-
-/** The connected login belongs to a different account than the profile link saved for the client. */
-export class WrongAccountError extends Error {}
-
-/**
- * Stops a read when the logged-in account isn't the client's: e.g. a personal Pinterest connected by mistake
- * would otherwise show its stats under the client's profile link. Only checked when both handles are known.
- */
-function sameAccount(p: Platform, url: string | null, found: (string | null | undefined)[]) {
-  const norm = (v: string) => v.trim().replace(/^@/, "").toLowerCase();
-  const want = handleOf(url ?? "");
-  const have = found.filter((v): v is string => typeof v === "string" && Boolean(v.trim())).map(norm);
-  if (!want || !have.length || have.includes(norm(want))) return;
-  throw new WrongAccountError(`The connected ${PLATFORM_INFO[p].label} login is @${have[0]}, not @${norm(want)} (this client's profile link). Disconnect it and connect the business account.`);
 }
 
 const DAY_S = 86_400;
@@ -115,7 +100,6 @@ export async function readComposio(clientId: string, p: Platform, connectedAccou
     const me = (await run("INSTAGRAM_GET_USER_INFO", { ig_user_id: "me", fields: "id,username,name,followers_count,follows_count,media_count,profile_picture_url" })) as Record<string, unknown>;
     const ig = pickStr(me, ["id"]) ?? undefined;
     if (ig) out.ids.user_id = ig;
-    sameAccount(p, ctx.url, [pickStr(me, ["username"])]);
     out.name = pickStr(me, ["username", "name"]); out.followers = pick(me, ["followers_count"]); out.following = pick(me, ["follows_count"]); out.posts = pick(me, ["media_count"]);
     out.handle = pickStr(me, ["username"]); out.avatar = pickStr(me, ["profile_picture_url"]);
     // daily reach and follower change: Instagram serves at most 30 days per call
@@ -143,7 +127,6 @@ export async function readComposio(clientId: string, p: Platform, connectedAccou
   else if (p === "threads") {
     const me = await run("THREADS_GET_MY_PROFILE", { user_id: "me", fields: ["id", "username", "name", "threads_profile_picture_url"] });
     { const tid = pickStr(me, ["id"]); if (tid) out.ids.user_id = tid; }
-    sameAccount(p, ctx.url, [pickStr(me, ["username"])]);
     out.name = pickStr(me, ["username", "name"]);
     out.handle = pickStr(me, ["username"]); out.avatar = pickStr(me, ["threads_profile_picture_url"]);
     const fol = await soft("THREADS_GET_PROFILE_INSIGHTS", { user_id: "me", metrics: ["followers_count"] }, "Follower count");
@@ -244,7 +227,6 @@ export async function readComposio(clientId: string, p: Platform, connectedAccou
   else if (p === "pinterest") {
     const prof = await run("PINTEREST_GET_PROFILE", {});
     { const pid = pickStr(prof, ["id", "username"]); if (pid) out.ids.user_id = pid; }
-    sameAccount(p, ctx.url, [pickStr(prof, ["username"])]);
     out.handle = pickStr(prof, ["username"]); out.avatar = pickStr(prof, ["profile_image"]);
     out.name = pickStr(prof, ["business_name", "username"]); out.followers = pick(prof, ["follower_count"]); out.following = pick(prof, ["following_count"]); out.posts = pick(prof, ["pin_count"]);
     const mv = pick(prof, ["monthly_views"]); if (mv != null) out.totals.monthly_views = mv;
