@@ -3,6 +3,7 @@
 import { useEffect, useMemo, useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
 import { Loader2 } from "lucide-react";
+import { ConfirmButton } from "@/components/dashboard/dialog";
 import { connectLbm, disconnectLbm, lbmLocations, selectLbmLocations, syncLbmNow, type LbmLocationOption } from "./lbm-actions";
 
 const input = "w-full rounded-lg border border-border bg-surface px-3 py-2 text-sm outline-none focus-visible:ring-2 focus-visible:ring-accent";
@@ -81,7 +82,8 @@ export function LbmPanel({ connected, canEdit, hasEnvToken, selected }: {
           </button>
         )}
         <button className={btn2} disabled={pending || selected.length === 0} onClick={() => run(syncLbmNow)}>Sync now</button>
-        <button className={btn2} disabled={pending} onClick={() => { if (confirm("Disconnect Local Brand Manager? Stored history is kept.")) run(disconnectLbm); }}>Disconnect</button>
+        <ConfirmButton className={btn2} disabled={pending} title="Disconnect Local Brand Manager?" confirmLabel="Disconnect" onConfirm={() => run(disconnectLbm)}
+          body={<p>The connection is removed and its data stops updating. The history already stored is kept.</p>}>Disconnect</ConfirmButton>
       </div>
       {note}
     </div>

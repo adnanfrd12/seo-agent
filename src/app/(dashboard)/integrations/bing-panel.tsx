@@ -3,6 +3,7 @@
 import { useEffect, useMemo, useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
 import { Loader2 } from "lucide-react";
+import { ConfirmButton } from "@/components/dashboard/dialog";
 import { bingSites, connectBing, disconnectBing, selectBingSites, syncBingNow, type BingSiteOption } from "./bing-actions";
 
 const input = "w-full rounded-lg border border-border bg-surface px-3 py-2 text-sm outline-none focus-visible:ring-2 focus-visible:ring-accent";
@@ -86,7 +87,8 @@ export function BingPanel({ connected, canEdit, hasEnvKey, selected, suggest }: 
           </button>
         )}
         <button className={btn2} disabled={pending || selected.length === 0} onClick={() => run(syncBingNow)}>Sync now</button>
-        <button className={btn2} disabled={pending} onClick={() => { if (confirm("Disconnect Bing? The API key and the data read with it are deleted. This can't be undone.")) run(disconnectBing); }}>Disconnect</button>
+        <ConfirmButton className={btn2} disabled={pending} title="Disconnect Bing Webmaster Tools?" confirmLabel="Disconnect" onConfirm={() => run(disconnectBing)}
+          body={<p>The API key and the data read with it are deleted. This can&apos;t be undone.</p>}>Disconnect</ConfirmButton>
       </div>
       {note}
     </div>

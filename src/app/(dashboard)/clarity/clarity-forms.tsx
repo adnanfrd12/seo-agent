@@ -3,6 +3,7 @@
 import { useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
 import { Loader2 } from "lucide-react";
+import { ConfirmButton } from "@/components/dashboard/dialog";
 import { addRecordingReview, connectClarity, disconnectClarity, syncClarityNow } from "./actions";
 
 const input = "mt-1 w-full rounded-lg border border-border bg-surface px-3 py-2 text-sm outline-none focus-visible:ring-2 focus-visible:ring-accent";
@@ -27,7 +28,8 @@ export function ConnectClarity({ connected, canEdit }: { connected: boolean; can
     <div className="space-y-2">
       <div className="flex flex-wrap gap-2">
         <button className={btn} disabled={pending} onClick={() => run(syncClarityNow)}>{pending && <Loader2 className="size-4 animate-spin" />} Sync now</button>
-        <button className={btn2} disabled={pending} onClick={() => { if (confirm("Disconnect Clarity? The API token and the data read with it are deleted. This can't be undone.")) run(disconnectClarity); }}>Disconnect</button>
+        <ConfirmButton className={btn2} disabled={pending} title="Disconnect Microsoft Clarity?" confirmLabel="Disconnect" onConfirm={() => run(disconnectClarity)}
+          body={<p>The API token and the data read with it are deleted. This can&apos;t be undone.</p>}>Disconnect</ConfirmButton>
       </div>
       {note}
     </div>

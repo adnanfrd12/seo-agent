@@ -5,6 +5,7 @@ import { useRouter } from "next/navigation";
 import { AlertTriangle, CheckCircle2, CircleSlash, Loader2, RefreshCw } from "lucide-react";
 import { platformByProvider } from "@/config/platforms";
 import { ConsentPanel } from "@/components/integrations/consent-panel";
+import { ConfirmButton } from "@/components/dashboard/dialog";
 import { PROVIDER_META, type ProviderId } from "@/lib/integrations/providers";
 import { cn } from "@/lib/utils";
 
@@ -103,7 +104,6 @@ export function IntegrationCard({
     }
   }
   async function disconnect() {
-    if (!confirm(`Disconnect ${meta.label}? Access is removed and the data received from it (including its history) is deleted. This can't be undone.`)) return;
     if (await call("disconnect")) { setMessage(`${meta.label} disconnected and its data deleted.`); router.refresh(); }
   }
 
@@ -205,12 +205,14 @@ export function IntegrationCard({
                 <button className={btn} onClick={sync} disabled={!canEdit || busy !== null || selected.length === 0}>
                   {busy === "sync" ? <Loader2 className="size-4 animate-spin" /> : <RefreshCw className="size-4" />} Sync Now
                 </button>
-                <button className={btn} onClick={disconnect} disabled={!canEdit || busy !== null}>Disconnect</button>
+                <ConfirmButton className={btn} onConfirm={disconnect} disabled={!canEdit || busy !== null} title={`Disconnect ${meta.label}?`} confirmLabel="Disconnect"
+                  body={<p>Access is removed and the data received from it, including its history, is deleted. This can&apos;t be undone.</p>}>Disconnect</ConfirmButton>
               </>
             ) : state === "error" ? (
               <>
                 <button className={btnPrimary} onClick={() => (entry ? setConsent(true) : connect())} disabled={!canEdit || busy !== null}>Reconnect</button>
-                <button className={btn} onClick={disconnect} disabled={!canEdit || busy !== null}>Disconnect</button>
+                <ConfirmButton className={btn} onConfirm={disconnect} disabled={!canEdit || busy !== null} title={`Disconnect ${meta.label}?`} confirmLabel="Disconnect"
+                  body={<p>Access is removed and the data received from it, including its history, is deleted. This can&apos;t be undone.</p>}>Disconnect</ConfirmButton>
               </>
             ) : (
               <button className={btnPrimary} onClick={() => (entry ? setConsent(true) : connect())} disabled={!canEdit || busy !== null || consent} aria-expanded={consent}>

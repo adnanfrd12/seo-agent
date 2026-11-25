@@ -1,7 +1,7 @@
 "use client";
 
-import { useEffect, useId, useRef } from "react";
-import { Loader2, X } from "lucide-react";
+import { useEffect, useId, useRef, useState } from "react";
+import { Loader2, Unplug, X } from "lucide-react";
 import { cn } from "@/lib/utils";
 
 /** Dialog buttons: a little larger than the inline ones. */
@@ -78,6 +78,28 @@ export function DialogBody({ children, className }: { children: React.ReactNode;
 
 export function DialogFooter({ children, className }: { children: React.ReactNode; className?: string }) {
   return <div className={cn("flex flex-wrap items-center justify-end gap-2 border-t border-hairline bg-surface-sunken px-5 py-3.5", className)}>{children}</div>;
+}
+
+/** Icon for disconnect confirmations. */
+export const disconnectIcon = <span className="grid size-10 shrink-0 place-items-center rounded-full bg-negative-soft text-negative"><Unplug className="size-5" aria-hidden /></span>;
+
+/**
+ * A button that asks first: opens a ConfirmDialog and runs `onConfirm` only after the second click.
+ * The caller shows progress and the result as before (the dialog closes when confirmed).
+ */
+export function ConfirmButton({ children, className, disabled, title, body, confirmLabel, onConfirm, icon = disconnectIcon, tone = "danger", ariaLabel }: {
+  children: React.ReactNode; className?: string; disabled?: boolean; title: React.ReactNode; body: React.ReactNode;
+  confirmLabel: string; onConfirm: () => void; icon?: React.ReactNode; tone?: "danger" | "primary"; ariaLabel?: string;
+}) {
+  const [open, setOpen] = useState(false);
+  return (
+    <>
+      <button type="button" className={className} disabled={disabled} aria-label={ariaLabel} onClick={() => setOpen(true)}>{children}</button>
+      <ConfirmDialog open={open} onClose={() => setOpen(false)} onConfirm={() => { setOpen(false); onConfirm(); }} title={title} confirmLabel={confirmLabel} icon={icon} tone={tone}>
+        {body}
+      </ConfirmDialog>
+    </>
+  );
 }
 
 /** A yes/no question before something that can't be undone. "Cancel" has the focus, so Enter never confirms by accident. */
