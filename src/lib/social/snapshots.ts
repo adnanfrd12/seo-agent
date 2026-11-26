@@ -21,8 +21,11 @@ export async function saveSnapshot(admin: SupabaseClient, clientId: string, row:
     const { error } = await admin.from(A).upsert({
       client_id: clientId, platform: row.platform, day, account: pr.handle ?? pr.name ?? null,
       followers: pr.followers, following: pr.following ?? null,
-      likes: pr.likes ?? row.totals?.lifetime_likes ?? null, posts: pr.posts,
-      views: pr.views ?? row.totals?.lifetime_views ?? null, captured_at: row.fetchedAt,
+      // only real lifetime totals: profile.likes/views mean different things per platform (a 28-day total for
+      // connected accounts, likes given on X), which would make "gained per day" wrong. Without a lifetime
+      // total, likes gained come from the posts' own like counts instead.
+      likes: row.totals?.lifetime_likes ?? null, posts: pr.posts,
+      views: row.totals?.lifetime_views ?? null, captured_at: row.fetchedAt,
     }, { onConflict: "client_id,platform,day" });
     if (error) { if (!/does not exist|schema cache/i.test(error.message)) console.error(`social snapshot: ${error.message}`); return; }
     const posts = row.posts.filter((x) => x.id).slice(0, 200).map((x) => ({

@@ -9,7 +9,7 @@ import { KpiCard, StatCard } from "@/components/dashboard/kpi-card";
 import { TabHeader } from "@/components/dashboard/tab-header";
 import { ResearchTable } from "@/components/research/research-table";
 import { AccountAvatar, ConnectedMark, ConnectOne, DisconnectOne, SocialConnect, SocialRefresh, SocialSettings } from "@/components/research/social-controls";
-import { resolveRange } from "@/lib/analytics/range";
+import { resolveRange, shiftDays } from "@/lib/analytics/range";
 import { researchPage } from "@/lib/dataforseo/view";
 import { revalidatePath } from "@/lib/revalidate";
 import { composioReadyMap, setupNote, socialConnections, type SocialConnection } from "@/lib/social/composio";
@@ -60,7 +60,11 @@ export default async function SocialPage({ searchParams }: { searchParams: Promi
   const cur: Period = { start: range.start, end: range.end };
   const prev = previousOf(cur);
   // day-to-day gains from the daily snapshots (empty until migration 20261127000027 is applied)
-  const dailyGains = await loadGrowth(supabase, client.id, cur).catch(() => ({}) as Awaited<ReturnType<typeof loadGrowth>>);
+  // ranges that run up to now include today's snapshot (taken each morning), so the gains aren't a day behind
+  const todayUtc = new Date().toISOString().slice(0, 10);
+  const twoDaysAgo = shiftDays(todayUtc, -2);
+  const growthRange = { start: cur.start, end: cur.end >= twoDaysAgo ? todayUtc : cur.end };
+  const dailyGains = await loadGrowth(supabase, client.id, growthRange).catch(() => ({}) as Awaited<ReturnType<typeof loadGrowth>>);
   const all = PLATFORMS.filter((p) => rows[p]).map((p) => figures(rows[p]!, active.has(p), cur, prev));
   const withData = all.filter((f) => f.row.status === "ok" || f.row.history.length > 0);
 
