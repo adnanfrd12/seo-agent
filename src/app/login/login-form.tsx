@@ -1,7 +1,6 @@
 "use client";
 
 import { useState, useSyncExternalStore } from "react";
-import { useRouter } from "next/navigation";
 import { ArrowRight, Eye, EyeOff, Lock, Mail } from "lucide-react";
 import { createClient } from "@/lib/supabase/client";
 
@@ -24,9 +23,28 @@ const field =
 
 type Notice = { kind: "error" | "info"; text: string } | null;
 
+const ERRORS: Record<string, string> = {
+  callback: "That sign-in link didn't work. It may have expired or already been used. Please try again.",
+};
+/** Same-site paths only, so ?next= can't send people to another site after signing in. */
+const safeNext = (raw: string | null) => (raw && /^\/(?![/\\])/.test(raw) ? raw : "/overview");
+
+const readSearch = () => window.location.search;
+/** The form with ?next= and ?error= read in the browser after load (keeps the login page fully static, with no
+ * Suspense boundary to stream: the form is interactive as soon as the page's script runs). */
+export function LoginFormWithParams() {
+  const search = useSyncExternalStore(noopSubscribe, readSearch, () => "");
+  const sp = new URLSearchParams(search);
+  const errorKey = sp.get("error");
+  // keyed by the query: the form remounts once the browser has read it, so ?error= shows (nothing typed yet then)
+  return <LoginForm key={search} next={safeNext(sp.get("next"))} initialError={errorKey ? ERRORS[errorKey] ?? ERRORS.callback : null} />;
+}
+
 export function LoginForm({ next, initialError }: { next: string; initialError: string | null }) {
-  const router = useRouter();
   const remembered = useSyncExternalStore(noopSubscribe, readRemembered, () => "");
+  // false until the page's JavaScript has loaded: before that, pressing Sign in would make the browser submit the
+  // form itself (reloading the page, nothing signed in), so the button waits
+  const ready = useSyncExternalStore(noopSubscribe, () => true, () => false);
   // null = untouched, so the remembered value (read after hydration) shows through
   const [emailInput, setEmailInput] = useState<string | null>(null);
   const [rememberInput, setRememberInput] = useState<boolean | null>(null);
@@ -48,8 +66,10 @@ export function LoginForm({ next, initialError }: { next: string; initialError: 
       return setNotice({ kind: "error", text: error.message });
     }
     writeRemembered(remember ? email : null);
-    router.replace(next);
-    router.refresh();
+    // A full page load, not a client-side route change: it always carries the session cookie that was just set,
+    // so the dashboard opens on the first try (a soft navigation could race the cookie and land back here).
+    // The button keeps saying "Signing in…" until the dashboard replaces this page.
+    window.location.assign(next);
   }
 
   async function onForgot() {
@@ -74,7 +94,8 @@ export function LoginForm({ next, initialError }: { next: string; initialError: 
     <div className="w-full">
       <h1 className="font-[family-name:var(--font-public-serif)] text-[2.6rem] leading-none tracking-[-0.01em] text-[#17120E]">Sign in</h1>
 
-      <form onSubmit={onSubmit} className="mt-8 space-y-4">
+      {/* method="post": even a submit before the script loads never puts the email and password in the URL */}
+      <form onSubmit={onSubmit} method="post" className="mt-8 space-y-4">
         <div>
           <label htmlFor="email" className="mb-1.5 block text-sm font-semibold text-[#16161a]">Email address</label>
           <div className="relative">
@@ -122,9 +143,9 @@ export function LoginForm({ next, initialError }: { next: string; initialError: 
           )}
         </div>
 
-        <button type="submit" disabled={busy !== null}
+        <button type="submit" disabled={busy !== null || !ready}
           className="flex w-full items-center justify-center gap-2 rounded-lg bg-[#17120E] py-3.5 text-[15px] font-semibold text-white hover:bg-[#2A221B] outline-none transition focus-visible:ring-4 focus-visible:ring-[#F26A1B]/30 disabled:opacity-60">
-          {busy === "password" ? "Signing in…" : <>Sign in <ArrowRight className="size-[18px]" aria-hidden /></>}
+          {busy === "password" ? "Signing in…" : !ready ? "Loading…" : <>Sign in <ArrowRight className="size-[18px]" aria-hidden /></>}
         </button>
       </form>
 

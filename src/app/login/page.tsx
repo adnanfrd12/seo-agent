@@ -5,7 +5,7 @@ import { BRAND_NAME, BrandMark } from "@/components/brand/brand-mark";
 import { publicFonts } from "@/components/public/fonts";
 import { GrowthVisual } from "@/components/public/growth-visual";
 import { SITE } from "@/config/platforms";
-import { LoginForm } from "./login-form";
+import { LoginFormWithParams } from "./login-form";
 import styles from "./login.module.css";
 
 export const metadata: Metadata = {
@@ -14,21 +14,11 @@ export const metadata: Metadata = {
   alternates: { canonical: "/login" },
 };
 
-const ERRORS: Record<string, string> = {
-  callback: "That sign-in link didn't work. It may have expired or already been used. Please try again.",
-};
-
-/** Same-site paths only, so ?next= can't send people to another site after signing in. */
-function safeNext(raw: string | string[] | undefined): string {
-  return typeof raw === "string" && /^\/(?![/\\])/.test(raw) ? raw : "/overview";
-}
-
-export default async function LoginPage({ searchParams }: { searchParams: Promise<Record<string, string | string[] | undefined>> }) {
-  const sp = await searchParams;
-  const next = safeNext(sp.next);
-  const errorKey = typeof sp.error === "string" ? sp.error : null;
-  const initialError = errorKey ? ERRORS[errorKey] ?? ERRORS.callback : null;
-
+/**
+ * A static page served straight from the CDN (no server work per visit): ?next= and ?error= are read in the
+ * browser by the form, so nothing here depends on the request.
+ */
+export default function LoginPage() {
   return (
     <main className={`${styles.page} ${publicFonts} grid min-h-dvh flex-1 bg-[#FBF8F4] font-[family-name:var(--font-public-sans)] text-[#17120E] lg:grid-cols-[minmax(0,1.08fr)_minmax(0,1fr)]`}>
       {/* artwork */}
@@ -57,7 +47,7 @@ export default async function LoginPage({ searchParams }: { searchParams: Promis
         </header>
 
         <div className={`${styles.enter} mx-auto flex w-full max-w-[400px] flex-1 flex-col justify-center py-10`}>
-          <LoginForm next={next} initialError={initialError} />
+          <LoginFormWithParams />
         </div>
 
         <p className="text-center text-xs text-[#8C837B] lg:text-left">© 2026 {SITE.operator}</p>

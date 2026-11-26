@@ -54,6 +54,11 @@ export async function proxy(request: NextRequest) {
     );
   }
 
+  // public pages (login, legal, homepage, webhooks, cron) need no session: skip the Supabase check entirely so
+  // they're served without an extra round trip (the session is refreshed on the next dashboard request)
+  const path0 = request.nextUrl.pathname;
+  if (PUBLIC_EXACT.has(path0) || PUBLIC_PREFIXES.some((p) => path0 === p || path0.startsWith(`${p}/`))) return NextResponse.next({ request });
+
   let response = NextResponse.next({ request });
 
   const supabase = createServerClient(
