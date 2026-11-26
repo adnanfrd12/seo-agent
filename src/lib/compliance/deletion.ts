@@ -5,6 +5,7 @@ import { composio } from "@/lib/composio/client";
 import { revokeGbp } from "@/lib/integrations/gbp-service";
 import { TOOLKIT, entityId } from "@/lib/social/composio";
 import { PLATFORMS as SOCIAL, type Platform } from "@/lib/social/platforms";
+import { deleteSnapshots } from "@/lib/social/snapshots";
 import { confirmationCode } from "./signatures";
 import { insertRequest, logDeletion, updateRequest, type DeletionRequest, type DeletionSource } from "./store";
 
@@ -63,9 +64,11 @@ export async function deleteConnection(admin: SupabaseClient, ref: string, reaso
     const registryId = reg?.id ?? p;
     const removed = await deleteComposioAccounts(clientId, TOOLKIT[p]);
     const { data: rows } = await admin.from("dfs_cache").delete().eq("client_id", clientId).eq("endpoint", "social").eq("params_hash", p).select("id");
+    // the daily snapshots read from the account are its data too
+    const snaps = await deleteSnapshots(admin, clientId, p).catch(() => 0);
     await forgetPlatform(admin, clientId, registryId, p);
-    const deleted = removed > 0 || (rows?.length ?? 0) > 0;
-    if (deleted) await logDeletion(admin, { at, action: "connection_deleted", platform: registryId, reason, connection_ref: ref, workspace_id: clientId, platform_user_id: extra.platformUserId ?? null, detail: { composio_accounts: removed, data_rows: rows?.length ?? 0 } });
+    const deleted = removed > 0 || (rows?.length ?? 0) > 0 || snaps > 0;
+    if (deleted) await logDeletion(admin, { at, action: "connection_deleted", platform: registryId, reason, connection_ref: ref, workspace_id: clientId, platform_user_id: extra.platformUserId ?? null, detail: { composio_accounts: removed, data_rows: rows?.length ?? 0, snapshot_rows: snaps } });
     return { ref, deleted, platform: registryId, clientId };
   }
 

@@ -348,11 +348,13 @@ async function handle(request: NextRequest) {
       for (const id of active) {
         if (Date.now() > deadline - 8_000) break;
         const last = await latest(id, SOCIAL_ENDPOINT);
-        // accounts connected through Composio are read daily (free); the rest weekly as before
-        const linked = (await connectedAccounts(id)).map((c) => c.platform);
+        // free reads happen daily so the day-to-day gain charts get one snapshot a day: accounts connected through
+        // Composio and accounts read with their own token or API key. Paid public reads stay weekly.
+        const linked = [...new Set([...(await connectedAccounts(id)).map((c) => c.platform as string),
+          ...last.filter((r) => (r.data as { mode?: string; status?: string } | null)?.mode === "token" && (r.data as { status?: string }).status === "ok").map((r) => String(r.params_hash))])];
         const fresh = (p: string) => last.find((r) => r.params_hash === p && age(r.fetched_at as string) < 20 * 60 * 60 * 1000);
         const weeklyDue = !(last.length && last.every((r) => age(r.fetched_at as string) < 6.5 * DAY));
-        const linkedDue = linked.filter((p) => !fresh(p));
+        const linkedDue = linked.filter((p) => !fresh(p)) as Parameters<typeof refreshSocial>[1] & string[];
         if (!weeklyDue) {
           if (linkedDue.length) { try { await refreshSocial({ admin, clientId: id, source: "auto" }, linkedDue); socialRefreshed++; } catch { /* next run */ } }
           continue;

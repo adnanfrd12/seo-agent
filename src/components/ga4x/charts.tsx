@@ -36,10 +36,15 @@ function LineSvg({ labels, series, h = 230, f = "k", invert }: { labels: string[
   if (!vals.length) vals.push(0);
   let lo: number, hi: number;
   if (invert) { lo = Math.max(1, Math.floor(Math.min(...vals) - 0.5)); hi = Math.ceil(Math.max(...vals) + 0.5); }
-  else { lo = 0; const mv = Math.max(...vals, 1e-9); hi = vals.every(Number.isInteger) && mv <= 8 ? Math.ceil(mv) + 1 : niceMax(mv * 1.1); }
+  else {
+    // below zero only when a value is negative (e.g. followers lost on a day); otherwise the axis starts at 0
+    const mn = Math.min(...vals); lo = mn < 0 ? -niceMax(-mn * 1.1) : 0;
+    const mv = Math.max(...vals, 1e-9); hi = vals.every(Number.isInteger) && mv <= 8 ? Math.ceil(mv) + 1 : niceMax(mv * 1.1);
+  }
   const y = (v: number) => r2(invert ? t + ((v - lo) / (hi - lo)) * ih : t + ih - ((v - lo) / (hi - lo)) * ih);
   const x = (i: number) => r2(l + (labels.length < 2 ? iw / 2 : (i * iw) / (labels.length - 1)));
-  const nt = invert ? 4 : hi <= 9 && Number.isInteger(hi) && vals.every(Number.isInteger) ? hi : 4;
+  const nt = invert || lo < 0 ? 4 : hi <= 9 && Number.isInteger(hi) && vals.every(Number.isInteger) ? hi : 4;
+  const base = lo < 0 ? y(0) : t + ih;
   const step = Math.max(1, Math.ceil(labels.length / 7));
   const solid = series.filter((s) => !s.dash);
   const allLab = labels.length <= 16 && solid.length <= 2;
@@ -53,7 +58,7 @@ function LineSvg({ labels, series, h = 230, f = "k", invert }: { labels: string[
         const d = pts.map((q, i) => `${i ? "L" : "M"}${q[0].toFixed(1)} ${q[1].toFixed(1)}`).join(" ");
         return (
           <g key={s.name + (s.dash ? "p" : "")}>
-            {s.area && <path d={`${d} L${pts.at(-1)![0]} ${t + ih} L${pts[0][0]} ${t + ih}Z`} fill={s.color} opacity={0.12} />}
+            {s.area && <path d={`${d} L${pts.at(-1)![0]} ${base} L${pts[0][0]} ${base}Z`} fill={s.color} opacity={0.12} />}
             <path d={d} fill="none" stroke={s.color} strokeWidth={s.dash ? 1.6 : 2.2} strokeDasharray={s.dash ? "5 4" : undefined} opacity={s.dash ? 0.7 : 1} strokeLinejoin="round" strokeLinecap="round" />
             {!s.dash && pts.map((q, i) => { const last = i === pts.length - 1; if (!allLab && !last) return null; return <g key={i}><circle cx={q[0]} cy={q[1]} r={last ? 4 : 3} fill="var(--surface)" stroke={s.color} strokeWidth={2} /><text className="vl" x={q[0]} y={q[1] - 8} textAnchor={last && !allLab ? "end" : "middle"} style={{ fill: s.color }}>{fmt(f, q[2])}</text></g>; })}
             {labels.length <= 200 && pts.map((q) => <circle key={`h${q[3]}`} cx={q[0]} cy={q[1]} r={7} fill="transparent"><title>{`${labels[q[3]]} · ${s.name}: ${fmt(f, q[2])}`}</title></circle>)}
@@ -67,31 +72,37 @@ function LineSvg({ labels, series, h = 230, f = "k", invert }: { labels: string[
 function ColSvg({ labels, series, h = 220, f = "k", stacked = true }: { labels: string[]; series: Series[]; h?: number; f?: Fmt; stacked?: boolean }) {
   const W = 680, H = h, l = 48, r = 10, t = 18, b = 28, iw = W - l - r, ih = H - t - b;
   const S = series.map((s) => ({ ...s, values: s.values.map((v) => v ?? 0) }));
-  const totals = labels.map((_, i) => (stacked ? sumOf(S.map((s) => s.values[i])) : Math.max(0, ...S.map((s) => s.values[i]))));
+  // negative values (e.g. followers lost on a day) draw below a zero line in side-by-side bars; stacks stay non-negative
+  const mnv = stacked ? 0 : Math.min(0, ...S.flatMap((s) => s.values));
+  const totals = labels.map((_, i) => (stacked ? sumOf(S.map((s) => Math.max(0, s.values[i]))) : Math.max(0, ...S.map((s) => s.values[i]))));
   const mxv = Math.max(...totals, 1e-9), ints = S.every((s) => s.values.every(Number.isInteger));
-  const hi = ints && mxv <= 8 ? Math.ceil(mxv) + 1 : niceMax(mxv * 1.12);
+  const hi = ints && mxv <= 8 && mnv === 0 ? Math.ceil(mxv) + 1 : niceMax(mxv * 1.12);
+  const lo = mnv < 0 ? -niceMax(-mnv * 1.12) : 0;
+  const yOf = (v: number) => t + ih - ((v - lo) / (hi - lo)) * ih;
   const bw = iw / Math.max(1, labels.length);
-  const nt = ints && mxv <= 8 ? hi : 4;
+  const nt = ints && mxv <= 8 && lo === 0 ? hi : 4;
   const step = Math.max(1, Math.ceil(labels.length / 12));
   const grpLab = !stacked && labels.length * S.length <= 48, stkTot = stacked && S.length > 1 && labels.length <= 35, oneLab = S.length === 1 && labels.length <= 35;
   return (
     <svg viewBox={`0 0 ${W} ${H}`} className={svgCls} role="img" aria-label="column chart">
-      {Array.from({ length: nt + 1 }, (_, k) => { const v = (hi * k) / nt, yy = t + ih - (v / hi) * ih; return <g key={k}><line className="grid" x1={l} x2={W - r} y1={yy} y2={yy} /><text x={l - 6} y={yy + 4} textAnchor="end">{fmt(f === "pct" ? "pct" : "k", v)}</text></g>; })}
+      {Array.from({ length: nt + 1 }, (_, k) => { const v = lo + ((hi - lo) * k) / nt, yy = yOf(v); return <g key={k}><line className="grid" x1={l} x2={W - r} y1={yy} y2={yy} /><text x={l - 6} y={yy + 4} textAnchor="end">{fmt(f === "pct" ? "pct" : "k", v)}</text></g>; })}
+      {lo < 0 && <line x1={l} x2={W - r} y1={yOf(0)} y2={yOf(0)} stroke="var(--border-strong)" />}
       {labels.map((lb, i) => {
         let acc = 0;
         return (
           <g key={i}>
             {S.map((s, si) => {
-              const v = s.values[i], hh = (v / hi) * ih;
+              const v = s.values[i];
               const xx = stacked ? l + i * bw + bw * 0.14 : l + i * bw + bw * 0.1 + si * ((bw * 0.8) / S.length);
               const ww = stacked ? bw * 0.72 : (bw * 0.8) / S.length - 1.5;
-              const yy = stacked ? t + ih - acc - hh : t + ih - hh;
+              const hh = stacked ? (Math.max(0, v) / hi) * ih : Math.abs(yOf(v) - yOf(0));
+              const yy = stacked ? t + ih - acc - hh : v >= 0 ? yOf(v) : yOf(0);
               if (stacked) acc += hh;
               if (hh <= 0) return null;
               return (
                 <g key={si}>
                   <rect x={xx} y={yy} width={Math.max(1, ww)} height={hh} fill={s.color} rx={2.5}><title>{`${lb} · ${s.name}: ${fmt(f, v)}`}</title></rect>
-                  {(grpLab || oneLab) ? <text className="vl" x={xx + ww / 2} y={yy - 4} textAnchor="middle">{fmt(f, v)}</text>
+                  {(grpLab || oneLab) ? <text className="vl" x={xx + ww / 2} y={v >= 0 ? yy - 4 : yy + hh + 12} textAnchor="middle">{fmt(f, v)}</text>
                     : stacked && S.length > 1 && hh >= 13 && ww >= 14 ? <text className="vli" x={xx + ww / 2} y={yy + hh / 2 + 4} textAnchor="middle">{fmt(f, v)}</text> : null}
                 </g>
               );

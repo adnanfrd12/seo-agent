@@ -8,6 +8,7 @@ import { arr, num, obj, str } from "@/lib/dataforseo/research";
 import { ProviderAuthError, ProviderRateLimitError } from "@/lib/composio/client";
 import { socialConnections, type SocialConnection } from "./composio";
 import { readComposio } from "./composio-read";
+import { saveSnapshot } from "./snapshots";
 import type { MetricKey, SocialDemo, SocialPost, SocialSeries } from "./metrics";
 import { tregConfigured, tregProfile, tregSupports } from "./treg";
 import { handleOf, PLATFORM_INFO, PLATFORMS, platformOf, type Platform, type SocialProfiles } from "./platforms";
@@ -461,6 +462,8 @@ export async function refreshPlatform(ctx: Ctx, p: Platform, social?: Awaited<Re
     }
   }
   await save(ctx.admin, ctx.clientId, row);
+  // today's snapshot for the day-to-day gain charts (one per platform per day; a later read replaces the day)
+  if (row.status === "ok") await saveSnapshot(ctx.admin, ctx.clientId, row);
   return row;
 }
 

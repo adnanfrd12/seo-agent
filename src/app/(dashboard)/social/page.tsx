@@ -18,6 +18,8 @@ import { METRICS, postEngagement, type MetricKey } from "@/lib/social/metrics";
 import { combine, dailyMetrics, staleConnected, figures, followerSeries, platformColor, previousOf, seriesBy, withPrevious, type Period, type PlatformFigures } from "@/lib/social/overview";
 import { accountUrl, handleOf, PLATFORM_INFO, PLATFORMS, type Platform } from "@/lib/social/platforms";
 import { SocialPostGrid } from "@/components/research/social-posts";
+import { SocialGrowth } from "@/components/research/social-growth";
+import { loadGrowth, type DailyGrowth } from "@/lib/social/snapshots";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { createClient } from "@/lib/supabase/server";
 
@@ -57,6 +59,8 @@ export default async function SocialPage({ searchParams }: { searchParams: Promi
   const range = resolveRange({ range: sp.range ?? (sp.start ? undefined : "30"), start: sp.start, end: sp.end }, client.timezone, client.defaultRangeDays);
   const cur: Period = { start: range.start, end: range.end };
   const prev = previousOf(cur);
+  // day-to-day gains from the daily snapshots (empty until migration 20261127000027 is applied)
+  const dailyGains = await loadGrowth(supabase, client.id, cur).catch(() => ({}) as Awaited<ReturnType<typeof loadGrowth>>);
   const all = PLATFORMS.filter((p) => rows[p]).map((p) => figures(rows[p]!, active.has(p), cur, prev));
   const withData = all.filter((f) => f.row.status === "ok" || f.row.history.length > 0);
 
@@ -163,8 +167,12 @@ export default async function SocialPage({ searchParams }: { searchParams: Promi
         <div className="mt-3 space-y-6">
           {SECTION_ORDER.map((p) => {
             const f = all.find((x) => x.platform === p);
+            const c = conns.find((x) => x.platform === p && x.status === "ACTIVE");
+            const g = dailyGains[p];
+            // "Tracking since": when the account was connected, else the first daily snapshot
+            const since = c?.createdAt ? dateLabel(c.createdAt.slice(0, 10)) : g?.firstDay ? dateLabel(g.firstDay) : null;
             return <PlatformSection key={p} p={p} f={f} row={rows[p]} url={social.profiles[p]} connected={active.has(p)} ready={readyMap[p]} canEdit={canEdit}
-              token={tokens[p]} cur={cur} prev={prev} clientId={client.id} />;
+              token={tokens[p]} cur={cur} prev={prev} clientId={client.id} growth={g ?? null} since={since} />;
           })}
         </div>
       </section>
@@ -176,9 +184,9 @@ export default async function SocialPage({ searchParams }: { searchParams: Promi
 }
 
 /* ------------------------------------------------------------------ one platform */
-function PlatformSection({ p, f, row, url, connected, ready, canEdit, token, cur, prev, clientId }: {
+function PlatformSection({ p, f, row, url, connected, ready, canEdit, token, cur, prev, clientId, growth, since }: {
   p: Platform; f: PlatformFigures | undefined; row: SocialRow | undefined; url: string | undefined; connected: boolean; ready: boolean; canEdit: boolean;
-  token: "client" | "env" | null; cur: Period; prev: Period; clientId: string;
+  token: "client" | "env" | null; cur: Period; prev: Period; clientId: string; growth: DailyGrowth | null; since: string | null;
 }) {
   const info = PLATFORM_INFO[p];
   const hasData = Boolean(row && (row.status === "ok" || row.history.length > 0));
@@ -264,6 +272,9 @@ function PlatformSection({ p, f, row, url, connected, ready, canEdit, token, cur
             </div>
             {trendOptions.length > 0 ? <MetricTrend title={`${info.label} over time`} source={connected ? "Composio" : undefined} options={trendOptions} />
               : <Notice icon={<Info className="size-3.5" />} tone="muted">{connected ? `${info.label}'s API has no daily breakdown; the trend builds from daily snapshots.` : "The trend appears after the second snapshot."}</Notice>}
+            <SocialGrowth platform={p} label={info.label} color={platformColor(p)} since={since} firstDay={growth?.firstDay ?? null}
+              videoNoun={p === "youtube" || p === "tiktok" ? "video" : p === "pinterest" ? "pin" : "post"}
+              data={growth ? { days: growth.days, followers: growth.followers, likes: growth.likes, likesFrom: growth.likesFrom, views: growth.views, videos: growth.videos } : null} />
             {(row!.demographics?.length ?? 0) > 0 && (
               <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-3">
                 {row!.demographics!.map((d) => <BarList key={d.dimension} title={d.dimension} valueLabel={d.dimension.includes("%") ? "%" : "Count"} items={d.items.map((i) => ({ label: i.label, value: i.value }))} limit={6} />)}
