@@ -88,6 +88,33 @@ export function belowExpected(g: G) {
   return queryPages(g).filter((r) => r.impressions >= 200 && r.pos <= 20 && r.ctr < 0.75 * g.expected(r.pos))
     .map((r) => ({ ...r, exp: g.expected(r.pos), missed: r.impressions * (g.expected(r.pos) - r.ctr) })).sort((a, b) => b.missed - a.missed);
 }
+/**
+ * Lost queries: searches with clicks or impressions in the previous period and none in this one, with the page
+ * they landed on before and the likely cause. Note: Search Console hides rare (anonymized) queries, so low-volume
+ * queries can also drop out of the data without being lost.
+ */
+export function lostQueries(g: G) {
+  const cur = g.queries(), prev = g.queries(true), pagesNow = g.pages();
+  const land = new Map<string, { page: string; i: number }>();
+  for (const [k, v] of groupM(g.qp(true), (x) => `${x.query}\u0000${x.page}`)) { const [q, p] = k.split("\u0000"); const c = land.get(q); if (!c || v.impressions > c.i) land.set(q, { page: p, i: v.impressions }); }
+  return [...prev].filter(([q, v]) => !cur.has(q) && (v.clicks > 0 || v.impressions > 0)).map(([q, v]) => {
+    const page = land.get(q)?.page ?? "", c = page ? g.crawl(page) : null, st = page ? g.status(page) : "";
+    const cause = !page ? "No landing page recorded"
+      : c?.redirect ? "Landed on a URL that now redirects"
+      : c && (c.status ?? 200) >= 400 ? `Page now returns ${c.status}`
+      : st.startsWith("Not indexed") ? "Page dropped out of Google's index"
+      : !pagesNow.has(page) ? "Page no longer shown for any search"
+      : v.pos != null && v.pos > 20 ? "Ranked low before; fell out of the results"
+      : v.impressions < 10 ? "Rare search (may be hidden by Google's privacy filter)"
+      : "Another result replaced the page for this search";
+    return { query: q, page, prevClicks: v.clicks, prevImpr: v.impressions, prevPos: v.pos, pageNow: pagesNow.get(page)?.clicks ?? 0, status: st, cause };
+  }).sort((a, b) => b.prevClicks - a.prevClicks || b.prevImpr - a.prevImpr);
+}
+/** Searches still shown but bringing fewer clicks than last period (largest loss first). */
+export function decliningQueries(g: G) {
+  const prevQ = g.queries(true);
+  return queryTable(g).filter((r) => r.dClicks < 0).map((r) => { const p = prevQ.get(r.query); return { ...r, prevImpr: p?.impressions ?? 0, prevPos: p?.pos ?? null }; }).sort((a, b) => a.dClicks - b.dClicks);
+}
 export function suggestTitle(g: G, query: string) {
   const brand = g.settings.brand[0] ? titleCase(g.settings.brand[0]) : "";
   let t = titleCase(query);

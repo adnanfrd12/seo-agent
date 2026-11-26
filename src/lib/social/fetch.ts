@@ -29,8 +29,9 @@ export const YT_INFO_MAX = 8;
 export const YT_RANK_KEYWORDS = 5;
 /** worst case of one YouTube refresh through DataForSEO */
 export const SOCIAL_EST = YT_SEARCH_EST * (1 + YT_RANK_KEYWORDS) + YT_INFO_EST * YT_INFO_MAX;
-const HISTORY_MAX = 400;
-const SERIES_MAX = 400;
+/** Stored points per platform (one per day): about 11 years, so imported history is never trimmed in practice. */
+const HISTORY_MAX = 4000;
+const SERIES_MAX = 4000;
 
 export type { SocialPost } from "./metrics";
 export interface SocialRanking { keyword: string; position: number | null; title: string | null; url: string | null; total: number }

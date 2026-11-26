@@ -36,7 +36,7 @@ export class G {
   constructor(readonly meta: GscMeta, cubes: Partial<Record<GCube, Cube>>, readonly p: Period, readonly settings: GscSettings,
     inv: InventoryRow[] | null, insp: InspState | null, readonly sitemaps: SitemapInfo[], readonly type: string = "web") {
     this.T = rows(cubes.totals); this.Q = rows(cubes.q); this.QP = rows(cubes.qp); this.PG = rows(cubes.pg); this.PD = rows(cubes.pd); this.CD = rows(cubes.cd);
-    this.DEV = rows(cubes.dev); this.APP = rows(cubes.app); this.HOUR = rows(cubes.hour); this.QM = rows(cubes.qm);
+    this.DEV = rows(cubes.dev); this.APP = rows(cubes.app); this.HOUR = rows(cubes.hour).filter(this.inCur); this.QM = rows(cubes.qm);
     this.segs = segments(settings); this.brandSeg = this.segs[0];
     const br = matcher(this.brandSeg); this.isBrand = (q) => settings.brand.length > 0 && br(q);
     this.inv = inv ?? []; this.invMap = new Map(this.inv.map((r) => [r.url, r])); this.insp = insp?.history ?? {}; this.quota = insp?.quota ?? { date: "", used: 0 };
@@ -74,7 +74,7 @@ export class G {
   expected = (pos: number) => this.ownCurve().get(Math.max(1, Math.round(pos))) ?? benchmarkCtr(pos);
   /** Latest inspection of a URL. */
   latest = (u: string) => this.insp[u]?.[0] ?? null;
-  status = (u: string) => { const i = this.latest(u); return !i ? "Not inspected" : i.verdict === "PASS" ? "Indexed" : i.verdict === "NEUTRAL" ? "Excluded" : "Not indexed"; };
+  status = (u: string) => { const i = this.latest(u); return !i ? "Not inspected" : i.verdict === "PASS" ? "Indexed" : i.verdict === "NEUTRAL" ? "Not indexed" : "Not indexed (error)"; };
   crawl = (u: string): Crawl | null => this.invMap.get(u)?.crawl ?? null;
   path = pathOf;
 }

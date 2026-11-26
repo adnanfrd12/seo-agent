@@ -32,10 +32,18 @@ const STALE_AFTER_MS = 3 * 3_600_000; // a crawl that hasn't finished after 3 ho
 
 export type Severity = "error" | "warning" | "notice";
 export interface AuditIssue { key: string; label: string; severity: Severity; count: number; why: string; fix: string; urls: string[] }
-export interface AuditPage { url: string; status: number | null; title: string | null; words: number | null; depth: number | null; ms: number | null; score: number | null; errors: number; warnings: number }
+export interface AuditPage {
+  url: string; status: number | null; title: string | null; words: number | null; depth: number | null; ms: number | null; score: number | null; errors: number; warnings: number;
+  /** no other crawled page links here (DataForSEO's is_orphan_page; self-links don't count). Absent on audits stored before it was kept. */
+  orphan?: boolean;
+  /** listed in the XML sitemap */
+  sitemap?: boolean;
+}
 export interface AuditPoint { date: string; score: number | null; errors: number; warnings: number; pages: number }
 export interface AuditResult {
   domain: string; startedAt: string; finishedAt: string; pages: number; maxPages: number;
+  /** the DataForSEO crawl id, used to read the affected URLs, links and images per issue (free). Absent on older audits. */
+  taskId?: string;
   /** how pages were fetched; absent on audits stored before the option existed (those were HTML only) */
   render?: RenderMode;
   /** DataForSEO's on-page score, 0-100 */
@@ -53,6 +61,8 @@ export interface AuditTask {
   id: string; domain: string; maxPages: number; startedAt: string; status: "crawling" | "done" | "failed";
   crawled?: number; queued?: number; checkedAt?: string; error?: string; source: "auto" | "manual";
   render?: RenderMode;
+  /** a crawl marked failed only because nobody checked on it in time was looked at once more */
+  recheckedAt?: string;
 }
 
 type Check = { key: string; label: string; severity: Severity; why: string; fix: string; test?: (p: Json) => boolean };
@@ -64,14 +74,21 @@ const CATALOG: Check[] = [
   { key: "is_4xx_code", label: "Broken pages (4xx)", severity: "error", why: "Visitors and Google land on an error page, and any links pointing here are wasted.", fix: "Restore the page, redirect it to a relevant live page, or remove the links that point to it." },
   { key: "no_title", label: "Missing page title", severity: "error", why: "The title is the headline in Google results; without one Google invents it.", fix: "Write a unique title of about 30-60 characters that includes the main keyword." },
   { key: "canonical_to_broken", label: "Canonical points to a broken page", severity: "error", why: "Tells Google the 'real' version is a page that doesn't work, so this page can drop out of results.", fix: "Point the canonical tag at a working URL (usually the page itself)." },
+  { key: "recursive_canonical", label: "Canonical loop", severity: "error", why: "A canonical loop leaves Google without a page to index.", fix: "Point the canonical at the page's own final URL." },
   { key: "is_http", label: "Served over HTTP, not HTTPS", severity: "error", why: "Browsers warn visitors, and HTTPS is a ranking signal.", fix: "Redirect all HTTP URLs to HTTPS and update internal links." },
   { key: "duplicate_title", label: "Duplicate page titles", severity: "warning", why: "Several pages with the same title compete against each other.", fix: "Give each page a unique, descriptive title.", test: (p) => flagged(p.duplicate_title) },
+  {
+    key: "duplicate_content", label: "Duplicate content", severity: "warning", why: "Pages with nearly the same text compete with each other, and Google picks one to show.", fix: "Merge or rewrite the near-copies, or point a canonical tag at the main version.",
+    test: (p) => p.duplicate_content === true,
+  },
   { key: "no_description", label: "Missing meta description", severity: "warning", why: "The description is the text under the title in results; a good one lifts click-through.", fix: "Write a unique 70-160 character description that invites the click." },
   { key: "duplicate_description", label: "Duplicate meta descriptions", severity: "warning", why: "Identical descriptions make pages look interchangeable in results.", fix: "Write a unique description for each page.", test: (p) => flagged(p.duplicate_description) },
   { key: "no_h1_tag", label: "Missing H1 heading", severity: "warning", why: "The H1 tells visitors and Google what the page is about.", fix: "Add one clear H1 that matches the page topic." },
   { key: "title_too_long", label: "Title too long", severity: "warning", why: "Google cuts long titles off, hiding your message.", fix: "Shorten the title to roughly 60 characters." },
   { key: "is_redirect", label: "Pages that redirect", severity: "warning", why: "Each redirect adds a delay and can lose some link value.", fix: "Update internal links to point straight at the final URL." },
   { key: "has_links_to_redirects", label: "Links pointing at redirects", severity: "warning", why: "Internal links that go through a redirect slow visitors and crawlers.", fix: "Replace these links with the final destination URL." },
+  { key: "canonical_to_redirect", label: "Canonical points to a redirect", severity: "warning", why: "The canonical should name the final page, not one that forwards elsewhere.", fix: "Change the canonical to the redirect's destination." },
+  { key: "https_to_http_links", label: "Links from HTTPS to HTTP pages", severity: "warning", why: "Insecure links trigger browser warnings and an extra redirect.", fix: "Change the links to the https:// address." },
   { key: "canonical_chain", label: "Canonical chains", severity: "warning", why: "A canonical that points to another canonical confuses Google about which page counts.", fix: "Point each canonical straight at the final page." },
   { key: "redirect_chain", label: "Redirect chains", severity: "warning", why: "Several redirects in a row slow the page and waste crawl budget.", fix: "Redirect the first URL straight to the last one." },
   { key: "is_broken", label: "Broken links or resources", severity: "warning", why: "Links or files on these pages don't work.", fix: "Fix or remove the broken links." },
@@ -80,6 +97,11 @@ const CATALOG: Check[] = [
   { key: "low_content_rate", label: "Little text compared with code", severity: "notice", why: "Pages that are mostly code and little readable content tend to rank poorly.", fix: "Add useful text, or slim down the page code." },
   { key: "title_too_short", label: "Title too short", severity: "notice", why: "A very short title wastes space to describe the page.", fix: "Expand it to describe the page and include the main keyword." },
   { key: "no_image_alt", label: "Images without alt text", severity: "notice", why: "Alt text helps accessibility and image search.", fix: "Describe each meaningful image in its alt attribute." },
+  { key: "no_image_title", label: "Images without a title", severity: "notice", why: "An image title adds context for visitors who hover over it.", fix: "Add a short title attribute to key images." },
+  {
+    key: "html_errors", label: "HTML errors", severity: "notice", why: "Broken markup can hide content or links from search engines.", fix: "Fix the reported lines in the page template.",
+    test: (p) => arr(obj(p.resource_errors).errors).length > 0,
+  },
   {
     key: "thin_content", label: "Thin content (under 200 words)", severity: "notice", why: "Very short pages rarely satisfy what searchers want.", fix: "Expand them with useful detail, or merge them into stronger pages.",
     test: (p) => num(obj(obj(p.meta).content).plain_text_word_count) !== null && (num(obj(obj(p.meta).content).plain_text_word_count) as number) < 200 && num(p.status_code) === 200,
@@ -88,6 +110,13 @@ const CATALOG: Check[] = [
 
 /** The crawler reports duplicates on the page itself, as a flag or a list of the other pages. */
 const flagged = (v: unknown) => (Array.isArray(v) ? v.length > 0 : v === true);
+
+/** Whether one crawled page (raw DataForSEO item) has the issue `key`; used by the detail panels. */
+export function pageHasIssue(key: string, p: Json): boolean {
+  const c = CATALOG.find((x) => x.key === key);
+  return c?.test ? c.test(p) : obj(p.checks)[key] === true;
+}
+export const issueInfo = (key: string) => CATALOG.find((x) => x.key === key) ?? null;
 const bool = (v: unknown) => (typeof v === "boolean" ? v : null);
 
 /** Turns the crawler's page list and summary into what the dashboard shows. */
@@ -112,6 +141,7 @@ export function analyse(task: AuditTask, summary: Json, items: Json[], prev: Aud
     return {
       url: u, status: num(p.status_code), title: str(m.title)?.slice(0, 140) ?? null, words: num(obj(m.content).plain_text_word_count), depth: num(p.click_depth),
       ms: num(t.duration_time), score: num(p.onpage_score) === null ? null : Math.round(num(p.onpage_score) as number), errors: f.errors, warnings: f.warnings,
+      orphan: obj(p.checks).is_orphan_page === true, sitemap: obj(p.checks).from_sitemap === true,
     };
   }).sort((a, b) => (b.errors - a.errors) || (b.warnings - a.warnings)).slice(0, 500);
   const cleanPages = pages.filter((p) => { const f = perPage.get(str(p.url) ?? ""); return !f || (f.errors === 0 && f.warnings === 0); }).length;
@@ -123,7 +153,7 @@ export function analyse(task: AuditTask, summary: Json, items: Json[], prev: Aud
   const score = num(dm.onpage_score) === null ? null : Math.round(num(dm.onpage_score) as number);
   const point: AuditPoint = { date: finishedAt.slice(0, 10), score, errors, warnings, pages: pages.length };
   return {
-    domain: task.domain, startedAt: task.startedAt, finishedAt, pages: pages.length, maxPages: task.maxPages, score, render: task.render ?? "html",
+    domain: task.domain, taskId: task.id, startedAt: task.startedAt, finishedAt, pages: pages.length, maxPages: task.maxPages, score, render: task.render ?? "html",
     metrics: {
       internalLinks: num(dm.links_internal), externalLinks: num(dm.links_external), brokenLinks: num(dm.broken_links), duplicateTitle: num(dm.duplicate_title),
       duplicateDescription: num(dm.duplicate_description), duplicateContent: num(dm.duplicate_content), nonIndexable: num(dm.non_indexable),
@@ -163,25 +193,39 @@ export async function startAudit(ctx: Ctx, target: Target, maxPages: number, ren
 
 export type AuditState = { state: "none" } | { state: "crawling"; crawled: number; max: number } | { state: "done" } | { state: "failed"; error: string };
 
-/** Free status check. When the crawl has finished, collects and stores the result. Safe to call as often as wanted. */
+const TIMED_OUT = "The crawl didn't finish in time. Start a new audit.";
+const RECHECK_DAYS = 25; // DataForSEO keeps a crawl's results for about a month
+
+/**
+ * Free status check. When the crawl has finished, collects and stores the result. Safe to call as often as wanted.
+ * DataForSEO is asked before a crawl is called stale: the daily job polls once a day, so a crawl that finished
+ * minutes after it started would otherwise be given up on unread. A crawl already marked as timed out is looked at
+ * once more for the same reason.
+ */
 export async function pollAudit(admin: SupabaseClient, clientId: string): Promise<AuditState> {
   const t = await read<AuditTask>(admin, clientId, "audit_task");
   if (!t) return { state: "none" };
   const task = t.data;
   if (task.status === "done") return { state: "done" };
-  if (task.status === "failed") return { state: "failed", error: task.error ?? "The crawl failed." };
-  if (Date.now() - Date.parse(task.startedAt) > STALE_AFTER_MS) {
-    await save(admin, clientId, "audit_task", { ...task, status: "failed", error: "The crawl didn't finish in time. Start a new audit." });
-    return { state: "failed", error: "The crawl didn't finish in time. Start a new audit." };
-  }
+  const recheck = task.status === "failed" && task.error === TIMED_OUT && !task.recheckedAt && Date.now() - Date.parse(task.startedAt) < RECHECK_DAYS * 86_400_000;
+  if (task.status === "failed" && !recheck) return { state: "failed", error: task.error ?? "The crawl failed." };
   const { status, result } = await dfsGet(`/on_page/summary/${task.id}`);
   if (status === 40401 || status === 40400) {
-    await save(admin, clientId, "audit_task", { ...task, status: "failed", error: "DataForSEO no longer has this crawl. Start a new audit." });
-    return { state: "failed", error: "DataForSEO no longer has this crawl. Start a new audit." };
+    const error = "DataForSEO no longer has this crawl. Start a new audit.";
+    await save(admin, clientId, "audit_task", { ...task, status: "failed", error, ...(recheck ? { recheckedAt: new Date().toISOString() } : {}) });
+    return { state: "failed", error };
   }
   const cs = obj(result?.crawl_status);
   const crawled = num(cs.pages_crawled) ?? 0;
   if (!result || result.crawl_progress !== "finished") {
+    if (recheck) {
+      await save(admin, clientId, "audit_task", { ...task, recheckedAt: new Date().toISOString() });
+      return { state: "failed", error: TIMED_OUT };
+    }
+    if (Date.now() - Date.parse(task.startedAt) > STALE_AFTER_MS) {
+      await save(admin, clientId, "audit_task", { ...task, status: "failed", error: TIMED_OUT });
+      return { state: "failed", error: TIMED_OUT };
+    }
     await save(admin, clientId, "audit_task", { ...task, crawled, queued: num(cs.pages_in_queue) ?? 0, checkedAt: new Date().toISOString() });
     return { state: "crawling", crawled, max: task.maxPages };
   }
@@ -189,8 +233,17 @@ export async function pollAudit(admin: SupabaseClient, clientId: string): Promis
   const prev = (await read<AuditResult>(admin, clientId, "audit"))?.data ?? null;
   const out = analyse(task, result, arr(pageRes?.items), prev);
   await save(admin, clientId, "audit", out);
-  await save(admin, clientId, "audit_task", { ...task, status: "done", crawled: out.pages, checkedAt: out.finishedAt });
+  const { error: _drop, ...rest } = task;
+  void _drop;
+  await save(admin, clientId, "audit_task", { ...rest, status: "done", crawled: out.pages, checkedAt: out.finishedAt });
   return { state: "done" };
+}
+
+/** The crawl behind the stored result; its id lets the detail panels read the affected URLs. */
+export function auditTaskId(result: AuditResult | null | undefined, task: AuditTask | null | undefined): string | null {
+  if (!result) return null;
+  if (result.taskId) return result.taskId;
+  return task && task.status === "done" && task.startedAt === result.startedAt ? task.id : null;
 }
 
 /** The crawl mode an owner chose last (clients.settings.audit_render); the weekly automatic audit uses it too. */

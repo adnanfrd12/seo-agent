@@ -5,9 +5,11 @@ import { TabHeader } from "@/components/dashboard/tab-header";
 import { lhColor, ScoreRing } from "@/components/charts/score-ring";
 import { ResearchTable } from "@/components/research/research-table";
 import { TechnicalRun } from "@/components/research/technical-controls";
+import { SecurityAuditSection } from "@/components/security/security-audit";
 import { researchPage } from "@/lib/dataforseo/view";
 import { createClient } from "@/lib/supabase/server";
 import { loadTechnical } from "@/lib/technical/load";
+import { loadSecurity } from "@/lib/technical/security";
 import { scoreBand, type Check, type Priority } from "@/lib/technical/score";
 import { cn } from "@/lib/utils";
 
@@ -25,16 +27,17 @@ export default async function TechnicalSeoPage() {
   const page = await researchPage();
   if (!page) return null;
   const { client, canEdit, cache } = page;
-  const header = <TabHeader source="dfs" title="Technical SEO" description="Technical health score, area scores and a prioritised list of fixes." guide={[
+  const header = <TabHeader source="dfs" title="Technical SEO" description="Technical health score, area scores, a prioritised list of fixes and a website security audit." guide={[
     { term: "Technical SEO score", text: "Weighted average of the category scores. Each category starts at 100 and loses the points shown next to each failed check." },
     { term: "Method", text: "Categories, thresholds and priority tiers adapted from the open-source claude-seo technical audit skill (MIT licence)." },
     { term: "Priority", text: "Critical = a failure that blocks crawling, indexing or HTTPS (fix now). Otherwise impact x effort: high-impact changes that aren't hard are High; high-impact but hard, or medium-impact and easy, are Medium; the rest Low." },
+    { term: "Security audit", text: "Passive checks only (normal page requests, one TLS handshake, DNS lookups). Score = 100 minus 25 / 6 / 2 per failed high / medium / low issue, half for a warning. Runs within a day of adding a client and monthly after that." },
     { term: "Not measured", text: "A category with no data yet is left out and the weights are re-balanced over the measured ones." },
   ]} />;
   if (!cache.target) return <>{header}<EmptyState title="No website yet" body="Connect Bing, Search Console or Business Profile for this client so the website can be detected, or ask an owner or admin to set it." action={{ href: "/integrations", label: "Open Integrations" }} /></>;
 
   const supabase = await createClient();
-  const { score: s, checks } = await loadTechnical(supabase, client.id);
+  const [{ score: s, checks }, sec] = await Promise.all([loadTechnical(supabase, client.id), loadSecurity(supabase, client.id).catch(() => ({ audit: null, ai: null }))]);
   const allChecks = s.categories.flatMap((c) => c.checks.map((x) => ({ ...x, category: c.label })));
   const failing = allChecks.filter((x) => x.status === "fail" || x.status === "warn");
   const recRows = s.recs.map((r) => ({ ...r, pagesText: r.pages.slice(0, 5).map(path).join(", ") + (r.pageCount > 5 ? ` +${r.pageCount - 5} more` : ""), pageUrl: r.pages[0] ?? null }));
@@ -167,6 +170,7 @@ export default async function TechnicalSeoPage() {
           <p className="mt-4 text-xs text-muted">Crawl details are on <Link href="/site-audit" className="underline underline-offset-2">Site Audit</Link>.</p>
         </>
       )}
+      <SecurityAuditSection audit={sec.audit} ai={sec.ai} canEdit={canEdit} />
     </>
   );
 }

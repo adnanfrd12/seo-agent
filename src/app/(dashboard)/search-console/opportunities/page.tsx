@@ -3,7 +3,7 @@ import { C } from "@/components/ga4x/fmt";
 import { Table } from "@/components/ga4x/table";
 import { Band, Card, Grid, Note } from "@/components/ga4x/ui";
 import type { SearchParams } from "@/lib/analytics/url";
-import { belowExpected, pageTable, pageTwoRescue, strikingDistance, titleCandidates } from "@/lib/gscx/analysis";
+import { belowExpected, decliningQueries, lostQueries, pageTable, pageTwoRescue, strikingDistance, titleCandidates } from "@/lib/gscx/analysis";
 import { benchmarkCtr, pathOf } from "@/lib/gscx/model";
 import { GscScreen } from "../_gscx/screen";
 import { QueryTable, siteOf, Tasks } from "../_gscx/parts";
@@ -14,10 +14,10 @@ const PATH = "/search-console/opportunities";
 export default async function OpportunitiesPage({ searchParams }: { searchParams: Promise<SearchParams> }) {
   const sp = await searchParams;
   return (
-    <GscScreen sp={sp} path={PATH} title="Opportunities" description="Keywords close to page one, missed clicks and titles to rewrite.">
+    <GscScreen sp={sp} path={PATH} title="Opportunities" description="Keywords close to page one, missed clicks, lost searches and titles to rewrite.">
       {({ g, wins }) => {
         const f = 30 / g.p.days;
-        const sd = strikingDistance(g), be = belowExpected(g), tc = titleCandidates(g, pageTable(g)), p2 = pageTwoRescue(g);
+        const sd = strikingDistance(g), be = belowExpected(g), tc = titleCandidates(g, pageTable(g)), p2 = pageTwoRescue(g), lq = lostQueries(g), dq = decliningQueries(g);
         const curve = g.ownCurve();
         const pos = Array.from({ length: 20 }, (_, i) => i + 1);
         const potByPage = new Map<string, number>(); for (const r of sd) potByPage.set(r.page, (potByPage.get(r.page) ?? 0) + r.potential);
@@ -66,6 +66,13 @@ export default async function OpportunitiesPage({ searchParams }: { searchParams
               </Card>
               <Card title="Keywords that slipped to page two" tech="Page two rescue">
                 <QueryTable rows={p2} site={siteOf(g)} empty="0: no query dropped from page one to page two." />
+              </Card>
+              <Card title="Searches you lost" tech="Lost queries" sub={`Clicks or impressions in the previous ${g.p.days} days, none in the last ${g.p.days}.`} info="Queries that had clicks or impressions in the previous period and none in this one, with the page they landed on before, its status now and the likely cause. Google hides rare (anonymized) queries, so very small ones can drop out of the data without being lost." span={7}>
+                <Table site={siteOf(g)} facets={[{ k: "cause", label: "Likely cause" }]} rows={lq.map((r) => ({ q: r.query, clicks: r.prevClicks, impr: r.prevImpr, pos: r.prevPos, page: r.page ? pathOf(r.page) : "–", cause: r.cause }))}
+                  cols={[{ k: "q", label: "Query", wrap: true }, { k: "clicks", label: "Clicks before", num: true, bar: C[7] }, { k: "impr", label: "Impr. before", num: true }, { k: "pos", label: "Pos before", num: true, f: "dec1" }, { k: "page", label: "Page", kind: "page" }, { k: "cause", label: "Likely cause", wrap: true }]} empty="0: every search from the previous period still shows the site." />
+              </Card>
+              <Card title="Searches bringing fewer clicks" tech="Declining queries" sub="Still shown, fewer clicks than the previous period." span={5}>
+                <Table rows={dq.map((r) => ({ q: r.query, clicks: r.clicks, d: r.dClicks, pos: r.pos, dpos: r.dPos }))} cols={[{ k: "q", label: "Query", wrap: true }, { k: "clicks", label: "Clicks", num: true }, { k: "d", label: "Δ clicks", num: true }, { k: "pos", label: "Pos", num: true, f: "dec1" }, { k: "dpos", label: "Δ pos", num: true, f: "dec1" }]} empty="0: no query lost clicks in this period." />
               </Card>
             </Grid>
             <Tasks screen="Opportunities" id="opps" wins={wins} />

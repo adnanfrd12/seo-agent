@@ -2,7 +2,10 @@ import { Freshness, type FreshRow } from "@/components/charts/ops-charts";
 import { PageHeader } from "@/components/dashboard/page-header";
 import { IntegrationCard, type ProviderStatus } from "@/components/integrations/integration-card";
 import { getSession } from "@/lib/analytics/client-context";
-import { gbpConfigured } from "@/lib/google/oauth";
+import { gbpRedirectUri } from "@/lib/google/oauth";
+import { appForConnect, savedAppInfo } from "@/lib/google/oauth-apps";
+import { GbpCredentials } from "@/components/integrations/gbp-credentials";
+import { createAdminClient } from "@/lib/supabase/admin";
 import { ConnectClarity, ReviewForm } from "../clarity/clarity-forms";
 import { LbmPanel } from "./lbm-panel";
 import { LbmBulkSetup } from "./lbm-bulk";
@@ -25,7 +28,7 @@ const hoursSince = (iso: string | null | undefined) => (iso ? Math.max(0, (Date.
 export default async function IntegrationsPage({
   searchParams,
 }: { searchParams: Promise<{ connected?: string; error?: string; notice?: string; provider?: string }> }) {
-  const { client } = await getSession();
+  const { client, user } = await getSession();
   const sp = await searchParams;
   if (!client) return null;
 
@@ -59,6 +62,20 @@ export default async function IntegrationsPage({
   // keep LBM-sourced locations out of the Google OAuth card
   const lbmIds = new Set((lbmResources ?? []).map((r) => r.id));
   if (status.gbp) status.gbp = { ...status.gbp, resources: status.gbp.resources.filter((r) => !lbmIds.has(r.id)) };
+  // Google locations also tracked through LBM: the Google data is used once it arrives (one source per location)
+  const locId = (ext: string) => ext.replace(/^.*locations\//, "");
+  const { data: lbmExt } = lbm ? await supabase.from("integration_resources").select("external_id").eq("connection_id", lbm.id).eq("is_selected", true) : { data: [] };
+  const lbmTracked = new Set((lbmExt ?? []).map((r) => locId(r.external_id)));
+  const gbpNotes = Object.fromEntries((status.gbp?.resources ?? []).filter((r) => lbmTracked.has(locId(r.external_id)))
+    .map((r) => [r.id, "Also tracked via Local Brand Manager"]));
+
+  // per-owner Google OAuth apps: which one a new connection for this client would use
+  const admin = createAdminClient();
+  const [ownApp, connectApp] = await Promise.all([
+    savedAppInfo(admin, user.id).catch(() => null),
+    appForConnect(admin, user.id, client.id).catch(() => null),
+  ]);
+  const gbpInUse = !connectApp ? "none" : connectApp.owner === null ? "env" : connectApp.owner === user.id ? "own" : "client_owner";
 
   // how fresh each connected source is (connected or failing; never-connected sources are left out)
   const fresh: FreshRow[] = [
@@ -94,7 +111,10 @@ export default async function IntegrationsPage({
       )}
       <div className="grid gap-4 lg:grid-cols-3">
         {ORDER.map((p) => (
-          <IntegrationCard key={p} provider={p} status={status[p] ?? EMPTY} canEdit={canEdit} available={p !== "gbp" || gbpConfigured()} />
+          <IntegrationCard key={p} provider={p} status={status[p] ?? EMPTY} canEdit={canEdit}
+            available={p !== "gbp" || (Boolean(connectApp) && Boolean(process.env.TOKEN_ENCRYPTION_KEY))}
+            notes={p === "gbp" ? gbpNotes : undefined}
+            extra={p === "gbp" ? <GbpCredentials canEdit={canEdit} own={ownApp} inUse={gbpInUse} redirectUri={gbpRedirectUri()} /> : undefined} />
         ))}
       </div>
       {fresh.length > 0 && <div className="mt-4"><Freshness title="Data freshness" sub="Search Console and Business Profile data lag a few days" rows={fresh} /></div>}

@@ -34,8 +34,14 @@ const btnPrimary =
   "inline-flex items-center gap-1.5 rounded-lg bg-accent px-3 py-1.5 text-sm font-medium text-accent-foreground outline-none transition hover:opacity-90 focus-visible:ring-2 focus-visible:ring-accent disabled:cursor-not-allowed disabled:opacity-50";
 
 export function IntegrationCard({
-  provider, status, canEdit, available = true,
-}: { provider: ProviderId; status: ProviderStatus; canEdit: boolean; available?: boolean }) {
+  provider, status, canEdit, available = true, notes, extra,
+}: {
+  provider: ProviderId; status: ProviderStatus; canEdit: boolean; available?: boolean;
+  /** a short note per resource id, shown under its name in the picker */
+  notes?: Record<string, string>;
+  /** provider-specific settings shown at the bottom (Business Profile: the owner's Google API credentials) */
+  extra?: React.ReactNode;
+}) {
   const router = useRouter();
   const meta = PROVIDER_META[provider];
   const conn = status.connection;
@@ -133,7 +139,9 @@ export function IntegrationCard({
       {!available ? (
         <div className="space-y-2 text-sm text-muted">
           <p>
-            Add GOOGLE_GBP_CLIENT_ID, GOOGLE_GBP_CLIENT_SECRET and TOKEN_ENCRYPTION_KEY to the environment, then redeploy.
+            {provider === "gbp"
+              ? "Save your Google OAuth client ID and secret below (or set GOOGLE_GBP_CLIENT_ID / GOOGLE_GBP_CLIENT_SECRET on the server). TOKEN_ENCRYPTION_KEY must be set."
+              : "Add the provider's credentials to the environment, then redeploy."}
           </p>
           <button className={btn} disabled>Connect Account</button>
         </div>
@@ -183,7 +191,10 @@ export function IntegrationCard({
                             })
                           }
                         />
-                        <span className="truncate">{r.display_name ?? r.external_id}</span>
+                        <span className="min-w-0">
+                          <span className="block truncate">{r.display_name ?? r.external_id}</span>
+                          {notes?.[r.id] && <span className="block truncate text-xs text-muted">{notes[r.id]}</span>}
+                        </span>
                         {r.timezone && <span className="ml-auto shrink-0 text-xs text-muted">{r.timezone}</span>}
                       </label>
                     </li>
@@ -221,6 +232,7 @@ export function IntegrationCard({
           </div>
         </>
       )}
+      {extra && <div className="border-t border-border pt-4">{extra}</div>}
       {consent && entry && (
         <ConsentPanel p={entry}>
           <button type="button" className={btnPrimary} onClick={() => { setConsent(false); connect(); }} disabled={busy !== null}>

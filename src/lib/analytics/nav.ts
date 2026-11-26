@@ -1,6 +1,6 @@
 import {
   BarChart3, CalendarCheck, Globe, Link2, ListOrdered, SearchCheck, Swords, CalendarRange, FileUp, History, LayoutDashboard, Lightbulb, MapPin, MousePointerClick, Plug,
-  Bot, GraduationCap, Map as MapIcon, MessagesSquare, Newspaper, Radar, ScanSearch, Search, Settings, Share2, ShieldCheck, Sparkles, Star, TrendingUp, Wrench, Zap, type LucideIcon,
+  Bot, GraduationCap, Map as MapIcon, MessagesSquare, Network, Newspaper, Radar, ScanSearch, Search, Settings, Share2, ShieldCheck, Sparkles, Star, TrendingUp, Wrench, Zap, type LucideIcon,
 } from "lucide-react";
 
 /** `children` are sub-tabs shown under the item; the sidebar lets them be opened and closed. */
@@ -72,6 +72,7 @@ export const NAV: NavGroup[] = [
       { href: "/reviews", label: "Reviews (all platforms)", icon: MessagesSquare },
       { href: "/ai-visibility", label: "AI Visibility", icon: Bot },
       { href: "/site-audit", label: "Site Audit", icon: ScanSearch },
+      { href: "/fan-out-queries", label: "Fan-Out Queries", icon: Network },
       { href: "/technical-seo", label: "Technical SEO", icon: ShieldCheck },
       { href: "/blog", label: "Blog Content", icon: Newspaper },
     ],

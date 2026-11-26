@@ -1,26 +1,41 @@
 import "server-only";
 import type { SupabaseClient } from "@supabase/supabase-js";
 import { decryptSecret, encryptSecret } from "@/lib/crypto";
-import { listAccounts, listLocations, type GbpLocation } from "@/lib/google/gbp";
+import { listAccounts, listLocations, splitLocationName, type GbpAuth, type GbpLocation } from "@/lib/google/gbp";
 import { GoogleAuthError, refreshAccessToken, revokeToken, type TokenSet } from "@/lib/google/oauth";
+import { appForConnection } from "@/lib/google/oauth-apps";
 
 /** Short-lived access tokens are cached per connection for the life of the server instance. */
-const cache = new Map<string, { token: string; expires: number }>();
+const cache = new Map<string, { token: string; expires: number; envProject: boolean }>();
 
-/** A fresh access token from the stored (encrypted) refresh token. Throws GoogleAuthError when revoked. */
-export async function gbpAccessToken(admin: SupabaseClient, connectionId: string): Promise<string> {
+/**
+ * A fresh access token from the stored (encrypted) refresh token, refreshed with the same OAuth app that made the
+ * grant (the owner's saved app, or the environment app). Throws GoogleAuthError when revoked or the app is gone.
+ */
+export async function gbpAuth(admin: SupabaseClient, connectionId: string): Promise<{ token: string; envProject: boolean }> {
   const hit = cache.get(connectionId);
-  if (hit && hit.expires > Date.now() + 60_000) return hit.token;
-  const { data } = await admin.from("integration_secrets").select("refresh_token_encrypted").eq("connection_id", connectionId).maybeSingle();
+  if (hit && hit.expires > Date.now() + 60_000) return { token: hit.token, envProject: hit.envProject };
+  const [{ data }, { data: conn }] = await Promise.all([
+    admin.from("integration_secrets").select("refresh_token_encrypted").eq("connection_id", connectionId).maybeSingle(),
+    admin.from("integration_connections").select("oauth_app_owner").eq("id", connectionId).maybeSingle(),
+  ]);
   if (!data?.refresh_token_encrypted) throw new GoogleAuthError("No Google refresh token stored. Reconnect Business Profile.");
-  const t = await refreshAccessToken(decryptSecret(data.refresh_token_encrypted));
-  cache.set(connectionId, { token: t.access_token, expires: Date.now() + t.expires_in * 1000 });
-  return t.access_token;
+  const owner = (conn as { oauth_app_owner?: string | null } | null)?.oauth_app_owner ?? null;
+  const app = await appForConnection(admin, owner).catch(() => null);
+  if (!app) {
+    throw new GoogleAuthError(owner
+      ? "The Google OAuth app this connection was made with was removed. Save it again or reconnect Business Profile."
+      : "Google Business Profile OAuth isn't configured. Reconnect Business Profile.");
+  }
+  const t = await refreshAccessToken(app, decryptSecret(data.refresh_token_encrypted));
+  const envProject = app.owner === null;
+  cache.set(connectionId, { token: t.access_token, expires: Date.now() + t.expires_in * 1000, envProject });
+  return { token: t.access_token, envProject };
 }
 
 /** Saves a new grant. Google only returns a refresh token on consent, so keep the old one otherwise. */
-export async function storeGrant(admin: SupabaseClient, connectionId: string, tokens: TokenSet) {
-  cache.set(connectionId, { token: tokens.access_token, expires: Date.now() + tokens.expires_in * 1000 });
+export async function storeGrant(admin: SupabaseClient, connectionId: string, tokens: TokenSet, envProject: boolean) {
+  cache.set(connectionId, { token: tokens.access_token, expires: Date.now() + tokens.expires_in * 1000, envProject });
   if (!tokens.refresh_token) return;
   const { error } = await admin.from("integration_secrets").upsert(
     { connection_id: connectionId, refresh_token_encrypted: encryptSecret(tokens.refresh_token), updated_at: new Date().toISOString() },
@@ -28,27 +43,35 @@ export async function storeGrant(admin: SupabaseClient, connectionId: string, to
   if (error) throw new Error("Could not store the Google grant");
 }
 
-function address(l: GbpLocation): string | null {
+export function formatAddress(l: GbpLocation): string | null {
   const a = l.storefrontAddress;
   if (!a) return null;
   return [...(a.addressLines ?? []), a.locality, a.administrativeArea, a.postalCode].filter(Boolean).join(", ") || null;
 }
 
-/** Lists every account and location the grant can see and records them as selectable resources. */
-export async function discoverLocations(admin: SupabaseClient, clientId: string, connectionId: string, token: string) {
-  const accounts = await listAccounts(token);
+/**
+ * Lists every account and location the grant can see and records them as selectable resources of this
+ * connection. Google resources are stored as accounts/{a}/locations/{l} (reviews and posts need the account),
+ * so they never collide with Local Brand Manager's locations/{l} rows: LBM tracking is left untouched.
+ */
+export async function discoverLocations(admin: SupabaseClient, clientId: string, connectionId: string, auth: GbpAuth) {
+  const accounts = await listAccounts(auth);
+  const seen = new Set<string>();
   const rows = [];
   for (const acc of accounts) {
-    for (const l of await listLocations(token, acc.name)) {
+    for (const l of await listLocations(auth, acc.name)) {
+      const { locationId } = splitLocationName(l.name);
+      if (seen.has(locationId)) continue; // the same location can be visible through several accounts
+      seen.add(locationId);
       rows.push({
         client_id: clientId,
         connection_id: connectionId,
         provider: "gbp",
-        external_id: l.name, // locations/{id}
+        external_id: `${acc.name}/locations/${locationId}`,
         display_name: l.title ?? l.name,
         metadata: {
-          account: acc.name, account_name: acc.accountName ?? null, store_code: l.storeCode ?? null,
-          address: address(l), website: l.websiteUri ?? null, phone: l.phoneNumbers?.primaryPhone ?? null,
+          source: "google", account: acc.name, account_name: acc.accountName ?? null, store_code: l.storeCode ?? null,
+          address: formatAddress(l), website: l.websiteUri ?? null, phone: l.phoneNumbers?.primaryPhone ?? null,
           category: l.categories?.primaryCategory?.displayName ?? null, maps_uri: l.metadata?.mapsUri ?? null,
           place_id: l.metadata?.placeId ?? null, open_status: l.openInfo?.status ?? null,
         },
@@ -56,8 +79,13 @@ export async function discoverLocations(admin: SupabaseClient, clientId: string,
     }
   }
   if (rows.length) {
-    // is_selected omitted so re-discovery keeps the user's choice
-    const { error } = await admin.from("integration_resources").upsert(rows, { onConflict: "client_id,provider,external_id" });
+    // keep fields written by the sync (google_location etc.); is_selected omitted so re-discovery keeps the user's choice
+    const { data: existing } = await admin.from("integration_resources").select("external_id, metadata")
+      .eq("client_id", clientId).eq("provider", "gbp").eq("connection_id", connectionId);
+    const prev = new Map((existing ?? []).map((r) => [r.external_id as string, (r.metadata ?? {}) as Record<string, unknown>]));
+    const { error } = await admin.from("integration_resources").upsert(
+      rows.map((r) => ({ ...r, metadata: { ...(prev.get(r.external_id) ?? {}), ...r.metadata } })),
+      { onConflict: "client_id,provider,external_id" });
     if (error) throw new Error("Could not save Business Profile locations");
   }
   return { accounts: accounts.length, locations: rows.length };
@@ -71,4 +99,18 @@ export async function revokeGbp(admin: SupabaseClient, connectionId: string) {
   }
   cache.delete(connectionId);
   await admin.from("integration_secrets").delete().eq("connection_id", connectionId);
+}
+
+/**
+ * The client's direct Google connection and its resource for a Business Profile location (by numeric location id),
+ * or why there is none. Used to reply to reviews, including reviews imported through Local Brand Manager
+ * (their remote_id is Google's review id).
+ */
+export async function googleTwin(admin: SupabaseClient, clientId: string, locationId: string) {
+  const { data: conn } = await admin.from("integration_connections").select("id, status, last_error").eq("client_id", clientId).eq("provider", "gbp").maybeSingle();
+  if (!conn) return { ok: false as const, reason: "no_connection" as const };
+  const { data: res } = await admin.from("integration_resources").select("id, external_id").eq("client_id", clientId).eq("provider", "gbp").eq("connection_id", conn.id);
+  const twin = (res ?? []).find((r) => splitLocationName(r.external_id).locationId === locationId && splitLocationName(r.external_id).account);
+  if (!twin) return { ok: false as const, reason: conn.status === "connected" ? "location_not_found" as const : "not_connected" as const, error: conn.last_error as string | null };
+  return { ok: true as const, connectionId: conn.id as string, status: conn.status as string, lastError: conn.last_error as string | null, resourceId: twin.id as string, parent: twin.external_id as string };
 }

@@ -16,6 +16,9 @@ import { fmtInt } from "@/lib/analytics/format";
 import { loadAudit, loadAuditRender, pollAudit, RENDER_MODES, type AuditIssue, type AuditPage, type Severity } from "@/lib/dataforseo/audit";
 import { loadCrux, loadLighthouse, type LhRow, type LhRun } from "@/lib/dataforseo/lighthouse";
 import { ScoreRing } from "@/components/charts/score-ring";
+import { DetailTrigger, IssueRow, MetricValue } from "@/components/audit/detail-panel";
+import { InternalOrphansTable } from "@/components/audit/orphans";
+import { internalOrphans, type OrphanBlogPost } from "@/lib/audit/orphans";
 import { Tabs } from "@/components/research/tabs";
 import { researchPage } from "@/lib/dataforseo/view";
 import type { Highlight } from "@/lib/overview/highlights";
@@ -29,31 +32,14 @@ const SEV: Record<Severity, { label: string; icon: typeof CircleX; cls: string }
   notice: { label: "Notices", icon: Info, cls: "text-muted" },
 };
 
-function IssueGroup({ severity, issues }: { severity: Severity; issues: AuditIssue[] }) {
+function IssueGroup({ severity, issues, canEdit }: { severity: Severity; issues: AuditIssue[]; canEdit: boolean }) {
   if (!issues.length) return null;
   const s = SEV[severity];
   return (
     <div>
       <h3 className={cn("mb-2 flex items-center gap-1.5 text-sm font-semibold", s.cls)}><s.icon className="size-4" aria-hidden /> {s.label} <span className="font-normal text-muted">{issues.length} type{issues.length > 1 ? "s" : ""}</span></h3>
       <ul className="space-y-2">
-        {issues.map((i) => (
-          <li key={i.key}>
-            <details className="group rounded-[10px] border border-border bg-surface">
-              <summary className="flex cursor-pointer flex-wrap items-center justify-between gap-2 px-4 py-2.5 text-sm">
-                <span className="font-medium">{i.label}</span>
-                <span className="tabular-nums text-muted">{fmtInt(i.count)} page{i.count > 1 ? "s" : ""}</span>
-              </summary>
-              <div className="space-y-2 border-t border-border px-4 py-3 text-sm">
-                <p><span className="font-medium">Why it matters: </span>{i.why}</p>
-                <p><span className="font-medium">How to fix: </span>{i.fix}</p>
-                <ul className="space-y-0.5 text-xs">
-                  {i.urls.map((u) => <li key={u} className="break-all"><a href={u} target="_blank" rel="noopener noreferrer" className="hover:text-foreground underline decoration-border-strong underline-offset-2 hover:decoration-foreground">{u}</a></li>)}
-                </ul>
-                {i.count > i.urls.length && <p className="text-xs text-muted">Showing {i.urls.length} of {fmtInt(i.count)}. Full list in the pages table below.</p>}
-              </div>
-            </details>
-          </li>
-        ))}
+        {issues.map((i) => <li key={i.key}><IssueRow issue={{ key: i.key, label: i.label, count: i.count, urls: i.urls, why: i.why, fix: i.fix, severity: i.severity }} canEdit={canEdit} /></li>)}
       </ul>
     </div>
   );
@@ -228,6 +214,11 @@ export default async function SiteAuditPage() {
   // a viewer arriving mid-crawl (or after it finished) collects the result right away instead of waiting for the daily job
   if (crawling && canEdit) after(async () => { try { await pollAudit(createAdminClient(), client.id); } catch { /* shown on the next visit */ } });
   const r = result?.data;
+  // pages nothing else links to: the crawl's link graph plus blog post links (no API calls)
+  const { data: posts } = r ? await supabase.from("blog_posts").select("url, title, links").eq("client_id", client.id).limit(2000) : { data: null };
+  const orphanFlags = (r?.rows ?? []).some((p) => typeof p.orphan === "boolean");
+  const orphans = r ? internalOrphans(r.rows, (posts ?? []) as OrphanBlogPost[], orphanFlags ? [] : (r.issues.find((i) => i.key === "is_orphan_page")?.urls ?? [])) : [];
+  const orphanNote = orphanFlags ? undefined : "This audit was stored before the full orphan list was kept; run a new audit for every page.";
   const failed = task?.data.status === "failed" ? task.data.error : null;
 
   const errors = r ? r.issues.filter((i) => i.severity === "error").reduce((a, i) => a + i.count, 0) : 0;
@@ -318,8 +309,8 @@ export default async function SiteAuditPage() {
               <section className="rounded-[10px] border border-border bg-surface p-4 text-sm" aria-label="Link and duplicate totals">
                 <h2 className="mb-2 text-sm font-semibold">Links and duplicates</h2>
                 <dl className="grid grid-cols-[1fr_auto] gap-x-3 gap-y-1">
-                  {([["Internal links", r.metrics.internalLinks], ["External links", r.metrics.externalLinks], ["Broken links", r.metrics.brokenLinks], ["Duplicate titles", r.metrics.duplicateTitle], ["Duplicate descriptions", r.metrics.duplicateDescription], ["Duplicate content pages", r.metrics.duplicateContent], ["Non-indexable pages", r.metrics.nonIndexable]] as const).map(([k, v]) => (
-                    <div key={k} className="contents"><dt className="text-muted">{k}</dt><dd className="text-right tabular-nums">{v === null ? "—" : fmtInt(v)}</dd></div>
+                  {([["m_internal_links", "Internal links", r.metrics.internalLinks], ["m_external_links", "External links", r.metrics.externalLinks], ["m_broken_links", "Broken links", r.metrics.brokenLinks], ["m_duplicate_title", "Duplicate titles", r.metrics.duplicateTitle], ["m_duplicate_description", "Duplicate descriptions", r.metrics.duplicateDescription], ["m_duplicate_content", "Duplicate content pages", r.metrics.duplicateContent], ["m_non_indexable", "Non-indexable pages", r.metrics.nonIndexable]] as const).map(([key, k, v]) => (
+                    <div key={k} className="contents"><dt className="text-muted">{k}</dt><dd className="text-right tabular-nums">{v === null ? "—" : v > 0 ? <MetricValue issue={{ key, label: k, count: v }} value={fmtInt(v)} canEdit={canEdit} /> : fmtInt(v)}</dd></div>
                   ))}
                 </dl>
               </section>
@@ -346,11 +337,25 @@ export default async function SiteAuditPage() {
             <h2 className="text-base font-semibold">Issues found</h2>
             {r.issues.length === 0 ? <p className="rounded-[10px] border border-dashed border-border p-6 text-sm text-muted">No issues were found in the crawled pages.</p> : (
               <>
-                <IssueGroup severity="error" issues={r.issues.filter((i) => i.severity === "error")} />
-                <IssueGroup severity="warning" issues={r.issues.filter((i) => i.severity === "warning")} />
-                <IssueGroup severity="notice" issues={r.issues.filter((i) => i.severity === "notice")} />
+                <p className="text-xs text-muted">Click an issue to see every affected page, link or image, how to fix it, and AI-written fixes.</p>
+                <IssueGroup severity="error" issues={r.issues.filter((i) => i.severity === "error")} canEdit={canEdit} />
+                <IssueGroup severity="warning" issues={r.issues.filter((i) => i.severity === "warning")} canEdit={canEdit} />
+                <IssueGroup severity="notice" issues={r.issues.filter((i) => i.severity === "notice")} canEdit={canEdit} />
               </>
             )}
+          </section>
+
+          <section aria-label="Orphaned pages" className="mt-8 space-y-2">
+            <div className="flex flex-wrap items-end justify-between gap-2">
+              <div>
+                <h2 className="text-base font-semibold">Orphaned pages</h2>
+                <p className="text-sm text-muted">Pages no other page on {r.domain} links to, so visitors and Google rarely reach them. Pages without backlinks from other websites are on the Backlinks tab.</p>
+              </div>
+              <DetailTrigger issue={{ key: "orphans", label: "Orphaned pages (no internal links)", count: orphans.length, why: "Pages nothing links to are hard for Google and visitors to find." }} canEdit={canEdit}
+                className="rounded-lg border border-border px-3 py-1.5 text-sm font-medium hover:bg-surface-muted">How to fix · AI fixes</DetailTrigger>
+            </div>
+            <InternalOrphansTable rows={orphans} crawled={r.pages} domain={r.domain}
+              note={orphanNote} />
           </section>
 
           {r.history.length >= 2 && (

@@ -7,6 +7,9 @@ export interface DateRangeSel {
   days: number;
 }
 
+/** Longest custom range: 10 years (stored history is kept forever; 4+ years must stay selectable). */
+export const MAX_RANGE_DAYS = 3653;
+
 const ISO = /^\d{4}-\d{2}-\d{2}$/;
 const valid = (s: string | undefined): s is string => !!s && ISO.test(s) && !Number.isNaN(Date.parse(s));
 
@@ -22,7 +25,8 @@ export const shiftDays = (iso: string, days: number) =>
 
 /**
  * Resolves ?range=7|30|90 or ?start=&end= into an inclusive range ending yesterday
- * (today's data is always partial). Custom ranges are validated and capped to 2 years.
+ * (today's data is always partial). Custom ranges are validated and may reach back as far as stored history goes
+ * (up to MAX_RANGE_DAYS long), so years-old imported data stays reachable after Google's own window has moved on.
  */
 export function resolveRange(
   sp: { range?: string; start?: string; end?: string },
@@ -35,7 +39,7 @@ export function resolveRange(
     const start = sp.start;
     const end = sp.end > yesterday ? yesterday : sp.end;
     const days = Math.round((Date.parse(end) - Date.parse(start)) / DAY) + 1;
-    if (days >= 1 && days <= 731) return { start, end, preset: "custom", days };
+    if (days >= 1 && days <= MAX_RANGE_DAYS) return { start, end, preset: "custom", days };
   }
   if (sp.range === "month" || (!sp.range && String(defaultDays) === "month")) {
     return { ...monthRange(previousMonth(todayIn(timeZone))), preset: "month" };

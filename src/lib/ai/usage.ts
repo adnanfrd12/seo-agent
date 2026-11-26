@@ -15,8 +15,11 @@ export interface UsageEvent { at: string; feature: string; model: string | null;
 const num = (v: unknown) => { const n = Number(v); return Number.isFinite(n) ? n : 0; };
 const dayIn = (iso: string, tz: string) => new Intl.DateTimeFormat("en-CA", { timeZone: tz, year: "numeric", month: "2-digit", day: "2-digit" }).format(new Date(iso));
 
-export type UsageFeature = "blog_geo" | "toolkit_content" | "toolkit_brief" | "toolkit_comparison";
-const FEATURE_LABEL: Record<string, string> = { blog_geo: "Blog post reading", toolkit_content: "SEO Toolkit", toolkit_brief: "SEO Toolkit", toolkit_comparison: "SEO Toolkit" };
+export type UsageFeature = "blog_geo" | "toolkit_content" | "toolkit_brief" | "toolkit_comparison" | "gsc_indexing" | "site_audit_ai" | "alt_text" | "security_ai" | "fanout" | "gbp_ai";
+const FEATURE_LABEL: Record<string, string> = {
+  blog_geo: "Blog post reading", toolkit_content: "SEO Toolkit", toolkit_brief: "SEO Toolkit", toolkit_comparison: "SEO Toolkit",
+  gsc_indexing: "Indexing diagnosis", site_audit_ai: "Site audit fixes", alt_text: "Image alt text", security_ai: "Security audit", fanout: "Fan-out queries", gbp_ai: "Business Profile insights",
+};
 
 /** The client's monthly Claude budget (AI settings) and what is left of it this month (UTC). */
 export async function claudeBudget(admin: SupabaseClient, clientId: string) {

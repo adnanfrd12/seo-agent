@@ -2,14 +2,15 @@ import "server-only";
 import { cachedRows } from "@/lib/data-cache";
 import type { SupabaseClient } from "@supabase/supabase-js";
 import { todayIn, shiftDays } from "@/lib/analytics/range";
+import { earliest, mergeCube } from "@/lib/ga4x/history";
 import { sa, type GscCtx, type SaRow } from "./api";
 import { crawlUrl, inspect, readSitemaps, type Crawl, type Inspection, type InventoryRow, type SitemapInfo } from "./inventory";
 
 /**
  * Local copy of everything the Search Console screens show, per client and property, in dfs_cache
- * (endpoint "gscx"): performance cubes (one row per day and dimension combination; 16 months of daily totals
- * per search type and of monthly query totals, 180 days of query / page / device / country detail, recent
- * hourly data), sitemaps, the URL inventory with our crawl, and URL Inspection history.
+ * (endpoint "gscx"): performance cubes (one row per day and dimension combination; each sync reads 16 months of
+ * daily totals per search type and of monthly query totals, 180 days of query / page / device / country detail and
+ * recent hourly data, and keeps every older day already stored, so history only grows), sitemaps, the URL inventory with our crawl, and URL Inspection history.
  */
 export const ENDPOINT = "gscx";
 export const DETAIL_DAYS = 180;
@@ -44,6 +45,9 @@ export async function gscxTarget(admin: SupabaseClient, clientId: string, resour
 }
 
 const k = (rid: string, name: string) => `${rid}:${name}`;
+const minIso = (a: string, b: string | null | undefined) => (b && b < a ? b : a);
+/** "YYYY-MM" shifted by n months. */
+const shiftMonth = (ym: string, n: number) => { const [y, m] = ym.split("-").map(Number); const d = new Date(Date.UTC(y, m - 1 + n, 1)); return d.toISOString().slice(0, 7); };
 async function save(admin: SupabaseClient, clientId: string, hash: string, data: unknown, rows: number) {
   const { error } = await admin.from("dfs_cache").upsert({ client_id: clientId, endpoint: ENDPOINT, params_hash: hash, params: { module: "gscx" }, data, row_count: rows, cost: 0, fetched_at: new Date().toISOString() }, { onConflict: "client_id,endpoint,params_hash" });
   if (error) throw new Error(`save ${hash}: ${error.message}`);
@@ -94,12 +98,12 @@ export async function syncGscx(admin: SupabaseClient, clientId: string, resource
   const M = ["clicks", "impressions", "posx"];
 
   // 16 months of true daily totals per search type (Discover and Google News have no query data)
-  const totals: SaRow[] = [], types: string[] = [];
+  const totals: SaRow[] = [], types: string[] = [], failedTypes = new Set<string>();
   await Promise.all(TYPES.map(async (type) => {
     try { const rows = await sa(ctx, { start: monthsStart, end, dimensions: ["date"], type }); if (rows.length) types.push(type); for (const r of rows) totals.push([r[0], type, r[1], r[2], r[3]]); }
-    catch (e) { if (type === "web") errors.totals = msg(e); }
+    catch (e) { failedTypes.add(type); if (type === "web") errors.totals = msg(e); }
   }));
-  cubes.totals = { cols: ["date", "type", ...M], rows: totals };
+  cubes.totals = { cols: ["date", "type", ...M], rows: totals, ...(failedTypes.size === TYPES.length ? { error: errors.totals ?? "Search Console couldn't be read." } : {}) };
   await Promise.all([
     run("q", ["date", "query", ...M], () => sa(ctx, { start: detailStart, end, dimensions: ["date", "query"] })),
     run("qp", ["date", "query", "page", ...M], () => sa(ctx, { start: detailStart, end, dimensions: ["date", "query", "page"] })),
@@ -137,14 +141,35 @@ export async function syncGscx(admin: SupabaseClient, clientId: string, resource
     }
     return out;
   });
-  const web = totals.filter((r) => r[1] === "web").map((r) => String(r[0])).sort();
+  // History is kept (Search Console only serves 16 months; the dashboard's copy must not shrink): each cube keeps its
+  // stored days before this read's window, the window is replaced by the fresh read (Google revises recent days),
+  // and a report or search type that failed this time keeps its stored rows.
+  const names = Object.keys(cubes) as GCube[];
+  const [stored, oldMeta] = await Promise.all([loadCubes(admin, clientId, rid, names), loadOne<GscMeta>(admin, clientId, rid, "meta")]);
+  const firstMonth = monthsStart.slice(8) === "01" ? monthsStart.slice(0, 7) : shiftMonth(monthsStart.slice(0, 7), 1);
+  for (const name of names) {
+    const fresh = cubes[name]!;
+    if (name === "totals") cubes.totals = mergeCube(stored.totals, fresh, monthsStart, (r) => failedTypes.has(String(r[1])));
+    else if (name === "qm") {
+      // the first month of the read is cut at monthsStart: a stored full copy of that month wins over the partial one
+      const partial = firstMonth !== monthsStart.slice(0, 7) ? monthsStart.slice(0, 7) : null;
+      const hasFull = partial != null && (stored.qm?.rows ?? []).some((r) => r[0] === partial);
+      const next = hasFull ? { ...fresh, rows: fresh.rows.filter((r) => r[0] !== partial) } : fresh;
+      cubes.qm = mergeCube(stored.qm, next, hasFull ? monthsStart.slice(0, 7) + "-32" : firstMonth);
+    } else cubes[name] = mergeCube(stored[name], fresh, name === "hour" ? shiftDays(end, -13) : detailStart);
+  }
+  const web = (cubes.totals?.rows ?? []).filter((r) => r[1] === "web").map((r) => String(r[0])).sort();
   const meta: GscMeta = {
-    fetchedAt: new Date().toISOString(), site: ctx.site, resourceId: rid, start: web[0] ?? monthsStart, end: web.at(-1) ?? end, monthsStart, detailStart,
-    types, appearances, errors, provisionalFrom: shiftDays(end, -2),
+    fetchedAt: new Date().toISOString(), site: ctx.site, resourceId: rid, start: web[0] ?? monthsStart, end: web.at(-1) ?? end,
+    // the earliest stored month / detail day (older than Google's window once history has accumulated)
+    monthsStart: minIso(monthsStart, oldMeta?.monthsStart), detailStart: minIso(detailStart, earliest(["q", "qp", "pg", "pd", "cd", "dev", "app"].map((n) => cubes[n as GCube]))),
+    types: [...new Set([...types, ...(cubes.totals?.rows ?? []).map((r) => String(r[1]))])],
+    appearances: [...new Set([...appearances, ...(oldMeta?.appearances ?? [])])], errors, provisionalFrom: shiftDays(end, -2),
   };
   for (const [name, c] of Object.entries(cubes)) await save(admin, clientId, k(rid, `cube:${name}`), c, c!.rows.length);
   await save(admin, clientId, k(rid, "meta"), meta, Object.keys(cubes).length);
-  if (opts.inventory !== false) await syncInventory(admin, clientId, rid, ctx, cubes.pg?.rows ?? [], { inspectBudget: opts.inspectBudget }).catch((e) => { meta.errors.inventory = msg(e); });
+  // the URL inventory follows the pages Google shows now (this read's window), not every page ever stored
+  if (opts.inventory !== false) await syncInventory(admin, clientId, rid, ctx, (cubes.pg?.rows ?? []).filter((r) => String(r[0]) >= detailStart), { inspectBudget: opts.inspectBudget }).catch((e) => { meta.errors.inventory = msg(e); });
   return meta;
 }
 

@@ -135,6 +135,11 @@ async function handle(request: NextRequest) {
         }
         out.gscModule = synced;
       }
+      // 0d. security audit (free, passive): first run for every client with a website (new clients first), then monthly; at most 4 per run
+      try {
+        const { runDueSecurityAudits } = await import("@/lib/technical/security");
+        out.securityAudit = await runDueSecurityAudits(admin, { deadline: Math.min(deadline, Date.now() + 120_000), max: 4 });
+      } catch (e) { out.securityAudit = { error: e instanceof Error ? e.message : "failed" }; }
 
       // 1. AI visibility (weekly per question; the DataForSEO assistants respect the automatic budget inside runAiChecks)
       if (process.env.ANTHROPIC_API_KEY) {

@@ -4,6 +4,9 @@ import { revalidatePath } from "@/lib/revalidate";
 import { getSession } from "@/lib/analytics/client-context";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { syncGscx } from "@/lib/gscx/sync";
+import { aiErrorMessage } from "@/lib/ai/claude";
+import { budgetMessage, claudeBudget, recordClaudeUse } from "@/lib/ai/usage";
+import { diagnosePage, INDEX_AI_ENDPOINT, saveDiagnosis, type IndexDiagnosis } from "@/lib/gscx/indexing-ai";
 
 type Result = { ok: boolean; message: string };
 async function owner() {
@@ -37,4 +40,34 @@ export async function saveGscSettings(input: { brand: string; competitors: strin
   await admin.from("clients").update({ settings: { ...settings, gsc_settings: { brand: list(input.brand), competitors: list(input.competitors), cities: list(input.cities), services: list(input.services) } } }).eq("id", c.id);
   revalidatePath("/search-console", "layout");
   return { ok: true, message: "Saved. Every Search Console screen now uses these lists." };
+}
+
+export type DiagnoseResult = { ok: boolean; message: string; diagnosis?: IndexDiagnosis; stop?: boolean };
+/**
+ * Claude's likely reason and fix for one page Google hasn't indexed (owners and admins). A stored diagnosis is
+ * returned without a new call unless `again` is set. Checks the monthly Claude budget first and logs the cost after.
+ */
+export async function diagnoseIndexPage(url: string, again = false): Promise<DiagnoseResult> {
+  const c = await owner();
+  if (!c) return { ok: false, message: "Only an owner or admin can run a diagnosis.", stop: true };
+  if (typeof url !== "string" || !/^https?:\/\//.test(url) || url.length > 2000) return { ok: false, message: "Not a page URL." };
+  const admin = createAdminClient();
+  if (!again) {
+    const { data } = await admin.from("dfs_cache").select("data").eq("client_id", c.id).eq("endpoint", INDEX_AI_ENDPOINT).eq("params_hash", url).maybeSingle();
+    if (data?.data) return { ok: true, message: "Already diagnosed.", diagnosis: data.data as IndexDiagnosis };
+  }
+  if (!process.env.ANTHROPIC_API_KEY) return { ok: false, message: "Claude isn't set up (ANTHROPIC_API_KEY is missing).", stop: true };
+  const b = await claudeBudget(admin, c.id);
+  if (b.left <= 0) return { ok: false, message: budgetMessage(b.budget), stop: true };
+  try {
+    // diagnosePage checks the URL is in this client's inventory and not indexed (no arbitrary fetches)
+    const d = await diagnosePage(admin, c.id, url);
+    await saveDiagnosis(admin, c.id, d);
+    await recordClaudeUse(admin, c.id, "gsc_indexing", d.model, d.cost);
+    return { ok: true, message: `Diagnosed ($${d.cost.toFixed(3)}).`, diagnosis: d };
+  } catch (e) {
+    const m = aiErrorMessage(e);
+    // out of credit / bad key / budget: stop a batch instead of failing page after page
+    return { ok: false, message: m, stop: /out of credit|credit balance|API key was rejected/i.test(m) };
+  }
 }

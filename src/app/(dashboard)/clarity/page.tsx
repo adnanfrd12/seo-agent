@@ -2,14 +2,17 @@ import Link from "next/link";
 import { AiScreenTools } from "@/components/aiqw/screen-tools";
 import { after } from "next/server";
 import { IssueRecordings, type IssueSummary } from "@/components/clarity/issue-recordings";
-import { ISSUES, RECORDINGS_ENDPOINT, refreshRecordingsFor, type RecordingSet } from "@/lib/clarity/recordings";
+import { PageIssues, type ClickErr, type ErrorMessage, type PageError, type PageIssue, type PageRec } from "@/components/clarity/page-issues";
+import { ERROR_DETAILS_KEY, type ErrorDetails } from "@/lib/clarity/errors";
+import { pagePath } from "@/lib/clarity/pages";
+import { DAY_PREFIX, ISSUES, RECORDINGS_ENDPOINT, refreshRecordingsFor, type Recording, type RecordingSet } from "@/lib/clarity/recordings";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { EmptyState } from "@/components/dashboard/page-header";
 import { Highlights } from "@/components/dashboard/highlights";
 import { TabHeader } from "@/components/dashboard/tab-header";
 import { pickHighlights } from "@/lib/overview/highlights";
 import { ReportTable, Unavailable } from "@/components/report/report-ui";
-import { Columns, StackedBars } from "@/components/charts/ai-charts";
+import { Columns } from "@/components/charts/ai-charts";
 import { ShareDonut } from "@/components/charts/analytics-charts";
 import { BarList } from "@/components/charts/bar-list";
 import { cat } from "@/lib/charts/colors";
@@ -34,8 +37,6 @@ const LISTS: [string, string][] = [
   ["Browser", "Browsers"], ["OS", "Operating systems"], ["PageTitle", "Page titles"],
 ];
 
-/** Path only (the host is the same on every row), so the bar labels stay readable. */
-const path = (u: string) => { try { const x = new URL(u); return `${x.pathname}${x.search}` || "/"; } catch { return u || "(unknown)"; } };
 const SHARES = ["Device", "Browser", "OS", "Country"];
 
 const n = (v: unknown) => { const x = typeof v === "number" ? v : Number(v); return Number.isFinite(x) ? x : null; };
@@ -46,16 +47,33 @@ export default async function ClarityPage() {
   if (!client) return null;
   const supabase = await createClient();
   const since = shiftDays(todayIn("UTC"), -90);
-  const [{ data: conn }, metrics, { data: reviews }, { data: recRow }] = await Promise.all([
+  const [{ data: conn }, metrics, { data: reviews }, { data: recRow }, { data: errRow }, { data: recHist }, { data: errHist }] = await Promise.all([
     supabase.from("integration_connections").select("status, last_synced_at, last_error").eq("client_id", client.id).eq("provider", "clarity").maybeSingle(),
-    supabase.from("clarity_behavior_metrics").select("metric_date, dimension, value, metric, count, sessions_pct, sessions, raw")
-      .eq("client_id", client.id).gte("metric_date", since).order("metric_date", { ascending: false }).limit(10000),
+    // the API returns at most 1,000 rows per request (a day is ~150 rows), so the 90 days are read in pages
+    (async () => {
+      const head = await supabase.from("clarity_behavior_metrics").select("id", { count: "exact", head: true }).eq("client_id", client.id).gte("metric_date", since);
+      if (head.error) return { data: null, error: head.error };
+      const pages = Math.min(30, Math.ceil((head.count ?? 0) / 1000));
+      const parts = await Promise.all(Array.from({ length: pages }, (_, i) =>
+        supabase.from("clarity_behavior_metrics").select("metric_date, dimension, value, metric, count, sessions_pct, sessions, raw")
+          .eq("client_id", client.id).gte("metric_date", since).order("metric_date", { ascending: false }).order("id").range(i * 1000, i * 1000 + 999)));
+      const failed = parts.find((r) => r.error);
+      return failed ? { data: null, error: failed.error } : { data: parts.flatMap((r) => (r.data ?? []) as MetricRow[]), error: null };
+    })(),
     supabase.from("clarity_recording_reviews").select("*").eq("client_id", client.id).order("created_at", { ascending: false }).limit(50),
     supabase.from("dfs_cache").select("data, fetched_at").eq("client_id", client.id).eq("endpoint", RECORDINGS_ENDPOINT).eq("params_hash", "all").maybeSingle(),
+    supabase.from("dfs_cache").select("data").eq("client_id", client.id).eq("endpoint", RECORDINGS_ENDPOINT).eq("params_hash", ERROR_DETAILS_KEY).maybeSingle(),
+    // daily history of both (kept forever; the page panel shows the last 30 days)
+    supabase.from("dfs_cache").select("data").eq("client_id", client.id).eq("endpoint", RECORDINGS_ENDPOINT).like("params_hash", `${DAY_PREFIX}%`)
+      .gte("fetched_at", shiftDays(todayIn("UTC"), -30)).order("fetched_at", { ascending: false }).limit(31),
+    supabase.from("dfs_cache").select("data").eq("client_id", client.id).eq("endpoint", RECORDINGS_ENDPOINT).like("params_hash", `${ERROR_DETAILS_KEY}:%`)
+      .gte("fetched_at", shiftDays(todayIn("UTC"), -30)).order("fetched_at", { ascending: false }).limit(31),
   ]);
   const recordings = (recRow?.data as RecordingSet | null) ?? null;
-  // recordings are pulled by the daily sync; a connection without today's set gets topped up in the background
-  if (conn?.status === "connected" && recordings?.fetchedAt.slice(0, 10) !== new Date().toISOString().slice(0, 10)) {
+  const errorDetails = (errRow?.data as ErrorDetails | null) ?? null;
+  // recordings and error messages are pulled by the daily sync; a connection without today's set gets topped up in the background
+  const todayUtc = new Date().toISOString().slice(0, 10);
+  if (conn?.status === "connected" && (recordings?.fetchedAt.slice(0, 10) !== todayUtc || errorDetails?.fetchedAt.slice(0, 10) !== todayUtc)) {
     const clientId = client.id;
     after(() => refreshRecordingsFor(createAdminClient(), clientId));
   }
@@ -158,8 +176,46 @@ export default async function ClarityPage() {
   const shareLists = lists.filter((l) => SHARES.includes(l.metric));
   const rankLists = lists.filter((l) => !SHARES.includes(l.metric));
   const frictionShare = FRICTION.map((m) => ({ label: LABEL[m], value: Number((avg(m, "sessionsWithMetricPercentage") ?? 0).toFixed(1)) }));
-  const frictionPages = pages.filter((p) => p.friction > 0).sort((a, b) => b.friction - a.friction).slice(0, 8)
-    .map((p, _, all) => ({ label: all.filter((o) => path(o.value) === path(p.value)).length > 1 ? p.value : path(p.value), values: Object.fromEntries(FRICTION.map((k) => [k, p.m[k] ?? 0])) }));
+  // problem pages: grouped by path, so ad-click variants (?gclid=...) count toward their page
+  const byPath = new Map<string, PageIssue>();
+  for (const r of rows.filter((x) => x.dimension === "url" && x.value)) {
+    const key = pagePath(r.value);
+    const p = byPath.get(key) ?? { path: key, url: r.value, sessions: 0, counts: {}, total: 0 };
+    if (r.value.length < p.url.length) p.url = r.value; // the plainest URL is the one to open
+    if (r.metric === "Traffic") p.sessions += n(r.raw?.totalSessionCount) ?? 0;
+    else if (FRICTION.includes(r.metric)) { p.counts[r.metric] = (p.counts[r.metric] ?? 0) + (r.count ?? 0); p.total += r.count ?? 0; }
+    byPath.set(key, p);
+  }
+  const frictionPages = [...byPath.values()].filter((p) => p.total > 0).sort((a, b) => b.total - a.total || b.sessions - a.sessions).slice(0, 25);
+  // stored recordings per page they visited, tagged with the issues they were sampled for
+  const pageRecs: Record<string, PageRec[]> = {};
+  const addRec = (r: Recording, issue: string) => {
+    for (const key of new Set((r.visited ?? [r.url]).map(pagePath))) {
+      const list = (pageRecs[key] ??= []);
+      const have = list.find((x) => x.link === r.link);
+      if (have) { if (!have.issues.includes(issue)) have.issues.push(issue); } else list.push({ ...r, issues: [issue] });
+    }
+  };
+  const recSets = [recordings, ...(recHist ?? []).map((h) => h.data as RecordingSet)].filter((x): x is RecordingSet => Boolean(x));
+  for (const set of recSets) for (const i of ISSUES) for (const r of set.issues?.[i.key] ?? []) addRec(r, i.label);
+  for (const set of [errorDetails, ...(errHist ?? []).map((h) => h.data as ErrorDetails)]) {
+    for (const [msg, recs] of Object.entries(set?.byMessage ?? {})) for (const r of recs) addRec(r, `Error: ${msg.slice(0, 40)}`);
+  }
+  for (const [k, list] of Object.entries(pageRecs)) pageRecs[k] = list.sort((a, b) => (b.at ?? "").localeCompare(a.at ?? "")).slice(0, 60);
+  // only the pages in the chart are sent to the browser
+  for (const k of Object.keys(pageRecs)) if (!frictionPages.some((p) => p.path === k)) delete pageRecs[k];
+  const pageErrors: Record<string, PageError[]> = {};
+  for (const e of errorDetails?.jsErrors ?? []) {
+    const list = (pageErrors[pagePath(e.page)] ??= []);
+    const have = list.find((x) => x.message === e.message);
+    if (have) have.count += e.count; else list.push({ message: e.message, count: e.count });
+  }
+  const pageClicks: Record<string, ClickErr[]> = {};
+  for (const c of errorDetails?.clickErrors ?? []) (pageClicks[pagePath(c.page)] ??= []).push({ element: c.element, count: c.count });
+  const messages: ErrorMessage[] = [...new Set((errorDetails?.jsErrors ?? []).map((e) => e.message))].map((message) => {
+    const hits = (errorDetails?.jsErrors ?? []).filter((e) => e.message === message);
+    return { message, count: hits.reduce((a, e) => a + e.count, 0), pages: [...new Set(hits.map((e) => pagePath(e.page)))], recs: errorDetails?.byMessage[message] ?? [] };
+  }).sort((a, b) => b.count - a.count);
   const frictionKeys = FRICTION.map((k, i) => ({ key: k, label: LABEL[k], color: cat(i) }));
   // a span on the odd last card keeps a two-column grid from ending in an empty cell
   const fill = "md:[&>*:last-child:nth-child(odd)]:col-span-2";
@@ -180,8 +236,13 @@ export default async function ClarityPage() {
         <Link href="/integrations" className="font-medium text-foreground underline decoration-border-strong underline-offset-2 hover:decoration-foreground">Manage connection & recording reviews →</Link>
       </div>
       {conn?.last_error && <p role="alert" className="rounded-lg bg-accent-soft p-3 text-sm text-negative">{conn.last_error}</p>}
+      {frictionPages.length > 0 && (
+        <PageIssues keys={frictionKeys} pages={frictionPages} recs={pageRecs} jsErrors={pageErrors} clickErrors={pageClicks} messages={messages}
+          meta={errorDetails && { fetchedAt: errorDetails.fetchedAt, period: errorDetails.period, error: errorDetails.error }}
+          range={`${dates.length} stored day${dates.length === 1 ? "" : "s"}`} canLoad={connected} />
+      )}
       {rows.length > 0 && <Highlights items={hl} stableNote="Clarity only stores the most recent days; more history builds up daily." />}
-      {rows.length > 0 && <IssueRecordings set={recordings} issues={issueSummaries} site={client.name} />}
+      {rows.length > 0 && <IssueRecordings set={recordings} issues={issueSummaries} site={client.name} errors={messages} />}
 
       {rows.length === 0 ? (
         <Unavailable title="No Clarity data stored yet" body="The first import runs right after connecting (about a minute); each daily sync then adds a day." />
@@ -220,11 +281,6 @@ export default async function ClarityPage() {
             </details>
           )}
           {devices.length > 0 && <ReportTable<(typeof devices)[number]> title="Devices" source="Microsoft Clarity" empty="" rows={devices} columns={dimCols("Device")} />}
-
-          {frictionPages.length > 0 && (
-            <StackedBars title="Friction by page" sub="Pages with the most friction events, by type" valueLabel="Events"
-              keys={frictionKeys} rows={frictionPages} />
-          )}
 
           {shareLists.length > 0 && (
             <div className={`grid grid-cols-1 gap-4 md:grid-cols-2 ${fill}`}>

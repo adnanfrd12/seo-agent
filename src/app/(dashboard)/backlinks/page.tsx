@@ -13,6 +13,9 @@ import { BarList } from "@/components/charts/bar-list";
 import { DivergingBars } from "@/components/charts/diverging-bars";
 import { fmtInt } from "@/lib/analytics/format";
 import { BrokenLinksCheck } from "./broken-links-check";
+import { InternalOrphansTable, NoBacklinksTable } from "@/components/audit/orphans";
+import { internalOrphans, pagesWithoutBacklinks, type OrphanBlogPost, type OrphanSitePage } from "@/lib/audit/orphans";
+import { createClient } from "@/lib/supabase/server";
 import { detectLinkSpike, estimate, TIER1, TIER2, type LinkChanges } from "@/lib/dataforseo/research";
 import { pointAgo, profileSeries, researchPage } from "@/lib/dataforseo/view";
 
@@ -71,7 +74,7 @@ const named = (items: Named[] | undefined, total: number | null) => (items ?? []
 export default async function BacklinksPage() {
   const page = await researchPage();
   if (!page) return null;
-  const { canEdit, configured, cache, budget } = page;
+  const { client, canEdit, configured, cache, budget } = page;
   const header = <TabHeader source="dfs" title="Backlinks" description="Who links to your site, and where to find new links." guide={[
           { term: "Domain rank", text: "A 0-1000 strength score for the whole site's link profile. Higher means more authority." },
           { term: "Backlinks and referring domains", text: "Links pointing to you, and the number of different websites they come from. Many links from few sites are worth less than links from many." },
@@ -129,7 +132,7 @@ export default async function BacklinksPage() {
   const changes = cache.get<LinkChanges>("link_changes");
   // links pointing at pages that no longer exist, with the closest live page as the redirect target
   const broken = cache.get<List>("broken_backlinks");
-  const audit = cache.get<{ rows?: { url: string; status: number | null }[] }>("audit")?.data;
+  const audit = cache.get<{ rows?: OrphanSitePage[]; pages?: number; issues?: { key: string; urls: string[] }[] }>("audit")?.data;
   const live = [...new Set([
     ...(audit?.rows ?? []).filter((r) => r.status === 200).map((r) => pathOnly(r.url)),
     ...((lists.pages?.data.rows ?? []) as Row[]).filter((r) => r.status === 200).map((r) => pathOnly(r.page)),
@@ -156,6 +159,20 @@ export default async function BacklinksPage() {
   }
   const deadPages = [...byDead.entries()].sort((a, b) => b[1].domains.size - a[1].domains.size || b[1].links - a[1].links).slice(0, 8);
   const guessed = brokenRows.filter((r) => String(r.fix).startsWith("301")).length;
+  // orphaned pages: (a) nothing on the site links to them, (b) no other website links to them. Stored data only.
+  const { data: posts } = await (await createClient()).from("blog_posts").select("url, title, links").eq("client_id", client.id).limit(2000);
+  const blogPosts = (posts ?? []) as OrphanBlogPost[];
+  const crawlRows = audit?.rows ?? [];
+  const orphanFlags = crawlRows.some((p) => typeof p.orphan === "boolean");
+  const noInternal = internalOrphans(crawlRows, blogPosts, orphanFlags ? [] : (audit?.issues?.find((i) => i.key === "is_orphan_page")?.urls ?? []));
+  const linkedPages = (lists.pages?.data.rows ?? []) as { page: string | null; backlinks: number | null }[];
+  const sitePages = [
+    ...crawlRows.filter((p) => p.status === 200).map((p) => ({ url: p.url, title: p.title, source: "crawl" })),
+    ...blogPosts.map((p) => ({ url: p.url, title: p.title, source: "blog" })),
+    ...((cache.get<Row[]>("relevant_pages")?.data ?? []) as Row[]).filter((r) => r.page).map((r) => ({ url: String(r.page).startsWith("http") ? String(r.page) : `https://${String(r.page)}`, title: null, source: "ranking in Google" })),
+  ];
+  const noBacklinks = lists.pages ? pagesWithoutBacklinks(sitePages, linkedPages) : [];
+  const linkedComplete = !lists.pages || lists.pages.data.total <= linkedPages.length;
   const dofollowShare = s.backlinks ? ((s.dofollow ?? 0) / s.backlinks) * 100 : null;
   // derived from the stored lists (no extra calls)
   const domRows = (lists.domains?.data.rows ?? []) as Row[];
@@ -319,6 +336,29 @@ export default async function BacklinksPage() {
               note={`${broken.data.total > brokenAll.length ? `Showing the ${brokenAll.length} strongest of ${fmtInt(broken.data.total)}. ` : ""}Check each suggested target before adding the redirect.`} />
           </>
         )}
+      </section>
+
+      <section className="mt-8 space-y-3" aria-label="Orphaned pages">
+        <div>
+          <h2 className="text-base font-semibold">Orphaned pages</h2>
+          <p className="text-sm text-muted">Two different problems: pages your own site never links to (internal orphans), and pages no other website links to (no backlinks).</p>
+        </div>
+        <Tabs label="Orphaned pages" items={[
+          { key: "internal", label: "No internal links", badge: fmtInt(noInternal.length), content: (
+            <div className="space-y-2">
+              <p className="text-sm text-muted">Pages no other page on {target.domain} links to, from the last site crawl{audit ? "" : " (none yet: run one on the Site Audit tab)"} and the links inside blog posts. Visitors and Google rarely reach them.</p>
+              <InternalOrphansTable rows={noInternal} crawled={audit?.pages ?? 0} domain={target.domain}
+                note={!audit ? "Run a site audit to find pages without internal links." : orphanFlags ? undefined : "The stored audit predates the full orphan list; run a new audit for every page."} />
+            </div>) },
+          { key: "external", label: "No backlinks", badge: lists.pages ? fmtInt(noBacklinks.length) : "—", content: (
+            <div className="space-y-2">
+              <p className="text-sm text-muted">Live pages (from the site crawl, the blog and pages ranking in Google) that don&apos;t appear in DataForSEO&apos;s list of pages receiving backlinks. Good candidates for outreach or internal promotion.</p>
+              {!lists.pages
+                ? <p className="rounded-[10px] border border-dashed border-border p-4 text-sm text-muted">Load the detailed lists above (deep dive) to compare the site&apos;s pages with the pages that receive backlinks.</p>
+                : <NoBacklinksTable rows={noBacklinks} domain={target.domain}
+                    note={`Compared ${fmtInt(new Set(sitePages.map((p) => p.url)).size)} known pages with ${fmtInt(linkedPages.length)} linked pages (updated ${lists.pages.fetchedAt.slice(0, 10)}).${linkedComplete ? "" : ` DataForSEO lists ${fmtInt(lists.pages.data.total)} linked pages and only the ${fmtInt(linkedPages.length)} with the most links are stored, so a page here may still have a backlink or two.`}`} />}
+            </div>) },
+        ]} />
       </section>
 
       <div className="mt-8">

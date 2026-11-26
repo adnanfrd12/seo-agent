@@ -5,7 +5,7 @@
  * anything not on the site is a [placeholder].
  */
 import type { G } from "./g";
-import { answerFormat, belowExpected, cannibal, cityOf, ctrChanges, hasHeading, noClicks, noImpressions, pageExpected, pageTable, pageTwoRescue, queryPages, suggestTitle, type QP } from "./analysis";
+import { answerFormat, belowExpected, lostQueries, cannibal, cityOf, ctrChanges, hasHeading, noClicks, noImpressions, pageExpected, pageTable, pageTwoRescue, queryPages, suggestTitle, type QP } from "./analysis";
 import { isQuestion, pathOf, stems, titleCase, words } from "./model";
 
 export interface GscWin {
@@ -171,6 +171,18 @@ export function gscQuickWins(g: G): GscWin[] {
   }
   for (const r of pageTwoRescue(g).slice(0, 10)) add({ key: `p2${r.page}|${r.query}`, type: "Content refresh", page: path(r.page), where: "Sections compared with the top 3 results", effort: "Medium", conf: "Medium", gain: r.prevClicks * 0.6 * f,
     title: `Bring "${r.query}" back to page one (now ${r.pos.toFixed(1)})`, why: `It was on page one last period with ${N(r.prevClicks)} clicks.`, steps: ["Compare the page with the top 3 results for the query.", "Add the sections they cover that this page doesn't.", "Add 2 internal links with the query as anchor."] });
+  // 13b. lost queries: clicks last period, not shown at all now (grouped by the page they landed on)
+  const lostBy = new Map<string, ReturnType<typeof lostQueries>>();
+  for (const r of lostQueries(g).filter((x) => x.prevClicks >= 2 && x.page && !g.isBrand(x.query))) { const a = lostBy.get(r.page) ?? []; a.push(r); lostBy.set(r.page, a); }
+  for (const [page, rs] of [...lostBy].sort((a, b) => b[1].reduce((x, r) => x + r.prevClicks, 0) - a[1].reduce((x, r) => x + r.prevClicks, 0)).slice(0, 8)) {
+    const lost = rs.reduce((a, r) => a + r.prevClicks, 0), top = rs[0];
+    add({ key: `lost${page}`, type: "Content refresh", page: path(page), where: /^Page (now returns|dropped)/.test(top.cause) ? "Page status (redirect, 404 or index)" : "Section answering the lost searches", effort: "Medium", conf: "Medium", gain: lost * 0.5 * f,
+      title: `Win back ${rs.length > 1 ? `${rs.length} lost searches` : `"${top.query}"`} on ${path(page)}`, why: `${N(lost)} clicks last period from searches that no longer show this site at all (${top.cause.toLowerCase()}).`,
+      table: { cols: ["Query", "Clicks before", "Pos before", "Likely cause"], rows: rs.slice(0, 6).map((r) => [r.query, N(r.prevClicks), r.prevPos?.toFixed(1) ?? "–", r.cause]) },
+      steps: /^Page (now returns|dropped)/.test(top.cause) ? ["Fix the page status first (restore it, or point the redirect at the closest live page).", "Check it is indexed again with URL Inspection in Search Console."]
+        : ["Search each lost query and see what ranks now.", `Make sure ${path(page)} still answers it: the words in a heading, a direct answer, current details.`, "Add 1–2 internal links with the query as anchor text from related pages."],
+      measure: "Impressions for these queries in Search Console, 28 days after the change" });
+  }
   // 14. brand and trust
   const trust = (prev: boolean) => [...g.queries(prev)].filter(([q]) => g.isBrand(q) && /\b(legit|scam|reviews?|bbb|complaints?)\b/i.test(q)).reduce((a, [, v]) => a + v.impressions, 0);
   const tCur = trust(false), tPrev = trust(true);

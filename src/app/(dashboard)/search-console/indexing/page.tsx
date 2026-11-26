@@ -5,25 +5,33 @@ import { Band, Card, Grid, Kpi, Kpis, Missing, Note } from "@/components/ga4x/ui
 import type { SearchParams } from "@/lib/analytics/url";
 import { addDays, groupM } from "@/lib/gscx/g";
 import { pathOf } from "@/lib/gscx/model";
+import { estimateCost, loadDiagnoses } from "@/lib/gscx/indexing-ai";
+import { getSession } from "@/lib/analytics/client-context";
+import { createAdminClient } from "@/lib/supabase/admin";
+import { IndexDiagnoses } from "./diagnoses";
 import { GscScreen } from "../_gscx/screen";
 import { sd, siteOf, Tasks, weekOf } from "../_gscx/parts";
 
 export const maxDuration = 120;
 const PATH = "/search-console/indexing";
 const DAY = 86_400_000;
+/** Google's coverage states, worded for this screen: "Excluded" reads "Not indexed" (as in Search Console's Page indexing report). */
+const reasonLabel = (cs: string) => cs.replace(/^Excluded by/i, "Not indexed: blocked by").replace(/^Excluded/i, "Not indexed");
 
 export default async function IndexingPage({ searchParams }: { searchParams: Promise<SearchParams> }) {
   const sp = await searchParams;
   return (
     <GscScreen sp={sp} path={PATH} title="Indexing" description="Which pages are on Google, which aren't, and why.">
-      {({ g, wins }) => {
+      {async ({ g, wins, clientId }) => {
+        const [stored, { client }] = await Promise.all([loadDiagnoses(createAdminClient(), clientId), getSession()]);
+        const canRun = !!client && ["owner", "admin"].includes(client.role);
         const inv = g.inv, n = inv.length;
         const lat = inv.map((r) => ({ r, i: g.latest(r.url) }));
         const inspected = lat.filter((x) => x.i);
         const indexed = inspected.filter((x) => x.i!.verdict === "PASS");
         const notIdx = inspected.filter((x) => x.i!.verdict !== "PASS");
         const in30 = inspected.filter((x) => Date.now() - Date.parse(x.i!.at) < 30 * DAY);
-        const reasons = [...groupM(notIdx.map((x) => ({ k: x.i!.coverageState, clicks: 1, impressions: 0, posx: 0 })), (x) => String(x.k))].map(([k, v]) => ({ k, n: v.clicks })).sort((a, b) => b.n - a.n);
+        const reasons = [...groupM(notIdx.map((x) => ({ k: reasonLabel(x.i!.coverageState), clicks: 1, impressions: 0, posx: 0 })), (x) => String(x.k))].map(([k, v]) => ({ k, n: v.clicks })).sort((a, b) => b.n - a.n);
         const age = (x: (typeof lat)[number]) => (x.i?.lastCrawlTime ? (Date.now() - Date.parse(x.i.lastCrawlTime)) / DAY : null);
         const fresh = [["Under 7 days", (d: number | null) => d != null && d < 7], ["7–30 days", (d: number | null) => d != null && d >= 7 && d < 30], ["30–90 days", (d: number | null) => d != null && d >= 30 && d < 90], ["90+ days", (d: number | null) => d != null && d >= 90], ["Never", (d: number | null) => d == null]] as const;
         const fetchSt = [...groupM(inspected.map((x) => ({ k: x.i!.pageFetchState || "UNSPECIFIED", clicks: 1, impressions: 0, posx: 0 })), (x) => String(x.k))].sort((a, b) => b[1].clicks - a[1].clicks);
@@ -40,15 +48,15 @@ export default async function IndexingPage({ searchParams }: { searchParams: Pro
         const wk = weeks.map((w) => asOf(addDays(w, 6)));
         const crawlWeeks = new Map<string, number>(); for (const x of inspected) if (x.i!.lastCrawlTime) { const w = weekOf(x.i!.lastCrawlTime.slice(0, 10)); crawlWeeks.set(w, (crawlWeeks.get(w) ?? 0) + 1); }
         const cw = [...crawlWeeks].sort((a, b) => a[0].localeCompare(b[0])).slice(-12);
-        const statusOf = (v: string) => (v === "PASS" ? "Indexed (PASS)" : v === "NEUTRAL" ? "Excluded (NEUTRAL)" : "Not indexed (FAIL)");
+        const statusOf = (v: string) => (v === "PASS" ? "Indexed (PASS)" : v === "NEUTRAL" ? "Not indexed (NEUTRAL)" : "Not indexed, error (FAIL)");
         const flows: [string, string, number][] = [];
         for (const [a, b] of [["In sitemap", true], ["Not in sitemap", false]] as const) for (const v of ["PASS", "NEUTRAL", "FAIL"]) { const c = inspected.filter((x) => inSm(x) === b && (v === "FAIL" ? !["PASS", "NEUTRAL"].includes(x.i!.verdict) : x.i!.verdict === v)).length; if (c) flows.push([a, statusOf(v), c]); }
         const verdicts = [...groupM(inspected.map((x) => ({ k: statusOf(x.i!.verdict), clicks: 1, impressions: 0, posx: 0 })), (x) => String(x.k))];
         const impr28 = groupM(g.PG.filter((x) => String(x.date) > addDays(g.meta.end, -28)), (x) => String(x.page));
         const lastCrawlTxt = (d: number | null) => (d == null ? "never" : d < 1 ? "today" : `${Math.round(d)} days ago`);
         const rows = lat.map((x) => {
-          const d = age(x), st = !x.i ? "Not inspected" : x.i.verdict === "PASS" ? "Indexed" : x.i.verdict === "NEUTRAL" ? "Excluded" : "Not indexed";
-          return { url: pathOf(x.r.url), status: st, statusTone: st === "Indexed" ? "good" : st === "Not inspected" ? "mute" : "bad", reason: x.i?.coverageState ?? "Waiting for the inspection queue", last: lastCrawlTxt(d), lastB: d == null ? "never" : d < 7 ? "under 7 days" : d < 30 ? "7–30" : "30+", as: x.i?.crawledAs ?? "–", sm: inSm(x) ? "in" : "not in", refs: x.i?.referringUrls.length ?? 0, impr: impr28.get(x.r.url)?.impressions ?? 0, fetch: x.i?.pageFetchState ?? "–" };
+          const d = age(x), st = !x.i ? "Not inspected" : x.i.verdict === "PASS" ? "Indexed" : x.i.verdict === "NEUTRAL" ? "Not indexed" : "Not indexed (error)";
+          return { url: pathOf(x.r.url), status: st, statusTone: st === "Indexed" ? "good" : st === "Not inspected" ? "mute" : "bad", reason: x.i ? reasonLabel(x.i.coverageState) : "Waiting for the inspection queue", last: lastCrawlTxt(d), lastB: d == null ? "never" : d < 7 ? "under 7 days" : d < 30 ? "7–30" : "30+", as: x.i?.crawledAs ?? "–", sm: inSm(x) ? "in" : "not in", refs: x.i?.referringUrls.length ?? 0, impr: impr28.get(x.r.url)?.impressions ?? 0, fetch: x.i?.pageFetchState ?? "–" };
         });
         const quota = g.quota.date === new Date().toISOString().slice(0, 10) ? g.quota.used : 0;
         const daysToCover = Math.ceil(Math.max(0, n - in30.length) / 1800);
@@ -96,7 +104,7 @@ export default async function IndexingPage({ searchParams }: { searchParams: Pro
                 <ColChart id="gsc-idx-crawl" labels={cw.map(([w]) => sd(w))} series={[{ name: "URLs crawled", values: cw.map(([, v]) => v), color: C[0] }]} />
               </Card>
               <Card title="Pages on Google" tech="Index status" span={6}>
-                <Donut parts={verdicts.map(([k, v]) => ({ label: k, value: v.clicks, color: k.startsWith("Indexed") ? C[2] : k.startsWith("Excluded") ? C[3] : C[7] }))} />
+                <Donut parts={verdicts.map(([k, v]) => ({ label: k, value: v.clicks, color: k.startsWith("Indexed") ? C[2] : k.includes("NEUTRAL") ? C[3] : C[7] }))} />
               </Card>
             </Grid>
             <Band title="Tables and lists" />
@@ -105,6 +113,13 @@ export default async function IndexingPage({ searchParams }: { searchParams: Pro
                 <Table site={siteOf(g)} limit={25} rows={rows}
                   facets={[{ k: "status", label: "Index status" }, { k: "reason", label: "Reason" }, { k: "as", label: "Crawled as" }, { k: "sm", label: "Sitemap" }, { k: "lastB", label: "Last crawled" }, { k: "fetch", label: "Page fetch" }]}
                   cols={[{ k: "url", label: "URL", kind: "page" }, { k: "status", label: "Status", kind: "tag" }, { k: "reason", label: "Reason / coverage state", wrap: true }, { k: "last", label: "Last crawl" }, { k: "as", label: "Crawled as" }, { k: "sm", label: "In sitemap" }, { k: "refs", label: "Referring URLs", num: true }, { k: "impr", label: "Impr. 28d", num: true }]} />
+              </Card>
+              <Card title="Pages not on Google: possible issue and recommended solution" tech="Not-indexed pages · AI diagnosis"
+                sub="Claude reads each page, our crawl of the site and Search Console, then names the likely reason and the exact fix."
+                info="For each inspected page that isn't indexed, Claude (Sonnet) reads the live page (title, description, headings, words, canonical, robots, links), our crawl of every page (who links to it, similar pages and how much text they share), blog post links, the DataForSEO audit and the page's Search Console data. Internal links are only suggested from indexed pages of this site that are on the same topic. Google never states its exact reason, so these are likely reasons. Results are stored and shown again without paying twice.">
+                <IndexDiagnoses site={siteOf(g)} canRun={canRun} est={estimateCost(stored)} stored={Object.fromEntries(notIdx.filter((x) => stored[x.r.url]).map((x) => [x.r.url, stored[x.r.url]]))}
+                  rows={notIdx.map((x) => ({ url: x.r.url, path: pathOf(x.r.url), reason: reasonLabel(x.i!.coverageState), impr: impr28.get(x.r.url)?.impressions ?? 0, last: lastCrawlTxt(age(x)), linksIn: g.linksIn.get(x.r.url) ?? 0 }))
+                    .sort((a, b) => b.impr - a.impr || a.linksIn - b.linksIn)} />
               </Card>
               <Card title="Pages where Google picked a different main version" tech="Canonical mismatches" span={6}>
                 <Table rows={canon.filter((x) => x.i!.googleCanonical !== x.i!.userCanonical).map((x) => ({ url: pathOf(x.r.url), yours: pathOf(x.i!.userCanonical!), google: pathOf(x.i!.googleCanonical!) }))} cols={[{ k: "url", label: "URL", wrap: true }, { k: "yours", label: "Your canonical", wrap: true }, { k: "google", label: "Google's choice", wrap: true }]} empty="Google agrees with every declared canonical." />

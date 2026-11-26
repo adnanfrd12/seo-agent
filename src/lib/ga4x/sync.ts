@@ -5,16 +5,18 @@ import { todayIn, shiftDays } from "@/lib/analytics/range";
 import { and, batch, exact, ga, inList, not, or, regex, report, type Filter, type Ga4xCtx } from "./api";
 import { crawlLeadActions } from "./crawl";
 import { geocodeCities } from "./geo";
+import { earliest, mergeCube } from "./history";
 import { FALLBACKS } from "./model";
 import type { Cell, Cube, CubeName, Ga4xMeta, RangeUsers } from "./types";
 
 /**
  * Keeps a local copy of the GA4 reports the leads module shows, per client (dfs_cache, endpoint "ga4x",
- * one row per report "cube:<name>" plus "meta"). Each cube holds one row per day and dimension combination
- * for the last DAYS days, so every screen can work out any date range (and the period before it) without
- * calling Google. Users aren't additive across days: they are read per date range (rangeUsers) and cached.
+ * one row per report "cube:<name>" plus "meta"). Each cube holds one row per day and dimension combination;
+ * a sync re-reads the last DAYS days and keeps every older stored day, so history only grows and every screen
+ * can work out any stored date range (and the period before it) without calling Google. Users aren't additive across days: they are read per date range (rangeUsers) and cached.
  */
 export const ENDPOINT = "ga4x";
+/** Days each sync reads from Google; days older than that stay stored from earlier syncs (see mergeCube). */
 export const DAYS = 190;
 const STALE_MS = 20 * 3600_000;
 
@@ -193,6 +195,15 @@ export async function syncGa4x(admin: SupabaseClient, clientId: string, resource
     },
     fallbacks, crawl, errors, ecommerce,
   };
+  // history is kept: each cube keeps its stored days before this read's window (Google's window moves on, the
+  // dashboard's copy doesn't shrink), and a report that failed this time keeps its stored rows
+  const names = Object.keys(cubes) as CubeName[];
+  const [stored, oldMeta] = await Promise.all([loadCubes(admin, clientId, t.resource.id, names), loadMeta(admin, clientId, t.resource.id)]);
+  for (const name of names) cubes[name] = mergeCube(stored[name], cubes[name]!, start);
+  const first = earliest(Object.values(cubes));
+  if (first && first < meta.start) meta.start = first;
+  // lead fallbacks found in earlier reads still name the rows kept from them
+  if (oldMeta?.fallbacks?.length) meta.fallbacks = [...new Set([...meta.fallbacks, ...oldMeta.fallbacks])];
   for (const [name, c] of Object.entries(cubes)) await save(admin, clientId, key(t.resource.id, `cube:${name}`), c, c!.rows.length);
   await save(admin, clientId, key(t.resource.id, "meta"), meta, Object.keys(cubes).length);
   // coordinates for the city maps: the busiest cities and every city with a lead

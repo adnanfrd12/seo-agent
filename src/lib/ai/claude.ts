@@ -21,6 +21,7 @@ export function costUsd(usage: { input_tokens: number; output_tokens: number; ca
 export function aiErrorMessage(e: unknown): string {
   if (e instanceof Anthropic.AuthenticationError) return "The Anthropic API key was rejected. Check ANTHROPIC_API_KEY.";
   if (e instanceof Anthropic.RateLimitError) return "Anthropic rate limit reached. Try again in a minute.";
+  if (e instanceof Anthropic.BadRequestError && /credit balance is too low/i.test(e.message)) return "The AI is paused: the Anthropic account is out of credit. An owner needs to add credit at console.anthropic.com (Plans & Billing), then try again.";
   if (e instanceof Anthropic.BadRequestError) return `The AI request was rejected: ${e.message.slice(0, 200)}`;
   if (e instanceof Anthropic.APIError) return `AI service error (${e.status ?? "network"}). Try again.`;
   const m = e instanceof Error ? e.message : "Unknown error";

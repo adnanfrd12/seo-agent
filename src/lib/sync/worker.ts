@@ -118,7 +118,9 @@ export async function processQueue(opts: { budgetMs?: number; concurrency?: numb
                 lbmId: String((resource.metadata as { lbm_id?: string } | null)?.lbm_id ?? ""),
               })
           : job.provider === "gbp"
-            ? await syncGbp(admin, { ...target, connectionId: job.connection_id!, location: resource.external_id }, { start, end })
+            ? await syncGbp(admin, { ...target, connectionId: job.connection_id!, location: resource.external_id },
+                // profile, reviews and posts are current-state: read on every run except the older-history chunks
+                { start, end, full: job.job_type !== "backfill" })
           : job.provider === "ga4"
             ? await syncGa4(admin, ctx, { ...target, property: resource.external_id }, { start, end })
             : await syncGsc(admin, ctx, { ...target, siteUrl: resource.external_id }, { start, end });
@@ -135,10 +137,12 @@ export async function processQueue(opts: { budgetMs?: number; concurrency?: numb
         await finish("succeeded", null, stats);
         tally("succeeded");
         if (!viaLbm) await queueOlderChunk(admin, job, start, run.written);
+        if (!viaLbm) await resumeBackfill(admin, job);
       } else if (ok > 0) {
         await finish("partial", `${failed} report(s) failed: ${Object.entries(run.failures).map(([k, v]) => `${k}: ${v}`).join("; ").slice(0, 900)}`, stats);
         tally("partial");
         if (!viaLbm) await queueOlderChunk(admin, job, start, run.written);
+        if (!viaLbm) await resumeBackfill(admin, job);
       } else if (Object.values(run.failures).some((m) => /quota 0|is not enabled|not enabled in the Google Cloud|cannot access the profile/i.test(m))) {
         // retrying can't fix missing API approval or permissions: fail once with Google's reason
         await finish("failed", Object.values(run.failures)[0]!.slice(0, 900), stats);
@@ -178,6 +182,41 @@ async function revoked(admin: ReturnType<typeof createAdminClient>, job: Job, er
   const label = job.provider === "ga4" ? "Google Analytics" : job.provider === "gsc" ? "Search Console" : job.provider === "gbp" ? "Google Business Profile" : job.provider === "bing" ? "Bing Webmaster Tools" : "Microsoft Clarity";
   try { await onRevocationDetected(admin, job.connection_id, job.client_id, label); return true; }
   catch (e) { console.error("[sync] revocation cleanup failed", e instanceof Error ? e.message : e); return false; }
+}
+
+/**
+ * Stored history must reach back as far as the provider still serves it: Search Console drops a day off its 16-month
+ * window every day, so a day never imported is lost for good. Resources connected before the backfill chain existed
+ * (or whose chain stopped) only have their initial 90 days. After a daily/manual sync, when the oldest stored day is
+ * still inside the provider's window and no backfill has tried older days yet, the chain is started again from there
+ * (queueOlderChunk continues it). Upserts only: nothing stored is replaced except by the same days' newer values.
+ */
+// Business Profile only through Google OAuth: Local Brand Manager serves ~25 days and is never backfilled (callers skip it)
+const BACKFILL_TABLE = { ga4: "ga4_daily_metrics", gsc: "gsc_daily_metrics", gbp: "gbp_daily_metrics" } as const;
+async function resumeBackfill(admin: ReturnType<typeof createAdminClient>, job: Job) {
+  if ((job.job_type !== "daily" && job.job_type !== "manual") || !job.resource_id || (job.provider !== "ga4" && job.provider !== "gsc" && job.provider !== "gbp")) return;
+  try {
+    const { data: oldest } = await admin.from(BACKFILL_TABLE[job.provider]).select("metric_date").eq("resource_id", job.resource_id)
+      .order("metric_date", { ascending: true }).limit(1).maybeSingle();
+    const earliest = (oldest as { metric_date?: string } | null)?.metric_date;
+    if (!earliest) return;
+    const floor = shiftDays(todayIn("UTC"), -BACKFILL[job.provider].maxDays);
+    const end = shiftDays(earliest, -1);
+    if (end < floor) return; // history already reaches the provider's limit
+    // a backfill already went back past the oldest stored day (it came back empty, or is still running): don't repeat
+    // it. A failed one is retried by a later sync, up to three times.
+    const { data: tried } = await admin.from("analytics_sync_jobs").select("status").eq("resource_id", job.resource_id).eq("job_type", "backfill")
+      .lte("range_start", end).limit(10);
+    const failed = (tried ?? []).filter((x) => x.status === "failed").length;
+    if ((tried ?? []).length > failed || failed >= 3) return;
+    const from = shiftDays(end, -(BACKFILL[job.provider].chunk - 1));
+    await admin.from("analytics_sync_jobs").insert({
+      client_id: job.client_id, connection_id: job.connection_id, resource_id: job.resource_id, provider: job.provider,
+      job_type: "backfill", range_start: from < floor ? floor : from, range_end: end,
+    }); // a unique-index conflict just means another job is already active for this resource; the next sync retries
+  } catch (e) {
+    console.error("[sync] backfill resume check failed", e instanceof Error ? e.message : e);
+  }
 }
 
 /** Chains the next-older history chunk after a successful initial/backfill import. */

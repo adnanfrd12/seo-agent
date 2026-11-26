@@ -2,6 +2,7 @@ import { timingSafeEqual } from "node:crypto";
 import { NextResponse, type NextRequest } from "next/server";
 import { GbpApiError } from "@/lib/google/gbp";
 import { emailFromIdToken, subFromIdToken, exchangeCode, GBP_OAUTH_COOKIE, GBP_SCOPE } from "@/lib/google/oauth";
+import { appForConnect } from "@/lib/google/oauth-apps";
 import { discoverLocations, storeGrant } from "@/lib/integrations/gbp-service";
 import { requireAdmin } from "@/lib/integrations/http";
 import { createAdminClient } from "@/lib/supabase/admin";
@@ -22,7 +23,7 @@ export async function GET(request: NextRequest) {
 
   if (sp.get("error")) return fail(sp.get("error") === "access_denied" ? "Google access was denied on the consent screen." : `Google returned an error: ${sp.get("error")}`);
 
-  let saved: { state: string; verifier: string; clientId: string };
+  let saved: { state: string; verifier: string; clientId: string; userId?: string; appOwner?: string | null };
   try {
     saved = JSON.parse(request.cookies.get(GBP_OAUTH_COOKIE)?.value ?? "");
   } catch {
@@ -31,18 +32,24 @@ export async function GET(request: NextRequest) {
   const code = sp.get("code");
   if (!code || !saved?.state || !same(sp.get("state") ?? "", saved.state)) return fail("Invalid OAuth state. Click Connect Account again.");
 
-  let clientId: string;
+  let clientId: string, userId: string;
   try {
-    clientId = (await requireAdmin()).client.id;
+    const s = await requireAdmin();
+    clientId = s.client.id;
+    userId = s.user.id;
   } catch {
     return fail("Only owners and admins can connect integrations.");
   }
   if (clientId !== saved.clientId) return fail("The active client changed during sign-in. Click Connect Account again.");
+  if (saved.userId && saved.userId !== userId) return fail("A different user finished the sign-in. Click Connect Account again.");
 
   const admin = createAdminClient();
+  // the same OAuth app the consent screen was opened with (re-resolved on the server, never taken from the cookie alone)
+  const app = await appForConnect(admin, userId, clientId).catch(() => null);
+  if (!app || (app.owner ?? null) !== (saved.appOwner ?? null)) return fail("The Google OAuth app changed during sign-in. Click Connect Account again.");
   let tokens;
   try {
-    tokens = await exchangeCode(code, saved.verifier);
+    tokens = await exchangeCode(app, code, saved.verifier);
   } catch (e) {
     return fail(e instanceof Error ? e.message : "Could not exchange the authorization code.");
   }
@@ -50,14 +57,18 @@ export async function GET(request: NextRequest) {
     return fail("The Business Profile permission (business.manage) wasn't granted. Connect again and tick every permission.");
   }
 
-  const { data: conn, error } = await admin.from("integration_connections").upsert(
-    {
-      client_id: clientId, provider: "gbp", auth_method: "direct", status: "pending", last_error: null,
-      composio_connected_account_id: null, composio_entity_id: null, account_email: emailFromIdToken(tokens.id_token),
-    },
-    { onConflict: "client_id,provider" },
-  ).select("id").single();
-  if (error || !conn) return fail("Could not save the connection.");
+  const row = {
+    client_id: clientId, provider: "gbp", auth_method: "direct", status: "pending", last_error: null,
+    composio_connected_account_id: null, composio_entity_id: null, account_email: emailFromIdToken(tokens.id_token),
+  };
+  // token refreshes use this same app (oauth_app_owner, migration 20261128000033)
+  let saveConn = await admin.from("integration_connections").upsert({ ...row, oauth_app_owner: app.owner }, { onConflict: "client_id,provider" }).select("id").single();
+  if (saveConn.error && app.owner === null && /oauth_app_owner/.test(saveConn.error.message)) {
+    // migration not applied yet: the environment app needs no reference
+    saveConn = await admin.from("integration_connections").upsert(row, { onConflict: "client_id,provider" }).select("id").single();
+  }
+  const conn = saveConn.data;
+  if (saveConn.error || !conn) return fail("Could not save the connection.");
   const sub = subFromIdToken(tokens.id_token);
   if (sub) {
     const { recordPlatformAccount } = await import("@/lib/compliance/deletion");
@@ -65,7 +76,7 @@ export async function GET(request: NextRequest) {
   }
 
   try {
-    await storeGrant(admin, conn.id, tokens);
+    await storeGrant(admin, conn.id, tokens, app.owner === null);
     const { data: secret } = await admin.from("integration_secrets").select("connection_id").eq("connection_id", conn.id).maybeSingle();
     if (!secret) throw new Error("Google didn't return a refresh token. Remove the app's access at myaccount.google.com/permissions and connect again.");
   } catch (e) {
@@ -75,7 +86,7 @@ export async function GET(request: NextRequest) {
   }
 
   try {
-    const found = await discoverLocations(admin, clientId, conn.id, tokens.access_token);
+    const found = await discoverLocations(admin, clientId, conn.id, { token: tokens.access_token, envProject: app.owner === null });
     await admin.from("integration_connections").update({ status: "connected", last_error: null }).eq("id", conn.id);
     if (found.locations === 0) {
       return back(`notice=${encodeURIComponent(`Connected, but this Google account manages ${found.accounts} account(s) and no locations.`)}`);

@@ -284,7 +284,7 @@ export async function loadCache(supabase: SupabaseClient, clientId: string): Pro
     // and coach rows (several MB, read by their own loaders) would otherwise be downloaded here and could push older
     // research rows out of the 200 newest
     supabase.from("dfs_cache").select("endpoint, data, fetched_at, params").eq("client_id", clientId)
-      .not("endpoint", "in", "(gscx,ga4x,aiqw,aiqw_kw,aiqw_serp,social,seosignalx,clarity_recordings)").not("endpoint", "like", "tk_%").not("endpoint", "like", "coach_%")
+      .not("endpoint", "in", "(gscx,ga4x,aiqw,aiqw_kw,aiqw_serp,social,seosignalx,clarity_recordings,audit_detail,gsc_index_ai,security_audit,ai_view,ai_brief)").not("endpoint", "like", "tk_%").not("endpoint", "like", "coach_%")
       .order("fetched_at", { ascending: false }).limit(200),
     supabase.from("dfs_snapshots").select("*").eq("client_id", clientId).order("snapshot_date").limit(500),
     supabase.from("research_targets").select("domain, location_code, language_code, auto_refresh, competitors").eq("client_id", clientId).maybeSingle(),

@@ -6,11 +6,18 @@ export interface IssueSummary { key: IssueKey; label: string; pct: number | null
 
 const path = (u: string | null) => { if (!u) return "(unknown page)"; try { const x = new URL(u); return `${x.pathname}${x.search}` || "/"; } catch { return u; } };
 
-function brief(site: string, issues: (IssueSummary & { recs: Recording[] })[]): string {
+export interface BriefError { message: string; count: number; pages: string[] }
+
+function brief(site: string, issues: (IssueSummary & { recs: Recording[] })[], errors: BriefError[]): string {
   const lines = [`Website issues found by Microsoft Clarity — ${site}`, ""];
   for (const i of issues) {
     lines.push(`${i.label}${i.pct != null ? ` — ${i.pct.toFixed(1)}% of sessions` : ""}`, `What it means: ${i.why}`, `Suggested fix: ${i.fix}`, "Recordings:");
     for (const r of i.recs) lines.push(`- ${path(r.url)} (${r.at ?? "?"} UTC, ${r.duration ?? "?"}${r.lcp ? `, load LCP ${r.lcp}` : ""}): ${r.link}`);
+    lines.push("");
+  }
+  if (errors.length) {
+    lines.push("JavaScript error messages (last 3 days, from Clarity; no file/line/stack is available there):");
+    for (const e of errors) lines.push(`- "${e.message}" ×${e.count} on ${e.pages.slice(0, 8).join(", ")}${e.pages.length > 8 ? ", …" : ""}`);
     lines.push("");
   }
   lines.push("Recordings open in Clarity's player (sign in with an account that has access to the project).");
@@ -21,7 +28,7 @@ function brief(site: string, issues: (IssueSummary & { recs: Recording[] })[]): 
  * Under the alerts: for each Clarity issue, the session recordings that show it happening, so the
  * customer can see what's going on and the brief can be passed to the web design team.
  */
-export function IssueRecordings({ set, issues, site }: { set: RecordingSet | null; issues: IssueSummary[]; site: string }) {
+export function IssueRecordings({ set, issues, site, errors = [] }: { set: RecordingSet | null; issues: IssueSummary[]; site: string; errors?: BriefError[] }) {
   const withRecs = issues.map((i) => ({ ...i, recs: set?.issues[i.key] ?? [] }))
     .filter((i) => i.recs.length || (i.count ?? 0) > 0)
     .sort((a, b) => Number(b.recs.length > 0) - Number(a.recs.length > 0) || (b.pct ?? 0) - (a.pct ?? 0));
@@ -36,7 +43,7 @@ export function IssueRecordings({ set, issues, site }: { set: RecordingSet | nul
             Visitor sessions from the last 3 days{set ? ` · pulled ${new Date(set.fetchedAt).toLocaleString()}` : ""}
           </p>
         </div>
-        {withRecs.some((i) => i.recs.length) && <CopyBrief text={brief(site, withRecs.filter((i) => i.recs.length))} />}
+        {withRecs.some((i) => i.recs.length) && <CopyBrief text={brief(site, withRecs.filter((i) => i.recs.length), errors)} />}
       </div>
       {set?.error && !withRecs.some((i) => i.recs.length) && (
         <p className="rounded-lg bg-accent-soft p-3 text-sm text-negative">Recordings couldn’t be pulled: {set.error}</p>

@@ -84,6 +84,8 @@ export async function deleteConnection(admin: SupabaseClient, ref: string, reaso
   for (const r of resources ?? []) {
     for (const endpoint of caches) await admin.from("dfs_cache").delete().eq("client_id", conn.client_id).eq("endpoint", endpoint).like("params_hash", `${r.id}:%`);
   }
+  // Clarity's recordings and error details (stored per client, not per resource) are its data too
+  if (provider === "clarity") await admin.from("dfs_cache").delete().eq("client_id", conn.client_id).eq("endpoint", "clarity_recordings");
   // cascades: integration_secrets (tokens/keys), integration_resources and every metrics table, sync jobs
   const { error } = await admin.from("integration_connections").delete().eq("id", conn.id);
   if (error) throw new Error(`Couldn't delete the connection: ${error.message}`);

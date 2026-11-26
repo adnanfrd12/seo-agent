@@ -4,6 +4,8 @@ import { after } from "next/server";
 import { revalidatePath } from "@/lib/revalidate";
 import { z } from "zod";
 import { clarityInsights, ClarityError } from "@/lib/clarity/api";
+import { pagePath } from "@/lib/clarity/pages";
+import type { Recording } from "@/lib/clarity/recordings";
 import { encryptSecret } from "@/lib/crypto";
 import { getSession } from "@/lib/analytics/client-context";
 import { createAdminClient } from "@/lib/supabase/admin";
@@ -94,4 +96,29 @@ export async function addRecordingReview(input: z.input<typeof reviewSchema>): P
   if (error) return { ok: false, error: "Could not save the review." };
   revalidatePath("/clarity"); revalidatePath("/integrations");
   return { ok: true, message: "Observation saved. It will be used as evidence in the next AI analysis." };
+}
+
+/**
+ * All recordings (last 3 days, up to 50) that visited one page, for the page panel. Any member may load
+ * them: it's read-only, cached per page per day, and capped per client per day (see lib/clarity/errors).
+ */
+export async function loadPageRecordings(url: string): Promise<
+  { ok: true; recordings: Recording[]; fetchedAt: string } | { ok: false; error: string }> {
+  const u = z.url({ protocol: /^https?$/ }).max(2000).safeParse(url);
+  if (!u.success) return { ok: false, error: "Unknown page." };
+  const { client } = await getSession();
+  if (!client) return { ok: false, error: "No client selected." };
+  const admin = createAdminClient();
+  // only pages this client's Clarity data already contains
+  const path = pagePath(u.data);
+  const { data: known } = await admin.from("clarity_behavior_metrics").select("value").eq("client_id", client.id).eq("dimension", "url").eq("value", u.data).limit(1);
+  if (!known?.length || pagePath(known[0].value) !== path) return { ok: false, error: "That page isn't in this site's Clarity data." };
+  const { data: conn } = await admin.from("integration_connections").select("id, status").eq("client_id", client.id).eq("provider", "clarity").maybeSingle();
+  if (conn?.status !== "connected") return { ok: false, error: "Clarity isn't connected." };
+  const { data: secret } = await admin.from("integration_secrets").select("refresh_token_encrypted").eq("connection_id", conn.id).maybeSingle();
+  if (!secret?.refresh_token_encrypted) return { ok: false, error: "No Clarity token stored." };
+  const { decryptSecret } = await import("@/lib/crypto");
+  const { pageRecordings } = await import("@/lib/clarity/errors");
+  const r = await pageRecordings(admin, client.id, decryptSecret(secret.refresh_token_encrypted), u.data);
+  return "error" in r ? { ok: false, error: r.error } : { ok: true, ...r };
 }

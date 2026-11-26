@@ -1,6 +1,5 @@
 import { ShareDonut, StackedTimeBars } from "@/components/charts/analytics-charts";
 import { AiScreenTools } from "@/components/aiqw/screen-tools";
-import { MetricTrend } from "@/components/charts/metric-trend";
 import { TrendChart, type TrendPoint } from "@/components/charts/trend-chart";
 import { FilterSelect } from "@/components/dashboard/filter-select";
 import { KpiCard } from "@/components/dashboard/kpi-card";
@@ -17,6 +16,10 @@ import { dailySeries, type TrendData } from "@/lib/analytics/trend";
 import { first, type SearchParams } from "@/lib/analytics/url";
 import { ExternalLink, MapPin } from "lucide-react";
 import { shiftDays } from "@/lib/analytics/range";
+import { redirect } from "next/navigation";
+import { effectiveResources } from "@/lib/google/gbp-view";
+import { createAdminClient } from "@/lib/supabase/admin";
+import { GbpSections } from "./gbp-sections";
 import { LbmSections } from "./lbm-sections";
 import { ViewsByWhere } from "./views-by-where";
 
@@ -57,6 +60,18 @@ export default async function BusinessProfilePage({ searchParams }: { searchPara
     );
   }
   const supabase = scope.supabase;
+  // one source per location: a Local Brand Manager location is replaced by the same location from the Google API
+  // once that has fresh data (same rule as _selected_resources in the database)
+  const eff = await effectiveResources(supabase, client.id);
+  if (scope.gbpPick && eff.shadowedBy.has(scope.gbpPick.id)) {
+    const q = new URLSearchParams(Object.entries(sp).flatMap(([k, v]) => (v == null ? [] : (Array.isArray(v) ? v : [v]).map((x) => [k, x] as [string, string]))));
+    q.set("location", eff.shadowedBy.get(scope.gbpPick.id)!);
+    redirect(`${PATH}?${q}`);
+  }
+  const visible = scope.gbp.filter((r) => !eff.shadowedBy.has(r.id));
+  const sectionResources = eff.effective.filter((r) => !scope.gbpPick || r.id === scope.gbpPick.id);
+  const lbmIds = eff.all.filter((r) => r.source === "lbm" && (!scope.gbpPick || r.id === scope.gbpPick.id || eff.shadowedBy.get(r.id) === scope.gbpPick.id)).map((r) => r.id);
+  const replyBlocked = await replyStatus(client.id);
   const args = { p_client_id: client.id, p_start: range.start, p_end: range.end };
   const [summary, trend, locations, conn] = await Promise.all([
     supabase.rpc("get_gbp_summary", { ...args, p_resource_id: scope.gbpPick?.id ?? null }),
@@ -70,7 +85,7 @@ export default async function BusinessProfilePage({ searchParams }: { searchPara
   const lastSync = conn.data?.last_synced_at ? new Date(conn.data.last_synced_at).toLocaleString() : "never";
   const header = (
     <TabHeader source="gbp" title={title}
-      description={`How customers find you on Search and Maps, and what they do. Location: ${scope.label(scope.gbp, scope.gbpPick)} · last synced ${lastSync}`}
+      description={`How customers find you on Search and Maps, and what they do. Location: ${scope.label(visible, scope.gbpPick)} · last synced ${lastSync}`}
       guide={[
           { term: "Profile views", text: "Times your Business Profile was shown on Google Search or Maps (unique viewers per day)." },
           { term: "Search vs Maps", text: "Whether people found you by searching Google, or by browsing the map." },
@@ -80,14 +95,20 @@ export default async function BusinessProfilePage({ searchParams }: { searchPara
           { term: "Delay", text: "Business Profile performance data arrives a few days late." },
         ]} />
   );
-  const locationOptions = resourceOptions(scope.gbp, "All locations (combined)");
+  const locationOptions = resourceOptions(visible, "All locations (combined)");
   const filters = locationOptions && (
     <div className="mb-5 flex flex-wrap items-end gap-3">
       <FilterSelect label="Location" name="location" value={scope.gbpPick?.id ?? ""} path={PATH} sp={sp} options={locationOptions} />
     </div>
   );
 
-  const more = <LbmSections supabase={supabase} resourceIds={(scope.gbpPick ? [scope.gbpPick] : scope.gbp).map((r) => r.id)} range={range} />;
+  const more = (
+    <>
+      <GbpSections supabase={supabase} clientId={client.id} resources={sectionResources} range={range} compare={compare}
+        canEdit={["owner", "admin"].includes(client.role)} replyBlocked={replyBlocked} />
+      <LbmSections supabase={supabase} resourceIds={lbmIds} />
+    </>
+  );
 
   if ([summary, trend, locations].some((r) => r.error)) {
     return (
@@ -103,7 +124,8 @@ export default async function BusinessProfilePage({ searchParams }: { searchPara
   const lastDay = tAll.current.length ? tAll.current[tAll.current.length - 1].date : null;
   const shown = { start: range.start, end: lastDay && lastDay < range.end ? lastDay : range.end };
   const t: TrendData = compare ? tAll : { current: tAll.current, previous: [] };
-  const locs = (locations.data ?? []) as LocationRow[];
+  const effIds = new Set(eff.effective.map((r) => r.id));
+  const locs = ((locations.data ?? []) as LocationRow[]).filter((l) => effIds.has(l.id));
 
   if (!s.current.has_data) {
     return (
@@ -159,7 +181,8 @@ export default async function BusinessProfilePage({ searchParams }: { searchPara
   }
   const recentFrom = lastDay ? shiftDays(lastDay, -2) : null; // the latest three days
   const asOf = (iso: string) => new Date(`${iso}T00:00:00Z`).toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric", timeZone: "UTC" });
-  const picked = s.locations.find((l) => l.id === scope.gbpPick?.id) ?? (s.locations.length === 1 ? s.locations[0] : null);
+  const sLocs = s.locations.filter((l) => effIds.has(l.id));
+  const picked = sLocs.find((l) => l.id === scope.gbpPick?.id) ?? (sLocs.length === 1 ? sLocs[0] : null);
 
   return (
     <>
@@ -203,19 +226,6 @@ export default async function BusinessProfilePage({ searchParams }: { searchPara
           marker={recentFrom ? { from: recentFrom, label: "Latest days, may still change" } : undefined} />
       </div>
 
-      <div className="mt-4 grid gap-4 lg:grid-cols-2">
-        <MetricTrend title="Visibility" source="GBP" options={[
-          { key: "impressions", label: "All views", data: dailySeries(t, "impressions", shown) },
-          { key: "impressions_search", label: "Search", data: dailySeries(t, "impressions_search", shown) },
-          { key: "impressions_maps", label: "Maps", data: dailySeries(t, "impressions_maps", shown) },
-        ]} />
-        <MetricTrend title="Customer actions" source="GBP" options={[
-          { key: "website_clicks", label: "Website", data: dailySeries(t, "website_clicks", shown) },
-          { key: "call_clicks", label: "Calls", data: dailySeries(t, "call_clicks", shown) },
-          { key: "direction_requests", label: "Directions", data: dailySeries(t, "direction_requests", shown) },
-        ]} />
-      </div>
-
       <div className="mt-4">
         <StackedTimeBars title="Customer actions over time" valueLabel="Actions"
           bucket={dayCount > 45 ? "week" : "day"} keys={[{ key: "website_clicks", label: "Website" }, { key: "call_clicks", label: "Calls" }, { key: "direction_requests", label: "Directions" }]}
@@ -226,46 +236,6 @@ export default async function BusinessProfilePage({ searchParams }: { searchPara
         <ViewsByWhere split={{ mobile_maps: toNum(b?.mobile_maps) ?? 0, desktop_maps: toNum(b?.desktop_maps) ?? 0, mobile_search: toNum(b?.mobile_search) ?? 0, desktop_search: toNum(b?.desktop_search) ?? 0 }} />
         <ShareDonut title="What people did next" centerLabel="actions" keepOrder
           items={[{ label: "Website", value: pick(cur, "website_clicks") ?? 0 }, { label: "Calls", value: pick(cur, "call_clicks") ?? 0 }, { label: "Directions", value: pick(cur, "direction_requests") ?? 0 }]} />
-      </div>
-
-      {/* search terms beside the business card (both short lists); either one alone takes the full width */}
-      <div className="mt-6 grid grid-cols-1 gap-4 lg:grid-cols-2 lg:[&>*:only-child]:col-span-2">
-        <section className="rounded-[10px] border border-border bg-surface p-4" aria-label="Search keywords">
-          <div className="mb-3 flex items-baseline justify-between">
-            <h2 className="text-sm font-semibold">Searches that showed the profile</h2>
-            <span className="text-xs text-muted" title="Reported per calendar month; every month overlapping the range is included. Google shows low counts only as a threshold.">Monthly · impressions</span>
-          </div>
-          {s.keywords.length === 0 ? (
-            <p className="py-8 text-center text-sm text-muted">No keyword data for these months yet.</p>
-          ) : (
-            <ul className="max-h-80 space-y-1 overflow-y-auto text-sm">
-              {s.keywords.map((k) => (
-                <li key={k.keyword} className="flex justify-between gap-3 border-b border-border/60 py-1 last:border-0">
-                  <span className="break-words">{k.keyword}</span>
-                  <span className="shrink-0 tabular-nums text-muted">
-                    {k.impressions != null ? fmtInt(toNum(k.impressions)) : `< ${fmtInt(toNum(k.impressions_threshold))}`}
-                  </span>
-                </li>
-              ))}
-            </ul>
-          )}
-        </section>
-        {picked && (
-          <section className="rounded-[10px] border border-border bg-surface p-4 text-sm" aria-label="Business information">
-            <h2 className="mb-2 text-sm font-semibold">Business information</h2>
-            <dl className="grid gap-x-6 gap-y-1 sm:grid-cols-[auto_1fr]">
-              {([
-                ["Name", picked.display_name], ["Category", picked.metadata?.category], ["Address", picked.metadata?.address],
-                ["Phone", picked.metadata?.phone], ["Website", picked.metadata?.website], ["Status", picked.metadata?.open_status],
-              ] as const).filter(([, v]) => v).map(([k, v]) => (
-                <div key={k} className="contents"><dt className="text-muted">{k}</dt><dd className="break-all">{v}</dd></div>
-              ))}
-            </dl>
-            {picked.metadata?.maps_uri?.startsWith("https://") && (
-              <a href={picked.metadata.maps_uri} target="_blank" rel="noopener noreferrer" className="mt-2 inline-block text-foreground underline decoration-border-strong underline-offset-2 hover:decoration-foreground">Open on Google Maps →</a>
-            )}
-          </section>
-        )}
       </div>
 
       {locs.length > 1 && (
@@ -298,4 +268,18 @@ export default async function BusinessProfilePage({ searchParams }: { searchPara
       <AiScreenTools screen="business-profile" />
     </>
   );
+}
+
+/**
+ * Why replying to reviews from the dashboard isn't available, or null when it is: it needs the direct Google
+ * connection with approved Business Profile API access (read with the service role, scoped to this client).
+ */
+async function replyStatus(clientId: string): Promise<string | null> {
+  const { data: conn } = await createAdminClient().from("integration_connections").select("status, last_error").eq("client_id", clientId).eq("provider", "gbp").maybeSingle();
+  if (!conn) return "Replying from here needs the direct Google Business Profile connection (Integrations → Google Business Profile). Until then, reply in Google Business Profile.";
+  if (/quota 0|isn't approved|not approved/i.test(conn.last_error ?? "")) {
+    return "Replies will post from here once Google approves Business Profile API access for the Google Cloud project (pending). Until then, reply in Google Business Profile.";
+  }
+  if (conn.status !== "connected") return "The Google Business Profile connection needs attention (Integrations). Until it's fixed, reply in Google Business Profile.";
+  return null;
 }

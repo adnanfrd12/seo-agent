@@ -44,7 +44,16 @@ export async function syncLbm(
         website_clicks: d.website_clicks ?? null,
         updated_at: now(),
       }));
-      return upsert(admin, "gbp_daily_metrics", rows, "resource_id,metric_date");
+      // only the fields LBM returned: a missing field never blanks a value already stored for that day
+      const groups = new Map<string, Record<string, unknown>[]>();
+      for (const r of rows) {
+        const row = Object.fromEntries(Object.entries(r).filter(([, v]) => v != null));
+        const key = Object.keys(row).sort().join(",");
+        groups.set(key, [...(groups.get(key) ?? []), row]);
+      }
+      let n = 0;
+      for (const g of groups.values()) n += await upsert(admin, "gbp_daily_metrics", g, "resource_id,metric_date");
+      return n;
     }],
     ["keywords", async () => {
       const list = await searchImpressions(token, t.gbpId);

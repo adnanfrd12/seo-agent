@@ -23,6 +23,8 @@ export const ISSUES: { key: IssueKey; metric: string; label: string; filter: Rec
 export interface Recording {
   link: string; at: string | null; duration: string | null; pages: number | null; clicks: number | null;
   url: string | null; title: string | null; lcp: string | null; events: string[];
+  /** every page the session visited (older stored sets only have `url`) */
+  visited?: string[];
 }
 export interface RecordingSet { fetchedAt: string; issues: Partial<Record<IssueKey, Recording[]>>; error?: string }
 
@@ -49,10 +51,12 @@ function parse(item: Record<string, unknown>): Recording | null {
   return {
     link, at: str(item.timestamp), duration: str(item.totalDuration), pages: num(item.pagesCount), clicks: num(item.sessionClickCount),
     url: str(first.url), title: str(first.displayTitle)?.slice(0, 140) ?? null, lcp: str(first.LCP), events,
+    visited: [...new Set(tl.map((p) => str(p.url)).filter((u): u is string => Boolean(u)))].slice(0, 20),
   };
 }
 
-async function sample(token: string, filter: Record<string, unknown>, count = 8): Promise<Recording[]> {
+/** One call to the recordings endpoint for the last 3 days; `filter` uses the MCP server's filter names. */
+export async function sampleRecordings(token: string, filter: Record<string, unknown>, count = 8): Promise<Recording[]> {
   const end = new Date(); const start = new Date(end.getTime() - 3 * 86_400_000);
   const date = { start: start.toISOString(), end: end.toISOString() };
   const res = await fetch(ENDPOINT, {
@@ -66,15 +70,31 @@ async function sample(token: string, filter: Record<string, unknown>, count = 8)
   return (Array.isArray(body) ? body : []).map((x) => parse(x as Record<string, unknown>)).filter((r): r is Recording => r !== null);
 }
 
-/** Fetches recordings per issue once per UTC day (the newest per issue are kept; older days are replaced). */
+/** History rows: each day's set is kept as "<kind>:YYYY-MM-DD" and never deleted (the "<kind>" row is only the latest). */
+export const DAY_PREFIX = "day:";
+export async function keepDay(admin: SupabaseClient, clientId: string, key: string, data: unknown, fetchedAt: string, rowCount: number, overwrite: boolean): Promise<void> {
+  await admin.from("dfs_cache").upsert(
+    { client_id: clientId, endpoint: RECORDINGS_ENDPOINT, params_hash: `${key}${fetchedAt.slice(0, 10)}`, params: { days: 3, history: true }, data, row_count: rowCount, cost: 0, fetched_at: fetchedAt },
+    { onConflict: "client_id,endpoint,params_hash", ignoreDuplicates: !overwrite },
+  );
+}
+
+/**
+ * Fetches recordings per issue once per UTC day. "all" holds the newest set; every day's set is also
+ * kept as its own history row, so older recordings stay available.
+ */
 export async function syncRecordings(admin: SupabaseClient, clientId: string, token: string): Promise<number> {
+  // the JavaScript error messages behind the script-error counts (own once-a-day guard; never blocks recordings)
+  try { const { syncErrorDetails } = await import("./errors"); await syncErrorDetails(admin, clientId, token); } catch { /* stored with its error */ }
   const today = new Date().toISOString().slice(0, 10);
-  const { data: prev } = await admin.from("dfs_cache").select("fetched_at").eq("client_id", clientId).eq("endpoint", RECORDINGS_ENDPOINT).eq("params_hash", "all").maybeSingle();
+  const { data: prev } = await admin.from("dfs_cache").select("data, fetched_at, row_count").eq("client_id", clientId).eq("endpoint", RECORDINGS_ENDPOINT).eq("params_hash", "all").maybeSingle();
   if (prev?.fetched_at && String(prev.fetched_at).slice(0, 10) === today) return 0;
+  // a set stored before history rows existed is archived before "all" is replaced
+  if (prev?.data) await keepDay(admin, clientId, DAY_PREFIX, prev.data, new Date(prev.fetched_at).toISOString(), prev.row_count ?? 0, false);
   const set: RecordingSet = { fetchedAt: new Date().toISOString(), issues: {} };
   let total = 0;
   for (const i of ISSUES) {
-    try { const r = await sample(token, i.filter); set.issues[i.key] = r; total += r.length; }
+    try { const r = await sampleRecordings(token, i.filter); set.issues[i.key] = r; total += r.length; }
     catch (e) { set.error = (e instanceof Error ? e.message : "failed").slice(0, 200); if (/rejected/.test(set.error)) break; }
   }
   if (!total && set.error) throw new Error(set.error);
@@ -82,6 +102,7 @@ export async function syncRecordings(admin: SupabaseClient, clientId: string, to
     { client_id: clientId, endpoint: RECORDINGS_ENDPOINT, params_hash: "all", params: { days: 3 }, data: set, row_count: total, cost: 0, fetched_at: set.fetchedAt },
     { onConflict: "client_id,endpoint,params_hash" },
   );
+  await keepDay(admin, clientId, DAY_PREFIX, set, set.fetchedAt, total, true);
   return total;
 }
 
