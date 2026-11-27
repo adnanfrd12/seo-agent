@@ -7,9 +7,10 @@ import { GeneralForm } from "@/components/org/general-form";
 import { IntegrationsSummary } from "@/components/org/integrations-summary";
 import { ORG_TABS, OrgNav } from "@/components/org/org-nav";
 import { OrgSwitcher } from "@/components/org/org-switcher";
+import { OrgCredentialsView } from "../../../integrations/org-credentials-view";
 import { PreferencesForm } from "@/components/org/preferences-form";
 import { RolesMatrix } from "@/components/org/roles-matrix";
-import { Note, RoleBadge } from "@/components/org/section";
+import { Note } from "@/components/org/section";
 import { SecurityPanel } from "@/components/org/security-panel";
 import { AiSpend } from "@/components/org/spend/ai-spend";
 import { ToolsSpend } from "@/components/org/spend/tools-spend";
@@ -105,7 +106,12 @@ export default async function OrganizationSettingsPage({ params, searchParams }:
       const clients = (await listOrgClients(admin, org.id)).filter((c) => !c.archivedAt);
       const connected: Record<string, number> = {};
       for (const c of clients) for (const i of c.integrations) if (i.status === "connected") connected[i.provider] = (connected[i.provider] ?? 0) + 1;
-      content = <IntegrationsSummary orgId={org.id} canManageCredentials={can.manageCredentials(role)} connected={connected} clientCount={clients.length} />;
+      content = (
+        <>
+          <IntegrationsSummary orgId={org.id} canManageCredentials={can.manageCredentials(role)} connected={connected} clientCount={clients.length} />
+          <OrgCredentialsView orgId={org.id} orgName={org.name} role={role} sp={{ q: one(sp.q), category: one(sp.category), status: one(sp.status) }} />
+        </>
+      );
       break;
     }
     case "preferences":
@@ -146,7 +152,6 @@ export default async function OrganizationSettingsPage({ params, searchParams }:
         {/* the organization switcher lives here (not in the sidebar): switching opens that organization */}
         <OrgSwitcher organizations={organizations} activeId={current.id} redirectTo={`/settings/organization/${tab.id}`}
           className="w-full max-w-xs rounded-lg border border-border bg-surface" />
-        <RoleBadge role={role} />
       </div>
       <div className="grid items-start gap-6 lg:grid-cols-[220px_minmax(0,1fr)]">
         <OrgNav active={tab.id} isAdmin={isAdmin} href={href} />

@@ -1,22 +1,18 @@
 import { KeyRound } from "lucide-react";
+import Link from "next/link";
 import { Freshness, type FreshRow } from "@/components/charts/ops-charts";
 import { PageHeader } from "@/components/dashboard/page-header";
 import { ConsentPanel } from "@/components/integrations/consent-panel";
 import { IntegrationCard, type ProviderStatus } from "@/components/integrations/integration-card";
-import { CredentialCard } from "@/components/integrations/org/credential-card";
-import { CustomVariables } from "@/components/integrations/org/custom-variables";
 import { Filterable, FilterEmpty, IntegrationsFilterProvider, IntegrationsToolbar, type ToolbarCount } from "@/components/integrations/org/filter";
-import { ImportEnvBanner } from "@/components/integrations/org/import-env-banner";
 import { filterStatusOf, type FilterItem, type FilterStatus } from "@/components/integrations/org/types";
 import { platformById } from "@/config/platforms";
 import { getSession } from "@/lib/analytics/client-context";
 import { PROVIDER_META, type ProviderId } from "@/lib/integrations/providers";
 import { connectReadiness } from "@/lib/integrations/service";
-import { brandName, getBranding } from "@/lib/org/branding";
 import { orgConfig } from "@/lib/org/config";
-import type { GuideContext } from "@/lib/org/guides";
 import { can, isPlatformAdmin, roleIn } from "@/lib/org/permissions";
-import { CATEGORIES, PLATFORM_ENV, type IntegrationCategory } from "@/lib/org/registry";
+import { CATEGORIES, type IntegrationCategory } from "@/lib/org/registry";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { createClient } from "@/lib/supabase/server";
 import { ConnectClarity, ReviewForm } from "../clarity/clarity-forms";
@@ -36,8 +32,6 @@ const EMPTY: ProviderStatus = { connection: null, resources: [], last_job: null,
 const hoursSince = (iso: string | null | undefined) => (iso ? Math.max(0, (Date.now() - new Date(iso).getTime()) / 3_600_000) : null);
 const link = "text-foreground underline decoration-border-strong underline-offset-2 hover:decoration-foreground";
 
-/** setup guides as PDF (built by /api/org/guides; owners and admins of that organization) */
-const pdfFor = (id: string, orgId: string) => `/api/org/guides/${id}.pdf?org=${encodeURIComponent(orgId)}`;
 const FILTER_STATUSES: FilterStatus[] = ["configured", "partial", "missing"];
 /** a client connection's state as the status filter sees it */
 const connStatus = (s: string | null | undefined): FilterStatus => (s === "connected" ? "configured" : s === "error" ? "partial" : "missing");
@@ -98,9 +92,9 @@ export default async function IntegrationsPage({
   const owner = can.manageCredentials(orgRole);
   const showOrg = can.manageSettings(orgRole);
   const has = (...keys: string[]) => Boolean(cfg?.has(...keys));
-  const [orgData, branding, { data: lbmResources }, { data: bingResources }] = await Promise.all([
+  const [orgData, { data: lbmResources }, { data: bingResources }] = await Promise.all([
+    // only for the status counts and the "start here" hint; the credentials themselves are in organization settings
     showOrg ? loadOrgIntegrations(admin, orgId, { owner }) : null,
-    showOrg ? getBranding(orgId).catch(() => null) : null,
     lbm ? supabase.from("integration_resources").select("id, external_id, display_name, is_selected, metadata").eq("connection_id", lbm.id) : { data: [] },
     bing ? supabase.from("integration_resources").select("external_id, is_selected").eq("connection_id", bing.id) : { data: [] },
   ]);
@@ -109,11 +103,6 @@ export default async function IntegrationsPage({
   const canEdit = ["owner", "admin"].includes(client.role);
   // bulk client setup creates clients for the organization: its owners and admins, whatever their client role
   const orgManager = organization?.id === orgId && ["owner", "admin"].includes(organization.role);
-  const guideContext: GuideContext = {
-    appUrl: (process.env.NEXT_PUBLIC_APP_URL ?? "").trim().replace(/\/+$/, "") || undefined,
-    appName: branding ? brandName(branding) : undefined,
-    orgName,
-  };
   const clarityConnected = clarity?.status === "connected";
   const lbmConnected = lbm?.status === "connected";
   const lbmSelected = (lbmResources ?? []).filter((r) => r.is_selected)
@@ -165,40 +154,25 @@ export default async function IntegrationsPage({
     jobs: { ...BLOCKS.jobs, status: null },
   };
   const clientConnected = [...ORDER.map((p) => status[p]?.connection?.status === "connected"), bingConnected, lbmConnected, clarityConnected];
-  const orgCount = (st: FilterStatus) => orgData?.integrations.filter((i) => filterStatusOf(i.status) === st).length ?? 0;
-  const counts: ToolbarCount[] = orgData
-    ? ([
-        { label: "configured", n: orgCount("configured"), tone: "positive", status: "configured" },
-        { label: "partly configured", n: orgCount("partial"), tone: "warn", status: "partial" },
-        { label: "not configured", n: orgCount("missing"), tone: "muted", status: "missing" },
-      ] satisfies ToolbarCount[]).filter((c) => c.n > 0 || c.tone !== "warn")
-    : [
-        { label: `connected for ${client.name}`, n: clientConnected.filter(Boolean).length, tone: "positive", status: "configured" },
-        { label: "not connected", n: clientConnected.filter((x) => !x).length, tone: "muted", status: "missing" },
-      ];
+  const counts: ToolbarCount[] = [
+    { label: `connected for ${client.name}`, n: clientConnected.filter(Boolean).length, tone: "positive", status: "configured" },
+    { label: "not connected", n: clientConnected.filter((x) => !x).length, tone: "muted", status: "missing" },
+  ];
   const present = new Map<string, IntegrationCategory>();
   for (const b of Object.values(BLOCKS)) if (b.id && b.category) present.set(b.id, b.category);
-  for (const i of orgData?.integrations ?? []) present.set(i.id, i.category);
-  if (orgData) present.set("custom", "other");
   const categories = CATEGORIES.map((c) => ({ id: c.id, label: c.label, count: [...present.values()].filter((v) => v === c.id).length }));
   const initialCategory = CATEGORIES.some((c) => c.id === sp.category) ? (sp.category as IntegrationCategory) : "all";
   const initialStatus = FILTER_STATUSES.includes(sp.status as FilterStatus) ? (sp.status as FilterStatus) : "all";
   const links = [
     { href: "#client-connections", label: "Client connections" },
-    ...(orgData ? [{ href: "#credentials", label: "Organization credentials" }] : []),
+    ...(showOrg ? [{ href: "/settings/organization/integrations", label: "Organization credentials" }] : []),
     { href: "#usage", label: "Usage and automation" },
   ];
   const nothingConfigured = orgData ? !orgData.integrations.some((i) => !i.perClient && (i.status === "configured" || i.status === "partial")) : false;
-  const customItem: FilterItem = {
-    category: "other", search: "custom variables configuration values settings other",
-    status: orgData?.custom.length ? "configured" : "missing",
-  };
-  const credentialItem = (v: { category: IntegrationCategory; search: string; status: Parameters<typeof filterStatusOf>[0] }): FilterItem =>
-    ({ category: v.category, search: v.search, status: filterStatusOf(v.status) });
 
   return (
     <>
-      <PageHeader title="Integrations" description="Connect each client's accounts and manage your organization's API credentials. Data then syncs automatically; access is read-only." />
+      <PageHeader title="Integrations" description="Connect each client's accounts. Data then syncs automatically; access is read-only." />
       {sp.connected && sp.connected in PROVIDER_META && (
         <p role="status" className="mb-4 rounded-lg bg-surface p-3 text-sm text-positive ring-1 ring-border">
           {PROVIDER_META[sp.connected as ProviderId].label} connected. Choose what to track below.
@@ -219,13 +193,13 @@ export default async function IntegrationsPage({
       )}
 
       <IntegrationsFilterProvider initialQ={(sp.q ?? "").slice(0, 100)} initialCategory={initialCategory} initialStatus={initialStatus}>
-        <IntegrationsToolbar categories={categories} counts={counts} links={links} pdfHref={showOrg ? pdfFor("all", orgId) : undefined} />
+        <IntegrationsToolbar categories={categories} counts={counts} links={links}  />
 
         {owner && nothingConfigured && (
           <p className="mb-6 flex flex-wrap items-center gap-x-2 gap-y-1 rounded-[10px] border border-border bg-surface px-4 py-3 text-sm text-secondary">
             <KeyRound className="size-4 text-muted" aria-hidden />
             <span><span className="font-medium text-foreground">Start with {orgName}&apos;s credentials.</span> Clients connect through them (Composio for Google Analytics and Search Console, Anthropic for AI, DataForSEO for research).</span>
-            <a href="#credentials" className={link}>Add credentials</a>
+            <Link href="/settings/organization/integrations" className={link}>Add credentials</Link>
           </p>
         )}
 
@@ -244,7 +218,7 @@ export default async function IntegrationsPage({
                       <KeyRound className="mt-0.5 size-3.5 shrink-0 text-muted" aria-hidden />
                       <span>
                         {gbpApp && <>Connects with {orgName}&apos;s Google Cloud OAuth client. </>}
-                        {owner ? <a href="#credential-google_oauth" className={link}>{gbpApp ? "Manage it" : "Add the OAuth client"} under Organization credentials</a> : "An organization owner manages it."}
+                        {owner ? <Link href="/settings/organization/integrations#credential-google_oauth" className={link}>{gbpApp ? "Manage it" : "Add the OAuth client"} in organization settings</Link> : "An organization owner manages it."}
                       </span>
                     </p>
                   ) : undefined} />
@@ -330,40 +304,13 @@ export default async function IntegrationsPage({
           <FilterEmpty className="mt-4" items={[blocks.ga4, blocks.gsc, blocks.gbp, blocks.bing, blocks.lbm, blocks.clarity]} what="client connections" />
         </section>
 
-        {/* ------------------------------------------------------------ organization credentials (owners edit, admins view) */}
-        {orgData && (
-          <section id="credentials" aria-labelledby="credentials-title" className="mt-10 scroll-mt-4">
-            <SectionHeading id="credentials-title" title="Organization credentials"
-              sub={owner
-                ? <>API keys and app credentials used for every client of <span className="font-medium text-foreground">{orgName}</span>. Values are encrypted and never shown again; only owners can see or change them.</>
-                : <>The integrations <span className="font-medium text-foreground">{orgName}</span> has set up. Only organization owners can see or change the credentials.</>} />
-            {owner && orgData.usesEnvFallback && <ImportEnvBanner orgId={orgId} envKeys={orgData.envKeys} />}
-            <div className="grid gap-4 lg:grid-cols-2">
-              {orgData.integrations.map((v) => (
-                <Filterable key={v.id} item={credentialItem(v)} className="min-w-0 scroll-mt-4">
-                  <div id={`credential-${v.id}`} className="h-full scroll-mt-4">
-                    <CredentialCard view={v} orgId={orgId} orgName={orgName} canEdit={owner} canTest={showOrg}
-                      guideContext={guideContext} pdfHref={pdfFor(v.id, orgId)} />
-                  </div>
-                </Filterable>
-              ))}
-              <Filterable item={customItem} className="min-w-0">
-                <CustomVariables orgId={orgId} vars={orgData.custom} canEdit={owner} />
-              </Filterable>
-            </div>
-            <FilterEmpty className="mt-4" items={[...orgData.integrations.map(credentialItem), customItem]} what="organization credentials" />
-            {owner && (
-              <details className="mt-4 rounded-[10px] border border-border bg-surface px-4 py-3 text-sm">
-                <summary className="cursor-pointer font-medium text-foreground">Settings that stay with the platform</summary>
-                <p className="mt-2 text-secondary">These aren&apos;t per organization, so they&apos;re never entered here:</p>
-                <ul className="mt-2 grid gap-x-6 gap-y-1.5 sm:grid-cols-2">
-                  {PLATFORM_ENV.map((p) => (
-                    <li key={p.key} className="min-w-0"><code className="break-all font-mono text-[12px] text-foreground">{p.key}</code><span className="block text-xs text-muted">{p.why}</span></li>
-                  ))}
-                </ul>
-              </details>
-            )}
-          </section>
+        {/* organization credentials live in Settings → Organization → Integrations */}
+        {showOrg && (
+          <p className="mt-8 flex flex-wrap items-center gap-x-2 gap-y-1 rounded-[10px] border border-border bg-surface px-4 py-3 text-sm text-secondary">
+            <KeyRound className="size-4 text-muted" aria-hidden />
+            <span>API keys, app credentials and setup guides for {orgName} are in organization settings.</span>
+            <Link href="/settings/organization/integrations" className={link}>Organization credentials</Link>
+          </p>
         )}
 
         {/* ------------------------------------------------------------ usage and automation */}
