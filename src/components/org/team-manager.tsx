@@ -3,11 +3,11 @@
 import { useMemo, useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
 import { KeyRound, Loader2, Mail, RefreshCw, Trash2, UserCheck, UserPlus, UserX, X } from "lucide-react";
-import { changeRole, inviteMember, removeFromOrg, resendInvite, revokeInvite, saveMemberAccess, setStatus } from "@/app/(dashboard)/settings/organization/actions";
+import { addMember, changeRole, inviteMember, removeFromOrg, resendInvite, revokeInvite, saveMemberAccess, setStatus } from "@/app/(dashboard)/settings/organization/actions";
 import { ConfirmDialog, Dialog, DialogBody, DialogFooter, dialogBtn } from "@/components/dashboard/dialog";
 import { Avatar } from "@/components/layout/avatar";
 import { cn } from "@/lib/utils";
-import { CLIENT_ROLE_LABEL, ROLE_HINT, ROLE_LABEL, type ClientRoleId, type OrgRoleId } from "./labels";
+import { CLIENT_ROLE_LABEL, INVITATIONS_ENABLED, ROLE_HINT, ROLE_LABEL, type ClientRoleId, type OrgRoleId } from "./labels";
 import { RoleBadge, Section } from "./section";
 import { btn, hint, input, label, pill } from "./styles";
 import { AccessPicker, CopyLink, Status, type ActionResult } from "./ui";
@@ -62,7 +62,7 @@ export function TeamManager({ orgId, me, members, invitations, clients, emailEna
   return (
     <div className="space-y-6">
       <Section title="Members" description={`${active} active${members.length > active ? `, ${members.length - active} deactivated` : ""}.`}
-        action={<button type="button" className={btn.primary} onClick={() => { setInviting(true); setResult(null); }}><UserPlus className="size-4" aria-hidden /> Invite</button>}>
+        action={<button type="button" className={btn.primary} onClick={() => { setInviting(true); setResult(null); }}><UserPlus className="size-4" aria-hidden /> {INVITATIONS_ENABLED ? "Invite" : "Add member"}</button>}>
         <ul className="divide-y divide-hairline rounded-lg border border-border">
           {members.map((m) => {
             const isMe = m.userId === me.userId;
@@ -124,7 +124,7 @@ export function TeamManager({ orgId, me, members, invitations, clients, emailEna
         {link && !inviting && <div className="mt-3"><CopyLink link={link.link} note={linkNote(link)} /></div>}
       </Section>
 
-      <Section title="Pending invitations" description="Links expire after 7 days and work once. Resending makes a new link; the old one stops working.">
+      {INVITATIONS_ENABLED && (<Section title="Pending invitations" description="Links expire after 7 days and work once. Resending makes a new link; the old one stops working.">
         {invitations.length === 0 ? <p className="text-sm text-muted">No open invitations.</p> : (
           <ul className="divide-y divide-hairline rounded-lg border border-border">
             {invitations.map((i) => (
@@ -164,10 +164,12 @@ export function TeamManager({ orgId, me, members, invitations, clients, emailEna
             Platform email isn&apos;t set up, so copy each invitation link and send it yourself. The link alone can&apos;t sign anyone in: people confirm their own address with a sign-in link emailed to it.
           </p>
         )}
-      </Section>
+      </Section>)}
 
       <InviteDialog open={inviting} onClose={() => setInviting(false)} orgId={orgId} roles={roles} myRole={me.role} clients={clients}
-        onInvited={(l) => { setLink(l); router.refresh(); }} />
+        direct={!INVITATIONS_ENABLED}
+        onInvited={(l) => { setLink(l); router.refresh(); }}
+        onAdded={(r) => { setResult(r); setInviting(false); router.refresh(); }} />
 
       {accessFor && (
         <AccessDialog key={accessFor.userId} member={accessFor} myRole={me.role} clients={clients} onClose={() => setAccessFor(null)}
@@ -185,7 +187,7 @@ export function TeamManager({ orgId, me, members, invitations, clients, emailEna
           else if (c.kind === "deactivate") run(`status:${c.id}`, () => setStatus(orgId, c.id, "deactivated"));
           else run(`revoke:${c.id}`, () => revokeInvite(orgId, c.id));
         }}>
-        {confirm?.kind === "remove" ? "They lose access to this organization and its clients. Their account and any other organizations stay. Invite them again to bring them back."
+        {confirm?.kind === "remove" ? `They lose access to this organization and its clients. Their account and any other organizations stay. ${INVITATIONS_ENABLED ? "Invite" : "Add"} them again to bring them back.`
           : confirm?.kind === "deactivate" ? "They keep their role and client access but can't open this organization's clients until you reactivate them."
             : "The link stops working. You can invite them again later."}
       </ConfirmDialog>
@@ -197,11 +199,15 @@ const linkNote = (l: { email: string; emailed: boolean }) => l.emailed
   ? <>We emailed the invitation to <strong>{l.email}</strong>. You can also send them this link. It works once, for 7 days.</>
   : <>Send this link to <strong>{l.email}</strong>. It works once, for 7 days, and only for that email address.</>;
 
-function InviteDialog({ open, onClose, orgId, roles, myRole, clients, onInvited }: {
+/** Adds someone: directly with an email and password (`direct`), or by invitation link when invitations are on. */
+function InviteDialog({ open, onClose, orgId, roles, myRole, clients, onInvited, direct = false, onAdded }: {
   open: boolean; onClose: () => void; orgId: string; roles: OrgRoleId[]; myRole: OrgRoleId; clients: ClientOption[];
   onInvited: (l: { email: string; link: string; emailed: boolean }) => void;
+  direct?: boolean; onAdded?: (r: ActionResult) => void;
 }) {
   const [email, setEmail] = useState("");
+  const [fullName, setFullName] = useState("");
+  const [password, setPassword] = useState("");
   const [role, setRole] = useState<OrgRoleId>("member");
   const [access, setAccess] = useState<Record<string, ClientRoleId>>({});
   const [result, setResult] = useState<ActionResult | null>(null);
@@ -209,11 +215,11 @@ function InviteDialog({ open, onClose, orgId, roles, myRole, clients, onInvited 
   const [pending, start] = useTransition();
   const rows = clients.filter((c) => !c.archived).map((c) => ({ id: c.id, label: c.name }));
   const clientRoles = clientRolesFor(role, myRole);
-  const reset = () => { setEmail(""); setRole("member"); setAccess({}); setResult(null); setDone(null); };
+  const reset = () => { setEmail(""); setFullName(""); setPassword(""); setRole("member"); setAccess({}); setResult(null); setDone(null); };
   const close = () => { if (!pending) { reset(); onClose(); } };
 
   return (
-    <Dialog open={open} onClose={close} busy={pending} title="Invite someone" description="They join this organization with the role you choose.">
+    <Dialog open={open} onClose={close} busy={pending} title={direct ? "Add a member" : "Invite someone"} description={direct ? "They can sign in right away with this email and password, with the role you choose." : "They join this organization with the role you choose."}>
       {done ? (
         <>
           <DialogBody><CopyLink link={done.link} note={linkNote(done)} /></DialogBody>
@@ -227,15 +233,32 @@ function InviteDialog({ open, onClose, orgId, roles, myRole, clients, onInvited 
           e.preventDefault();
           const clientAccess = allClients(role) ? [] : Object.entries(access).map(([clientId, r]) => ({ clientId, role: role === "viewer" ? "viewer" as const : r }));
           start(async () => {
+            if (direct) {
+              const r = await addMember(orgId, { email, password, fullName, role, clientAccess });
+              setResult(r);
+              if (r.ok) { reset(); onAdded?.(r); }
+              return;
+            }
             const r = await inviteMember(orgId, { email, role, clientAccess });
             setResult(r);
             if (r.ok && r.link) { const l = { email: email.trim().toLowerCase(), link: r.link, emailed: Boolean(r.emailed) }; setDone(l); onInvited(l); }
           });
         }}>
           <DialogBody className="space-y-4 text-foreground">
+            {direct && (
+              <label className={label}>Name
+                <input maxLength={120} value={fullName} onChange={(e) => setFullName(e.target.value)} data-autofocus className={input} autoComplete="off" placeholder="Jane Doe" />
+              </label>
+            )}
             <label className={label}>Email
-              <input type="email" required maxLength={200} value={email} onChange={(e) => setEmail(e.target.value)} data-autofocus className={input} autoComplete="off" placeholder="name@company.com" />
+              <input type="email" required maxLength={200} value={email} onChange={(e) => setEmail(e.target.value)} data-autofocus={!direct} className={input} autoComplete="off" placeholder="name@company.com" />
             </label>
+            {direct && (
+              <label className={label}>Password
+                <input type="text" required minLength={8} maxLength={72} value={password} onChange={(e) => setPassword(e.target.value)} className={cn(input, "font-mono")} autoComplete="new-password" spellCheck={false} placeholder="At least 8 characters" />
+                <span className={hint}>Share it with them securely; they can change it under My account. An existing account keeps its own password.</span>
+              </label>
+            )}
             <fieldset>
               <legend className="text-sm font-medium">Role</legend>
               <div className="mt-1.5 grid gap-2 sm:grid-cols-2">
@@ -262,7 +285,7 @@ function InviteDialog({ open, onClose, orgId, roles, myRole, clients, onInvited 
           </DialogBody>
           <DialogFooter>
             <button type="button" className={dialogBtn.secondary} onClick={close} disabled={pending}>Cancel</button>
-            <button className={dialogBtn.primary} disabled={pending}>{pending && <Loader2 className="size-4 animate-spin" aria-hidden />} Send invitation</button>
+            <button className={dialogBtn.primary} disabled={pending}>{pending && <Loader2 className="size-4 animate-spin" aria-hidden />} {direct ? "Add member" : "Send invitation"}</button>
           </DialogFooter>
         </form>
       )}

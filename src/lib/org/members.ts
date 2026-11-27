@@ -169,3 +169,53 @@ export async function setMemberClientAccess(admin: SupabaseClient, orgId: string
   await audit(admin, orgId, actor.userId, "member.client_access", await emailOf(admin, userId), { user_id: userId, added, changed: upserts.length - added, removed: removed.length });
   return { ok: true, message: "Client access saved." };
 }
+
+/* ------------------------------------------------------------------ adding people directly (email + password) */
+export interface AddMemberInput { email: string; password: string; fullName: string; role: OrgRole; clientAccess: AccessEntry[] }
+
+/**
+ * Adds someone to the organization straight away, without an invitation: a new address gets an account with the
+ * password given here (the person can change it under Settings → My account); an existing account is added as it
+ * is and keeps its own password. `actor.platform`: a platform super-admin (may add any role to any organization).
+ * Callers check the actor's permission first; the role rules (only owners add owners) are checked here too.
+ */
+export async function addMemberDirect(admin: SupabaseClient, orgId: string, actor: { userId: string; role: OrgRole | null; platform?: boolean }, input: AddMemberInput): Promise<Result> {
+  const email = input.email.trim().toLowerCase();
+  const actorRole: OrgRole = actor.platform ? "owner" : actor.role ?? "viewer";
+  if (!actor.platform && !reachesAllClients(actor.role)) return fail("Only owners and admins can add people.");
+  if (input.role === "owner" && actorRole !== "owner") return fail("Only an owner can add another owner.");
+
+  let access: { client_id: string; role: ClientRole }[] = [];
+  if (!reachesAllClients(input.role) && input.clientAccess.length) {
+    const inOrg = await orgClientIds(admin, orgId);
+    if (input.clientAccess.some((a) => !inOrg.has(a.clientId))) return fail("Some of those clients aren't in this organization.");
+    access = [...new Map(input.clientAccess.map((a) => [a.clientId, allowedClientRole(a.role, input.role, actorRole)]))].map(([client_id, role]) => ({ client_id, role }));
+  }
+
+  const { data: found } = await admin.rpc("find_user_id_by_email", { p_email: email });
+  let userId = (found as string | null) ?? null;
+  const existed = Boolean(userId);
+  if (userId) {
+    const { data: m } = await admin.from("organization_members").select("status").eq("organization_id", orgId).eq("user_id", userId).maybeSingle();
+    if (m?.status === "active") return fail(`${email} is already a member. Change their role or client access in the list.`);
+  } else {
+    const { data, error } = await admin.auth.admin.createUser({ email, password: input.password, email_confirm: true, user_metadata: input.fullName ? { full_name: input.fullName } : undefined });
+    if (error || !data.user) return fail(error && /password/i.test(error.message) ? error.message : "Couldn't create the account. Try again.");
+    userId = data.user.id;
+    if (input.fullName) await admin.from("profiles").upsert({ user_id: userId, full_name: input.fullName }, { onConflict: "user_id" });
+  }
+
+  const { error: memberError } = await admin.from("organization_members")
+    .upsert({ organization_id: orgId, user_id: userId, role: input.role, status: "active" }, { onConflict: "organization_id,user_id" });
+  if (memberError) return fail("Couldn't add them to the organization. Try again.");
+  if (access.length) {
+    await admin.from("client_members").upsert(access.map((a) => ({ ...a, user_id: userId, role: input.role === "viewer" ? "viewer" : a.role })), { onConflict: "client_id,user_id" });
+  }
+  await audit(admin, orgId, actor.userId, "member.add", email, { role: input.role, clients: access.length, new_account: !existed, ...(actor.platform && !actor.role ? { by: "platform" } : {}) });
+  return {
+    ok: true,
+    message: existed
+      ? `${email} already had an account: they're added as ${input.role} and sign in with their existing password.`
+      : `${email} added as ${input.role}. They can sign in now with the password you set.`,
+  };
+}

@@ -3,11 +3,12 @@
 import { useMemo, useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
 import { Building2, LayoutGrid, Loader2, Plus, RefreshCw, UserPlus } from "lucide-react";
-import { createOrganization, inviteOwner, resendOwnerInvite, saveEnabledPages } from "@/app/(dashboard)/settings/platform/actions";
+import { addOwner, createOrganization, inviteOwner, resendOwnerInvite, saveEnabledPages } from "@/app/(dashboard)/settings/platform/actions";
 import { Dialog, DialogBody, DialogFooter, dialogBtn } from "@/components/dashboard/dialog";
 import { cn } from "@/lib/utils";
 import { Section } from "./section";
 import { btn, input, label, pill } from "./styles";
+import { INVITATIONS_ENABLED } from "./labels";
 import { CopyLink, Status, type ActionResult } from "./ui";
 
 export interface PlatformOrg {
@@ -23,6 +24,8 @@ export function PlatformConsole({ orgs, options }: { orgs: PlatformOrg[]; option
   const router = useRouter();
   const [name, setName] = useState("");
   const [email, setEmail] = useState("");
+  const [ownerName, setOwnerName] = useState("");
+  const [password, setPassword] = useState("");
   const [result, setResult] = useState<ActionResult | null>(null);
   const [busy, setBusy] = useState<string | null>(null);
   const [, start] = useTransition();
@@ -42,22 +45,31 @@ export function PlatformConsole({ orgs, options }: { orgs: PlatformOrg[]; option
 
   return (
     <div className="space-y-6">
-      <Section title="New organization" description="Starts empty: no clients and no credentials. Its first owner gets an invitation and sets everything up.">
-        <form className="grid gap-4 sm:grid-cols-[1fr_1fr_auto] sm:items-end"
+      <Section title="New organization" description="Starts empty: no clients and no credentials. Its owner can sign in right away with the email and password you set, with full access to the organization.">
+        <form className="grid gap-4 sm:grid-cols-2"
           onSubmit={(e) => {
             e.preventDefault();
             const owner = email.trim().toLowerCase();
-            run("create", () => createOrganization({ name, ownerEmail: owner }), (r) => {
-              if (r.ok) { setName(""); setEmail(""); setLink(r.link ? { link: r.link, emailed: Boolean(r.emailed), email: owner } : null); }
+            run("create", () => createOrganization({ name, ownerEmail: owner, ownerPassword: password, ownerName }), (r) => {
+              if (r.ok) { setName(""); setEmail(""); setOwnerName(""); setPassword(""); setLink(null); }
             });
           }}>
           <label className={label}>Organization name
             <input value={name} onChange={(e) => setName(e.target.value)} required maxLength={120} className={input} placeholder="Acme Marketing" />
           </label>
-          <label className={label}>First owner&apos;s email
+          <label className={label}>Owner&apos;s name
+            <input value={ownerName} onChange={(e) => setOwnerName(e.target.value)} maxLength={120} className={input} placeholder="Jane Doe" autoComplete="off" />
+          </label>
+          <label className={label}>Owner&apos;s email
             <input type="email" value={email} onChange={(e) => setEmail(e.target.value)} required maxLength={200} className={input} placeholder="owner@acme.com" autoComplete="off" />
           </label>
-          <button className={btn.primary} disabled={busy !== null}>{busy === "create" ? <Loader2 className="size-4 animate-spin" /> : <Plus className="size-4" aria-hidden />} Create</button>
+          <label className={label}>Owner&apos;s password
+            <input type="text" value={password} onChange={(e) => setPassword(e.target.value)} required minLength={8} maxLength={72} className={cn(input, "font-mono")} placeholder="At least 8 characters" autoComplete="new-password" spellCheck={false} />
+            <span className="mt-1 block text-xs font-normal text-muted">Share it with the owner securely. If the email already has an account, it keeps its own password.</span>
+          </label>
+          <div className="sm:col-span-2">
+            <button className={btn.primary} disabled={busy !== null}>{busy === "create" ? <Loader2 className="size-4 animate-spin" /> : <Plus className="size-4" aria-hidden />} Create organization</button>
+          </div>
         </form>
         <Status result={result} className="mt-3" />
         {link && <div className="mt-3"><CopyLink link={link.link} note={link.emailed
@@ -78,7 +90,7 @@ export function PlatformConsole({ orgs, options }: { orgs: PlatformOrg[]; option
                   <p className="text-xs text-muted">
                     {o.members} member{o.members === 1 ? "" : "s"} ({o.owners} owner{o.owners === 1 ? "" : "s"}) · {o.clients} client{o.clients === 1 ? "" : "s"}{o.archived ? ` (+${o.archived} archived)` : ""} · since {date(o.createdAt)}
                   </p>
-                  {o.ownerInvites.map((i) => (
+                  {INVITATIONS_ENABLED && o.ownerInvites.map((i) => (
                     <p key={i.id} className="mt-1 flex flex-wrap items-center gap-2 text-xs">
                       <span className={cn(pill, i.expired ? "bg-negative-soft text-negative" : "bg-warn-soft text-warn")}>{i.expired ? "Expired" : "Invited"}</span>
                       <span className="text-secondary">Owner: {i.email}</span>
@@ -98,7 +110,7 @@ export function PlatformConsole({ orgs, options }: { orgs: PlatformOrg[]; option
                   <LayoutGrid className="size-4" aria-hidden /> Page access
                 </button>
                 <button type="button" className={btn.secondary} disabled={busy !== null} onClick={() => { setOwnerFor(o); setResult(null); }}>
-                  <UserPlus className="size-4" aria-hidden /> Invite owner
+                  <UserPlus className="size-4" aria-hidden /> {INVITATIONS_ENABLED ? "Invite owner" : "Add owner"}
                 </button>
               </div>
             </li>
@@ -111,12 +123,47 @@ export function PlatformConsole({ orgs, options }: { orgs: PlatformOrg[]; option
           onSave={(v) => run("pages", () => saveEnabledPages(pagesFor.id, v), (r) => { if (r.ok) setPagesFor(null); })} />
       )}
       {ownerFor && (
-        <OwnerDialog key={ownerFor.id} org={ownerFor} busy={busy === "owner"} onClose={() => setOwnerFor(null)}
-          onInvite={(mail) => run("owner", () => inviteOwner(ownerFor.id, mail), (r) => {
-            if (r.ok) { setOwnerFor(null); if (r.link) setLink({ link: r.link, emailed: Boolean(r.emailed), email: mail }); }
-          })} />
+        INVITATIONS_ENABLED ? (
+          <OwnerDialog key={ownerFor.id} org={ownerFor} busy={busy === "owner"} onClose={() => setOwnerFor(null)}
+            onInvite={(mail) => run("owner", () => inviteOwner(ownerFor.id, mail), (r) => {
+              if (r.ok) { setOwnerFor(null); if (r.link) setLink({ link: r.link, emailed: Boolean(r.emailed), email: mail }); }
+            })} />
+        ) : (
+          <AddOwnerDialog key={ownerFor.id} org={ownerFor} busy={busy === "owner"} onClose={() => setOwnerFor(null)}
+            onAdd={(v) => run("owner", () => addOwner(ownerFor.id, v), (r) => { if (r.ok) setOwnerFor(null); })} />
+        )
       )}
     </div>
+  );
+}
+
+function AddOwnerDialog({ org, busy, onClose, onAdd }: {
+  org: PlatformOrg; busy: boolean; onClose: () => void; onAdd: (v: { ownerEmail: string; ownerPassword: string; ownerName: string }) => void;
+}) {
+  const [email, setEmail] = useState("");
+  const [name, setName] = useState("");
+  const [password, setPassword] = useState("");
+  return (
+    <Dialog open onClose={onClose} busy={busy} title={`Add an owner to ${org.name}`} description="They can sign in right away with this email and password, with full access to the organization.">
+      <form onSubmit={(e) => { e.preventDefault(); onAdd({ ownerEmail: email.trim().toLowerCase(), ownerPassword: password, ownerName: name }); }}>
+        <DialogBody className="space-y-4 text-foreground">
+          <label className={label}>Name
+            <input value={name} onChange={(e) => setName(e.target.value)} maxLength={120} data-autofocus className={input} autoComplete="off" />
+          </label>
+          <label className={label}>Email
+            <input type="email" required maxLength={200} value={email} onChange={(e) => setEmail(e.target.value)} className={input} autoComplete="off" />
+          </label>
+          <label className={label}>Password
+            <input type="text" required minLength={8} maxLength={72} value={password} onChange={(e) => setPassword(e.target.value)} className={cn(input, "font-mono")} autoComplete="new-password" spellCheck={false} />
+            <span className="mt-1 block text-xs font-normal text-muted">An existing account keeps its own password.</span>
+          </label>
+        </DialogBody>
+        <DialogFooter>
+          <button type="button" className={dialogBtn.secondary} onClick={onClose} disabled={busy}>Cancel</button>
+          <button className={dialogBtn.primary} disabled={busy}>{busy && <Loader2 className="size-4 animate-spin" aria-hidden />} Add owner</button>
+        </DialogFooter>
+      </form>
+    </Dialog>
   );
 }
 

@@ -4,6 +4,7 @@ import { unstable_rethrow } from "next/navigation";
 import { z } from "zod";
 import { getSession } from "@/lib/analytics/client-context";
 import { audit } from "@/lib/org/credentials";
+import { addMemberDirect } from "@/lib/org/members";
 import { createInvitation, resendInvitation } from "@/lib/org/invitations";
 import { normalizeEnabledPages } from "@/lib/org/pages";
 import { isPlatformAdmin } from "@/lib/org/permissions";
@@ -36,12 +37,21 @@ async function run(fn: () => Promise<PlatformResult>): Promise<PlatformResult> {
   }
 }
 
+const ownerFields = {
+  ownerEmail: z.email("Enter the owner's email address.").max(200),
+  ownerPassword: z.string().min(8, "Use at least 8 characters for the owner's password.").max(72, "Use at most 72 characters for the password."),
+  ownerName: z.string().trim().max(120).default(""),
+};
 const createSchema = z.object({
   name: z.string().trim().min(1, "Enter the organization's name.").max(120, "Use at most 120 characters for the name."),
-  ownerEmail: z.email("Enter the first owner's email address.").max(200),
+  ...ownerFields,
 });
 
-/** A new, empty organization (no clients, no credentials) and an owner invitation for its first owner. */
+/**
+ * A new, empty organization (no clients, no credentials) with its first owner added directly: a new address gets an
+ * account with the password given here; an existing account is added and keeps its own password. The owner can
+ * sign in straight away with full access to the organization (every client and page, settings, credentials, team).
+ */
 export async function createOrganization(input: z.input<typeof createSchema>): Promise<PlatformResult> {
   return run(async () => {
     const parsed = createSchema.safeParse(input);
@@ -50,9 +60,27 @@ export async function createOrganization(input: z.input<typeof createSchema>): P
     const { data: org, error } = await admin.from("organizations").insert({ name: parsed.data.name }).select("id").single();
     if (error || !org) return { ok: false, error: "Couldn't create the organization. Try again." };
     await audit(admin, org.id, userId, "organization.create", parsed.data.name, { by: "platform" });
-    const inv = await createInvitation(admin, org.id, { userId, role: null, platformAdmin: true }, { email: parsed.data.ownerEmail, role: "owner", clientAccess: [] });
-    if (!inv.ok) return { ok: true, id: org.id, message: `${parsed.data.name} created, but the owner invitation failed: ${inv.error}` };
-    return { ok: true, id: org.id, link: inv.link, emailed: inv.emailed, message: `${parsed.data.name} created. ${inv.message}` };
+    const added = await addMemberDirect(admin, org.id, { userId, role: null, platform: true },
+      { email: parsed.data.ownerEmail, password: parsed.data.ownerPassword, fullName: parsed.data.ownerName, role: "owner", clientAccess: [] });
+    if (!added.ok) {
+      // no owner: remove the empty organization so it can be created again
+      await admin.from("organizations").delete().eq("id", org.id);
+      return { ok: false, error: added.error };
+    }
+    return { ok: true, id: org.id, message: `${parsed.data.name} created. ${added.message}` };
+  });
+}
+
+/** Adds another owner to an organization directly (email + password). */
+export async function addOwner(orgId: string, input: z.input<z.ZodObject<typeof ownerFields>>): Promise<PlatformResult> {
+  return run(async () => {
+    const p = z.object(ownerFields).safeParse(input);
+    if (!p.success || !z.uuid().safeParse(orgId).success) return { ok: false, error: p.error?.issues[0]?.message ?? "Check the details." };
+    const { admin, userId } = await requirePlatformAdmin();
+    const { data: org } = await admin.from("organizations").select("id").eq("id", orgId).maybeSingle();
+    if (!org) return { ok: false, error: "That organization doesn't exist." };
+    return addMemberDirect(admin, orgId, { userId, role: null, platform: true },
+      { email: p.data.ownerEmail, password: p.data.ownerPassword, fullName: p.data.ownerName, role: "owner", clientAccess: [] });
   });
 }
 

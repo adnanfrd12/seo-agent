@@ -8,7 +8,7 @@ import { ACTIVE_CLIENT_COOKIE, getSession } from "@/lib/analytics/client-context
 import { createOrgClient, RANGE_DAYS, setClientAccess, setClientArchived, updateOrgClient, validTimeZone } from "@/lib/org/clients";
 import { audit } from "@/lib/org/credentials";
 import { createInvitation, resendInvitation, revokeInvitation } from "@/lib/org/invitations";
-import { changeMemberRole, CLIENT_ROLES, removeMember, setMemberClientAccess, setMemberStatus } from "@/lib/org/members";
+import { changeMemberRole, CLIENT_ROLES, removeMember, setMemberClientAccess, setMemberStatus, addMemberDirect } from "@/lib/org/members";
 import { can, ORG_ROLES, PermissionError, requireOrg } from "@/lib/org/permissions";
 import { revalidatePath } from "@/lib/revalidate";
 import { createClient } from "@/lib/supabase/server";
@@ -113,6 +113,25 @@ export async function inviteMember(orgId: string, input: z.input<typeof inviteSc
     if (!parsed.success) return bad(parsed.error);
     const ctx = await requireOrg(can.manageMembers, orgId, "Only owners and admins can invite people.");
     return createInvitation(ctx.admin, orgId, { userId: ctx.userId, role: ctx.role }, parsed.data);
+  }, "/settings");
+}
+
+const addSchema = z.object({
+  email: z.email("Enter a valid email address.").max(200),
+  password: z.string().min(8, "Use at least 8 characters for the password.").max(72, "Use at most 72 characters for the password."),
+  fullName: z.string().trim().max(120).default(""),
+  role: z.enum(ORG_ROLES, { error: "Choose a role." }),
+  clientAccess: accessSchema.default([]),
+});
+
+/** Adds someone directly with an email and password (no invitation); an existing account keeps its password. */
+export async function addMember(orgId: string, input: z.input<typeof addSchema>): Promise<OrgActionResult> {
+  return run(async () => {
+    if (!id.safeParse(orgId).success) return { ok: false, error: "Unknown organization." };
+    const parsed = addSchema.safeParse(input);
+    if (!parsed.success) return bad(parsed.error);
+    const ctx = await requireOrg(can.manageMembers, orgId, "Only owners and admins can add people.");
+    return addMemberDirect(ctx.admin, orgId, { userId: ctx.userId, role: ctx.role }, parsed.data);
   }, "/settings");
 }
 

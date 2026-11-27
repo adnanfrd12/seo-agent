@@ -26,3 +26,9 @@ export const CURRENCIES = [
 export const PROVIDER_LABEL: Record<string, string> = {
   ga4: "GA4", gsc: "Search Console", gbp: "Business Profile", clarity: "Clarity", lbm: "Local Brand Manager", bing: "Bing",
 };
+
+/**
+ * Invitations by email link are kept but hidden for now: owners and team members are added directly with an email
+ * and password (Settings → Platform, Settings → Organization → Team members). Set to true to show invitations again.
+ */
+export const INVITATIONS_ENABLED = false;
