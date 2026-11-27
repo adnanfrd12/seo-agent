@@ -18,8 +18,10 @@ export interface OrgSwitcherItem { id: string; name: string; role: OrgRoleId }
  *   <OrgSwitcher organizations={organizations} activeId={organization?.id ?? null} />
  * Renders nothing for someone without an organization.
  */
-export function OrgSwitcher({ organizations, activeId, compact = false, className }: {
+export function OrgSwitcher({ organizations, activeId, compact = false, className, redirectTo }: {
   organizations: OrgSwitcherItem[]; activeId: string | null; compact?: boolean; className?: string;
+  /** where to go after switching (default: the organization's dashboard) */
+  redirectTo?: string;
 }) {
   const router = useRouter();
   const [open, setOpen] = useState(false);
@@ -46,7 +48,7 @@ export function OrgSwitcher({ organizations, activeId, compact = false, classNam
     if (!r.ok) return setError(r.error);
     setOpen(false);
     if (r.empty) router.push(`/settings/organization/clients?org=${id}`);
-    else { router.push("/overview"); router.refresh(); }
+    else { router.push(redirectTo ?? "/overview"); router.refresh(); }
   });
 
   return (

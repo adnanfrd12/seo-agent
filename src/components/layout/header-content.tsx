@@ -1,7 +1,6 @@
 import { Suspense } from "react";
 import { redirect } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
-import { OrgSwitcher } from "@/components/org/org-switcher";
 import { getSession, type CurrentClient, type CurrentOrganization, type CurrentUser } from "@/lib/analytics/client-context";
 import { getPublicBranding } from "@/lib/org/branding";
 import { ClientSwitcher } from "./client-switcher";
@@ -26,12 +25,11 @@ async function signOut() {
  * Top of the sidebar: the organization you're working in (switcher; nothing without an organization), then the
  * client you're looking at and its switcher (the clients of every organization you can reach).
  */
-export function SidebarClient({ client, clients, lastSyncedAt, organizations = [], organizationId = null }: {
+export function SidebarClient({ client, clients, lastSyncedAt }: {
   client: CurrentClient; clients: CurrentClient[]; lastSyncedAt: string | null; organizations?: CurrentOrganization[]; organizationId?: string | null;
 }) {
   return (
     <div className="space-y-1">
-      <OrgSwitcher organizations={organizations} activeId={organizationId} />
       <ClientSwitcher
         // the active organization's clients (the organization switcher above changes organization)
         clients={clients.filter((c) => c.organizationId === client.organizationId).map((c) => ({ id: c.id, name: c.name, role: c.role }))}

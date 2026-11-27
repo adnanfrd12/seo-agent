@@ -1,5 +1,4 @@
 import type { Metadata } from "next";
-import Link from "next/link";
 import { notFound } from "next/navigation";
 import { AuditLog } from "@/components/org/audit-log";
 import { BrandingSettings } from "@/components/org/branding/branding-settings";
@@ -7,6 +6,7 @@ import { ClientsManager } from "@/components/org/clients-manager";
 import { GeneralForm } from "@/components/org/general-form";
 import { IntegrationsSummary } from "@/components/org/integrations-summary";
 import { ORG_TABS, OrgNav } from "@/components/org/org-nav";
+import { OrgSwitcher } from "@/components/org/org-switcher";
 import { PreferencesForm } from "@/components/org/preferences-form";
 import { RolesMatrix } from "@/components/org/roles-matrix";
 import { Note, RoleBadge } from "@/components/org/section";
@@ -21,7 +21,6 @@ import { listInvitations } from "@/lib/org/invitations";
 import { listMembers, userDirectory } from "@/lib/org/members";
 import { can, roleIn } from "@/lib/org/permissions";
 import { createAdminClient } from "@/lib/supabase/admin";
-import { cn } from "@/lib/utils";
 
 export const metadata: Metadata = { title: "Organization settings" };
 
@@ -144,17 +143,10 @@ export default async function OrganizationSettingsPage({ params, searchParams }:
   return (
     <div>
       <div className="mb-5 flex flex-wrap items-center gap-x-3 gap-y-2">
-        <h2 className="text-lg font-semibold tracking-[-0.01em]">{org.name}</h2>
+        {/* the organization switcher lives here (not in the sidebar): switching opens that organization */}
+        <OrgSwitcher organizations={organizations} activeId={current.id} redirectTo={`/settings/organization/${tab.id}`}
+          className="w-full max-w-xs rounded-lg border border-border bg-surface" />
         <RoleBadge role={role} />
-        {organizations.length > 1 && (
-          <span className="flex flex-wrap items-center gap-1 text-xs text-muted">
-            <span className="mr-1">Other organizations:</span>
-            {organizations.filter((o) => o.id !== current.id).map((o) => (
-              <Link key={o.id} href={`/settings/organization/${tab.id}${o.id === organization?.id ? "" : `?org=${o.id}`}`}
-                className={cn("rounded-md border border-border px-2 py-0.5 hover:bg-surface-muted hover:text-foreground")}>{o.name}</Link>
-            ))}
-          </span>
-        )}
       </div>
       <div className="grid items-start gap-6 lg:grid-cols-[220px_minmax(0,1fr)]">
         <OrgNav active={tab.id} isAdmin={isAdmin} href={href} />
