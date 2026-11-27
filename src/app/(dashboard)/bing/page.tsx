@@ -1,3 +1,4 @@
+import { ExplainIssue } from "@/components/dashboard/explain-issue";
 import { Columns } from "@/components/charts/ai-charts";
 import { AiScreenTools } from "@/components/aiqw/screen-tools";
 import { KeywordLink } from "@/components/research/keyword-link";
@@ -266,7 +267,10 @@ export default async function BingPage({ searchParams }: { searchParams: Promise
                 ]} />
               <Table title="Crawl issues" rows={b.crawl_issues ?? []} empty="Bing reports no crawl issues."
                 cols={[
-                  { label: "URL", render: (i) => <span className="break-all">{i.Url ?? "—"}</span> },
+                  { label: "URL", render: (i) => i.Url
+                    ? <ExplainIssue title={`Bing crawl issue: ${i.Url}`} detail={[`HTTP code: ${i.HttpCode ?? "—"}`, `Bing issue flags: ${i.Issues ?? "—"}`, `Inbound links: ${i.InLinks ?? 0}`].join("\n")}
+                        className="w-auto break-all text-left underline decoration-border-strong decoration-dotted underline-offset-2 hover:text-accent">{i.Url}</ExplainIssue>
+                    : "—" },
                   { label: "HTTP code", right: true, render: (i) => i.HttpCode ?? "—" },
                   { label: "Issue flags", right: true, render: (i) => i.Issues ?? "—" },
                   { label: "Inbound links", right: true, render: (i) => fmtInt(i.InLinks ?? null) },

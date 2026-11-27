@@ -1,6 +1,7 @@
 import Link from "next/link";
 import type { ReactNode } from "react";
 import { ArrowRight, CheckCircle2, CircleDashed, CircleHelp, XCircle } from "lucide-react";
+import { ExplainIssue } from "@/components/dashboard/explain-issue";
 import { cn } from "@/lib/utils";
 
 /**
@@ -100,7 +101,11 @@ export function CheckRow({ status, name, desc, badge, extra, href }: { status: C
       <span className="mt-0.5" title={m.label}>{m.icon}</span>
       <div className="min-w-0 flex-1">
         <div className="flex flex-wrap items-center gap-2">
-          <p className="text-sm font-medium">{name}</p>
+          {/* problems open a popup with the details and Claude's explanation and fix */}
+          {m.tone === "red" || m.tone === "orange"
+            ? <ExplainIssue title={`SEOSignalX: ${name}`} detail={[`Status: ${m.label}`, desc, typeof badge === "string" ? badge : null].filter(Boolean).join("\n")}
+                className="w-auto text-sm font-medium underline decoration-border-strong decoration-dotted underline-offset-2 hover:text-accent">{name}</ExplainIssue>
+            : <p className="text-sm font-medium">{name}</p>}
           <Pill tone={m.tone}>{m.label}</Pill>
           {badge && <span className="rounded bg-surface-muted px-1.5 py-0.5 text-[11px] text-secondary">{badge}</span>}
           {href && <a href={href} target="_blank" rel="noreferrer" className="text-[11px] text-accent underline">How to fix</a>}
