@@ -27,11 +27,15 @@ const keywordsOf = (s: string) => [...new Set(s.split(/[\n,]+/).map((x) => x.tri
 function Chip({ p }: { p: Platform }) { return <span className={cn("rounded-full px-2 py-0.5 text-[11px] font-medium", TONE[p])}>{LABEL[p]}</span>; }
 
 /** Fan-Out Queries → Real AI search queries: ask the AI platforms (API keys) or paste ChatGPT's network response (free). */
-export function LiveFanout({ canEdit, ready, tableReady, batches, domain }: {
+export function LiveFanout({ canEdit, ready, tableReady, batches, domain, show }: {
   canEdit: boolean; ready: Record<Platform, boolean>; tableReady: boolean; batches: LiveBatchView[]; domain: string;
+  /** inside the Fan-Out workspace: only the Ask form, only the Paste form, or only the results (no own card or header) */
+  show?: "ask" | "paste" | "results";
 }) {
   const router = useRouter();
-  const [tab, setTab] = useState<"ask" | "paste">("ask");
+  const [tabState, setTab] = useState<"ask" | "paste">("ask");
+  const tab = show === "paste" ? "paste" : show === "ask" ? "ask" : tabState;
+  const showForm = show !== "results", showResults = !show || show === "results";
   const [kw, setKw] = useState("");
   const [picked, setPicked] = useState<Platform[]>(PLATFORMS.filter((p) => ready[p]));
   const [runs, setRuns] = useState(1);
@@ -39,7 +43,8 @@ export function LiveFanout({ canEdit, ready, tableReady, batches, domain }: {
   const [paste, setPaste] = useState("");
   const [msg, setMsg] = useState<{ ok: boolean; text: string } | null>(null);
   const [pending, start] = useTransition();
-  const [batchId, setBatchId] = useState<string | null>(batches[0]?.id ?? null);
+  // null = the newest run (follows new runs after a refresh)
+  const [batchId, setBatchId] = useState<string | null>(null);
   const [copied, setCopied] = useState(false);
   const kws = keywordsOf(kw);
   const asks = kws.length * picked.length * runs;
@@ -70,23 +75,23 @@ export function LiveFanout({ canEdit, ready, tableReady, batches, domain }: {
   };
 
   return (
-    <section aria-label="Real AI search queries" className="mb-6 rounded-[10px] border border-border bg-surface p-5">
-      <div className="flex flex-wrap items-start justify-between gap-3">
+    <section aria-label="Real AI search queries" className={show ? "" : "mb-6 rounded-[10px] border border-border bg-surface p-5"}>
+      {!show && <div className="flex flex-wrap items-start justify-between gap-3">
         <div className="min-w-0">
           <h2 className="flex items-center gap-2 text-base font-semibold"><Radar className="size-4 text-accent" aria-hidden /> Real AI search queries</h2>
           <p className="mt-0.5 max-w-3xl text-sm text-secondary">What ChatGPT, Claude, Gemini, Grok and Perplexity actually searched the web for when asked a keyword, and the sources they cited. Use their wording as H2 sections or new pages.</p>
         </div>
-      </div>
-      {!tableReady && <p role="alert" className="mt-3 rounded-lg border border-warn/30 bg-warn/5 p-3 text-sm text-warn">Storage isn&apos;t set up yet: apply migration 20261130000040_fanout_live.sql.</p>}
+      </div>}
+      {!tableReady && showForm && <p role="alert" className="mt-3 rounded-lg border border-warn/30 bg-warn/5 p-3 text-sm text-warn">Storage isn&apos;t set up yet: apply migration 20261130000040_fanout_live.sql.</p>}
 
-      {canEdit && tableReady && (
-        <div className="mt-4">
-          <div className="mb-3 flex gap-1" role="tablist">
+      {canEdit && tableReady && showForm && (
+        <div className={show ? "" : "mt-4"}>
+          {!show && <div className="mb-3 flex gap-1" role="tablist">
             {([["ask", "Ask the AIs (API)"], ["paste", "Paste from ChatGPT (free)"]] as const).map(([k, l]) => (
               <button key={k} role="tab" aria-selected={tab === k} type="button" onClick={() => { setTab(k); setMsg(null); }}
                 className={cn("rounded-lg px-3 py-1.5 text-sm font-medium", tab === k ? "bg-foreground text-background" : "text-secondary hover:bg-surface-muted")}>{l}</button>
             ))}
-          </div>
+          </div>}
           {tab === "ask" ? (
             <div className="grid gap-3 lg:grid-cols-[minmax(0,1fr)_minmax(0,22rem)]">
               <label className="block text-sm font-medium">Keywords <span className="font-normal text-muted">(one per line, up to 10)</span>
@@ -140,8 +145,8 @@ export function LiveFanout({ canEdit, ready, tableReady, batches, domain }: {
         </div>
       )}
 
-      {batch && (
-        <div className="mt-5 border-t border-hairline pt-4">
+      {showResults && batch && (
+        <div className={show ? "" : "mt-5 border-t border-hairline pt-4"}>
           <div className="mb-3 flex flex-wrap items-center gap-2">
             <select value={batch.id} onChange={(e) => setBatchId(e.target.value)} className="max-w-full rounded-lg border border-border bg-background px-2 py-1 text-sm" aria-label="Run">
               {batches.map((b) => <option key={b.id} value={b.id}>{new Date(b.at).toLocaleString("en-US", { dateStyle: "medium", timeStyle: "short" })} · {b.seeds.slice(0, 2).join(", ")}{b.seeds.length > 2 ? ` +${b.seeds.length - 2}` : ""}</option>)}
@@ -200,7 +205,7 @@ export function LiveFanout({ canEdit, ready, tableReady, batches, domain }: {
           </div>
         </div>
       )}
-      {!batch && tableReady && <p className="mt-4 text-sm text-muted">{canEdit ? "No real AI queries yet: ask the AIs or paste from ChatGPT above." : "No real AI queries yet. An owner or admin can run them."}</p>}
+      {showResults && !batch && tableReady && <p className="mt-4 text-sm text-muted">{canEdit ? "No real AI queries yet: ask the AIs or paste from ChatGPT above." : "No real AI queries yet. An owner or admin can run them."}</p>}
     </section>
   );
 }

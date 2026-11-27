@@ -1,8 +1,8 @@
 import { EmptyState } from "@/components/dashboard/page-header";
 import { TabHeader } from "@/components/dashboard/tab-header";
 import { RunList, RunView } from "@/components/fanout/results";
-import { LiveFanout, type LiveBatchView } from "@/components/fanout/live";
-import { FanoutRunner } from "@/components/fanout/runner";
+import type { LiveBatchView } from "@/components/fanout/live";
+import { FanoutWorkspace } from "@/components/fanout/workspace";
 import { getSession } from "@/lib/analytics/client-context";
 import { resolveTarget } from "@/lib/dataforseo/research";
 import { METHOD } from "@/lib/fanout/method";
@@ -48,16 +48,17 @@ export default async function FanoutPage({ searchParams }: { searchParams: Promi
     <>
       {header}
       {!ready && <p role="alert" className="mb-4 rounded-[10px] border border-warn/30 bg-warn/5 p-3 text-sm text-warn">Fan-out storage isn&apos;t set up yet: apply migration 20261128000034_fanout.sql to run and keep results.</p>}
-      <LiveFanout canEdit={canEdit} ready={liveReady} tableReady={live.ready} batches={live.batches as LiveBatchView[]} domain={target.domain} />
-      <FanoutRunner canEdit={canEdit && ready} pages={pages} domain={target.domain} />
-      {runs.length === 0
-        ? <EmptyState title="No fan-out runs yet" body={canEdit ? "Enter a keyword above, paste a list, or pick pages of the site." : "An owner or admin can run fan-out queries; results show here."} />
-        : (
-          <div className="grid gap-4 xl:grid-cols-[minmax(0,1fr)_18rem]">
-            <div className="min-w-0 xl:order-1">{run ? <RunView run={run} /> : <EmptyState title="Run not found" body="Pick a run from the list." />}</div>
-            <div className="xl:order-2"><RunList runs={runs} current={run?.id ?? null} /></div>
-          </div>
-        )}
+      {/* one workspace: pick the method (simulated, real AI searches, pasted from ChatGPT), then the results of either kind */}
+      <FanoutWorkspace canEdit={canEdit} simReady={ready} pages={pages} domain={target.domain}
+        liveReady={liveReady} liveTableReady={live.ready} batches={live.batches as LiveBatchView[]} simCount={runs.length}
+        simResults={runs.length === 0
+          ? <EmptyState title="No simulated runs yet" body={canEdit ? "Pick Simulate fan-out above and enter a keyword, paste a list, or pick pages of the site." : "An owner or admin can run fan-out queries; results show here."} />
+          : (
+            <div className="grid gap-4 xl:grid-cols-[minmax(0,1fr)_18rem]">
+              <div className="min-w-0 xl:order-1">{run ? <RunView run={run} /> : <EmptyState title="Run not found" body="Pick a run from the list." />}</div>
+              <div className="xl:order-2"><RunList runs={runs} current={run?.id ?? null} /></div>
+            </div>
+          )} />
     </>
   );
 }

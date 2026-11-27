@@ -14,7 +14,7 @@ const input = "h-9 w-full min-w-0 rounded-md border border-border-strong bg-surf
 const path = (u: string) => { try { const x = new URL(u); return x.pathname === "/" ? "/ (home)" : `${x.pathname}${x.search}`; } catch { return u; } };
 
 /** Owner/admin controls: one keyword, a pasted list, or pages of the site. Shows the cost before anything runs. */
-export function FanoutRunner({ canEdit, pages, domain }: { canEdit: boolean; pages: PageOption[]; domain: string }) {
+export function FanoutRunner({ canEdit, pages, domain, embedded = false }: { canEdit: boolean; pages: PageOption[]; domain: string; embedded?: boolean }) {
   const router = useRouter();
   const [pending, start] = useTransition();
   const [tab, setTab] = useState<"one" | "bulk" | "pages">("one");
@@ -58,7 +58,7 @@ export function FanoutRunner({ canEdit, pages, domain }: { canEdit: boolean; pag
   });
 
   return (
-    <section className="mb-5 rounded-[10px] border border-border bg-surface p-4 sm:p-5" aria-label="Run fan-out queries">
+    <section className={embedded ? "" : "mb-5 rounded-[10px] border border-border bg-surface p-4 sm:p-5"} aria-label="Run fan-out queries">
       <Tabs label="Input" onChange={(k) => setTab(k as typeof tab)} items={[
         {
           key: "one", label: "One keyword", content: (
