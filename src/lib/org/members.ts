@@ -194,10 +194,29 @@ export async function addMemberDirect(admin: SupabaseClient, orgId: string, acto
 
   const { data: found } = await admin.rpc("find_user_id_by_email", { p_email: email });
   let userId = (found as string | null) ?? null;
-  const existed = Boolean(userId);
+  // an account that has never signed in (e.g. made by an earlier invitation, without a password) isn't anyone's yet:
+  // it gets the password set here and is ready to sign in; an account in use keeps its own password
+  let unused = false;
   if (userId) {
-    const { data: m } = await admin.from("organization_members").select("status").eq("organization_id", orgId).eq("user_id", userId).maybeSingle();
-    if (m?.status === "active") return fail(`${email} is already a member. Change their role or client access in the list.`);
+    const { data: u } = await admin.auth.admin.getUserById(userId);
+    unused = Boolean(u?.user && !u.user.last_sign_in_at);
+    if (unused) {
+      const { error } = await admin.auth.admin.updateUserById(userId, {
+        password: input.password, email_confirm: true, app_metadata: { org_invites: null },
+        ...(input.fullName ? { user_metadata: { full_name: input.fullName } } : {}),
+      });
+      if (error) return fail(/password/i.test(error.message) ? error.message : "Couldn't set the password. Try again.");
+      if (input.fullName) await admin.from("profiles").upsert({ user_id: userId, full_name: input.fullName }, { onConflict: "user_id" });
+    }
+  }
+  const existed = Boolean(userId) && !unused;
+  if (userId) {
+    const { data: m } = await admin.from("organization_members").select("status, role").eq("organization_id", orgId).eq("user_id", userId).maybeSingle();
+    if (m?.status === "active") {
+      if (!unused) return fail(`${email} is already a member. Change their role or client access in the list.`);
+      await audit(admin, orgId, actor.userId, "member.password_set", email, { never_signed_in: true });
+      return { ok: true, message: `${email} is already a member (${m.role}); the password is set, so they can sign in now.` };
+    }
   } else {
     const { data, error } = await admin.auth.admin.createUser({ email, password: input.password, email_confirm: true, user_metadata: input.fullName ? { full_name: input.fullName } : undefined });
     if (error || !data.user) return fail(error && /password/i.test(error.message) ? error.message : "Couldn't create the account. Try again.");
