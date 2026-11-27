@@ -1,25 +1,22 @@
 import Link from "next/link";
-import { CheckCircle2, CircleAlert, CircleX, Info } from "lucide-react";
 import { EmptyState } from "@/components/dashboard/page-header";
 import { TabHeader } from "@/components/dashboard/tab-header";
 import { lhColor, ScoreRing } from "@/components/charts/score-ring";
+import { CheckList } from "@/components/research/check-list";
 import { ResearchTable } from "@/components/research/research-table";
 import { TechnicalRun } from "@/components/research/technical-controls";
 import { SecurityAuditSection } from "@/components/security/security-audit";
 import { researchPage } from "@/lib/dataforseo/view";
 import { createClient } from "@/lib/supabase/server";
+import { fixKey, loadCheckFixes } from "@/lib/technical/check-ai";
 import { loadTechnical } from "@/lib/technical/load";
 import { loadSecurity } from "@/lib/technical/security";
-import { scoreBand, type Check, type Priority } from "@/lib/technical/score";
+import { scoreBand, type Priority } from "@/lib/technical/score";
 import { cn } from "@/lib/utils";
 
 const path = (u: string) => { try { const x = new URL(u); return x.pathname === "/" ? "/ (home)" : x.pathname; } catch { return u; } };
 const PRIO: Record<Priority, string> = { Critical: "bg-negative text-white", High: "bg-negative/10 text-negative", Medium: "bg-warn/10 text-warn", Low: "bg-surface-muted text-secondary" };
 
-function StatusIcon({ s }: { s: Check["status"] }) {
-  const I = s === "pass" ? CheckCircle2 : s === "warn" ? CircleAlert : s === "fail" ? CircleX : Info;
-  return <I className={cn("mt-0.5 size-4 shrink-0", s === "pass" ? "text-positive" : s === "warn" ? "text-warn" : s === "fail" ? "text-negative" : "text-muted")} aria-label={s} />;
-}
 
 export const maxDuration = 300; // the "Run technical checks" action reads ~25 pages from a possibly slow website
 
@@ -37,7 +34,10 @@ export default async function TechnicalSeoPage() {
   if (!cache.target) return <>{header}<EmptyState title="No website yet" body="Connect Bing, Search Console or Business Profile for this client so the website can be detected, or ask an owner or admin to set it." action={{ href: "/integrations", label: "Open Integrations" }} /></>;
 
   const supabase = await createClient();
-  const [{ score: s, checks }, sec] = await Promise.all([loadTechnical(supabase, client.id), loadSecurity(supabase, client.id).catch(() => ({ audit: null, ai: null }))]);
+  const [{ score: s, checks }, sec, fixes] = await Promise.all([
+    loadTechnical(supabase, client.id), loadSecurity(supabase, client.id).catch(() => ({ audit: null, ai: null })),
+    loadCheckFixes(supabase, client.id).catch(() => ({})),
+  ]);
   const allChecks = s.categories.flatMap((c) => c.checks.map((x) => ({ ...x, category: c.label })));
   const failing = allChecks.filter((x) => x.status === "fail" || x.status === "warn");
   const recRows = s.recs.map((r) => ({ ...r, pagesText: r.pages.slice(0, 5).map(path).join(", ") + (r.pageCount > 5 ? ` +${r.pageCount - 5} more` : ""), pageUrl: r.pages[0] ?? null }));
@@ -140,15 +140,7 @@ export default async function TechnicalSeoPage() {
                   <span className="text-lg font-bold tabular-nums" style={{ color: lhColor(c.score) }}>{c.score ?? "—"}</span>
                 </div>
                 {c.checks.length === 0 ? <p className="text-sm text-muted">Not measured yet.</p> : (
-                  <ul className="space-y-2">
-                    {c.checks.map((x) => (
-                      <li key={x.id} className="flex items-start gap-2 text-sm">
-                        <StatusIcon s={x.status} />
-                        <span className="min-w-0 flex-1"><span className="font-medium">{x.label}</span> <span className="break-words text-muted">{x.evidence}</span> <span className="text-xs text-faint">· {x.source}</span></span>
-                        <span className={cn("shrink-0 tabular-nums text-xs", x.deduct ? "font-semibold text-negative" : "text-faint")}>{x.deduct ? `−${x.deduct}` : x.status === "na" ? "n/a" : "0"}</span>
-                      </li>
-                    ))}
-                  </ul>
+                  <CheckList checks={c.checks.map((x) => ({ ...x, key: fixKey(x) }))} fixes={fixes} canEdit={canEdit} />
                 )}
               </div>
             ))}
