@@ -6,12 +6,12 @@ import { z } from "zod";
 import { defaultBrandTerms, normalizeTerm, normalizeTerms } from "@/lib/brand";
 import { assertBudget, BudgetError, recordSpend, type SpendSource } from "@/lib/dataforseo/budget";
 import { dfsConfigured, dfsPost } from "@/lib/dataforseo/client";
-import { aiErrorMessage, anthropic } from "./claude";
+import { aiErrorMessage, anthropicFor } from "./claude";
 
 /**
  * AI visibility: when someone asks an AI assistant the questions customers ask, is the business named,
  * where in the answer, how is it described, and is its website cited? Each tracked question is asked to:
- *   - Claude (your own Anthropic key, Sonnet 5.5, live web search)
+ *   - Claude (the organization's own Anthropic key, Sonnet 5.5, live web search)
  *   - ChatGPT, Perplexity and Gemini (their real models with web search, through DataForSEO's
  *     AI Optimization API, billed to DataForSEO and kept inside the daily DataForSEO budget)
  *   - Google AI Mode (the real Google answer, through DataForSEO's SERP API, about $0.004)
@@ -88,12 +88,12 @@ export function parseAnswer(content: Block[], site: string, terms: string[]) {
   };
 }
 
-async function askClaude(prompt: string, search: boolean): Promise<Answer> {
+async function askClaude(ai: Anthropic, prompt: string, search: boolean): Promise<Answer> {
   const messages: Anthropic.Messages.MessageParam[] = [{ role: "user", content: prompt }];
   const content: Block[] = [];
   let searches = 0, input = 0, output = 0, cached = 0;
   for (let turn = 0; turn < 3; turn++) { // a long search turn can pause; continue it
-    const res = await anthropic().messages.create({
+    const res = await ai.messages.create({
       model: VIS_MODEL, max_tokens: 2500, system: SYSTEM, output_config: { effort: "low" }, messages,
       ...(search ? { tools: [{ type: "web_search_20250305", name: "web_search", max_uses: 2 }] } : {}),
     });
@@ -113,13 +113,13 @@ type J = Record<string, unknown>;
 const arr = (v: unknown): J[] => (Array.isArray(v) ? (v as J[]) : []);
 
 /** ChatGPT, Perplexity or Gemini through DataForSEO LLM Responses (live, with web search). */
-async function askDfs(engine: Exclude<EngineKey, "claude" | "ai_mode">, prompt: string, city: string | null): Promise<Answer> {
+async function askDfs(clientId: string, engine: Exclude<EngineKey, "claude" | "ai_mode">, prompt: string, city: string | null): Promise<Answer> {
   const e = ENGINES[engine];
   const body: J = { user_prompt: prompt.slice(0, 500), model_name: e.model, system_message: SYSTEM.slice(0, 500), max_output_tokens: 2048 };
   if (engine === "chatgpt") Object.assign(body, { web_search: true, web_search_country_iso_code: "US", ...(city ? { web_search_city: city } : {}) });
   if (engine === "perplexity") Object.assign(body, { web_search_country_iso_code: "US" });
   if (engine === "gemini") Object.assign(body, { web_search: true });
-  const { result, cost } = await dfsPost(`/ai_optimization/${e.path}/llm_responses/live`, body, { timeoutMs: 120_000, attempts: 1 });
+  const { result, cost } = await dfsPost(clientId, `/ai_optimization/${e.path}/llm_responses/live`, body, { timeoutMs: 120_000, attempts: 1 });
   const items = arr(result?.items);
   const msg = items.find((i) => i.type === "message") ?? items[0];
   const sections = arr(msg?.sections);
@@ -140,8 +140,8 @@ async function askDfs(engine: Exclude<EngineKey, "claude" | "ai_mode">, prompt: 
 const isGoogle = (h: string) => /(^|\.)google\.[a-z.]+$|(^|\.)(gstatic|googleusercontent|ggpht|dataforseo)\.com$/.test(h);
 
 /** Google AI Mode through DataForSEO's SERP API: the answer text, and the websites it links to. */
-async function askAiMode(prompt: string): Promise<Answer> {
-  const { result, cost } = await dfsPost("/serp/google/ai_mode/live/advanced", { keyword: prompt.slice(0, 700), location_code: 2840, language_code: "en" }, { timeoutMs: 120_000, attempts: 1 });
+async function askAiMode(clientId: string, prompt: string): Promise<Answer> {
+  const { result, cost } = await dfsPost(clientId, "/serp/google/ai_mode/live/advanced", { keyword: prompt.slice(0, 700), location_code: 2840, language_code: "en" }, { timeoutMs: 120_000, attempts: 1 });
   const ov = arr(result?.items).find((i) => i.type === "ai_overview");
   const parts = arr(ov?.items);
   const text = (parts.length ? parts.map((e) => [e.title, e.text].filter((x) => typeof x === "string").join("\n")).join("\n\n") : String(ov?.markdown ?? ""))
@@ -168,12 +168,12 @@ const brandSchema = z.object({
  * One Claude call per question reads all engines' answers and lists every business named, in order of
  * first mention, with a 0-100 sentiment (50 neutral) for how the answer describes it.
  */
-async function extractBrands(answers: Answer[], client: { name: string; site: string; terms: string[] }): Promise<{ map: Map<EngineKey, AiBrand[]>; cost: number }> {
+async function extractBrands(ai: Anthropic, answers: Answer[], client: { name: string; site: string; terms: string[] }): Promise<{ map: Map<EngineKey, AiBrand[]>; cost: number }> {
   const map = new Map<EngineKey, AiBrand[]>();
   const usable = answers.filter((a) => a.text);
   if (!usable.length) return { map, cost: 0 };
   const doc = usable.map((a) => `<answer engine="${a.engine}">\n${a.text.slice(0, 6000)}\n</answer>`).join("\n\n");
-  const res = await anthropic().beta.messages.parse({
+  const res = await ai.beta.messages.parse({
     model: VIS_MODEL, max_tokens: 4000, betas: ["server-side-fallback-2026-07-01"], fallbacks: "default",
     output_config: { effort: "low", format: betaZodOutputFormat(brandSchema) },
     system: "You analyse AI assistant answers for brand visibility. For each answer, list every business, brand or company the answer names or recommends (not directories or websites used only as sources, unless the answer recommends them as a business), in order of first appearance (position 1 = named first). Give each a sentiment from 0 to 100 for how favourably the answer describes it (50 = neutral mention, 75+ = recommended/praised, below 40 = criticised or warned against), its website domain if the answer states or links it (else null), is_client = true only if it is the client business, note = how the answer describes it in at most 12 words, and praised / criticised = up to 3 short themes each (2-3 words, lower case, e.g. 'fast turnaround', 'high prices'; empty when none).",
@@ -198,21 +198,23 @@ async function extractBrands(answers: Answer[], client: { name: string; site: st
 }
 
 /* ------------------------------------------------------------------ one question, every engine */
-export interface Opts { site: string; terms: string[]; name: string; search: boolean; engines: EngineKey[]; city: string | null; source: SpendSource }
+/** `ai`: Claude on the client's organization's own key (asks Claude and reads every answer). */
+export interface Opts { site: string; terms: string[]; name: string; search: boolean; engines: EngineKey[]; city: string | null; source: SpendSource; ai: Anthropic }
 
 export async function checkPrompt(admin: SupabaseClient, clientId: string, p: AiPrompt, o: Opts): Promise<{ checks: AiCheck[]; cost: number; errors: string[] }> {
   const errors: string[] = [];
   // several answers per question and day need migration 21; until it is applied only Claude is asked, so nothing paid is lost
   const multi = !(await admin.from("ai_checks").select("engine").limit(1)).error;
   if (!multi && o.engines.some((e) => e !== "claude")) errors.push("ChatGPT, Perplexity and Gemini start once the latest database migration (20261030000021) is applied.");
-  const dfsEngines = (multi ? o.engines : []).filter((e) => e !== "claude" && dfsConfigured()) as Exclude<EngineKey, "claude">[];
+  const dfsOn = multi && o.engines.some((e) => e !== "claude") && (await dfsConfigured(clientId));
+  const dfsEngines = (dfsOn ? o.engines : []).filter((e) => e !== "claude") as Exclude<EngineKey, "claude">[];
   if (dfsEngines.length) {
     try { await assertBudget(admin, clientId, dfsEngines.reduce((a, e) => a + ENGINES[e].est, 0), o.source); }
     catch (e) { if (e instanceof BudgetError) { errors.push(e.message); dfsEngines.length = 0; } else throw e; }
   }
   const jobs: Promise<Answer>[] = [
-    ...(o.engines.includes("claude") && process.env.ANTHROPIC_API_KEY ? [askClaude(p.prompt, o.search)] : []),
-    ...dfsEngines.map((e) => (e === "ai_mode" ? askAiMode(p.prompt) : askDfs(e, p.prompt, o.city))),
+    ...(o.engines.includes("claude") ? [askClaude(o.ai, p.prompt, o.search)] : []),
+    ...dfsEngines.map((e) => (e === "ai_mode" ? askAiMode(clientId, p.prompt) : askDfs(clientId, e, p.prompt, o.city))),
   ];
   const settled = await Promise.allSettled(jobs);
   const answers: Answer[] = [];
@@ -224,7 +226,7 @@ export async function checkPrompt(admin: SupabaseClient, clientId: string, p: Ai
   if (dfsCost > 0) await recordSpend(admin, clientId, "ai_visibility", dfsCost, o.source);
 
   let brands = new Map<EngineKey, AiBrand[]>(), extractCost = 0;
-  try { const r = await extractBrands(answers, { name: o.name, site: o.site, terms: o.terms }); brands = r.map; extractCost = r.cost; }
+  try { const r = await extractBrands(o.ai, answers, { name: o.name, site: o.site, terms: o.terms }); brands = r.map; extractCost = r.cost; }
   catch (e) { errors.push(`brand reading: ${aiErrorMessage(e)}`); }
 
   const today = new Date().toISOString().slice(0, 10);
@@ -273,6 +275,9 @@ export interface AiRun { checked: number; skipped: number; cost: number; errors:
 
 export async function runAiChecks(admin: SupabaseClient, clientId: string, site: string, opts: { force?: boolean; deadline?: number; search?: boolean; source?: SpendSource } = {}): Promise<AiRun> {
   const run: AiRun = { checked: 0, skipped: 0, cost: 0, errors: [], stopped: null };
+  // Claude asks and reads every answer on the client's organization's own Anthropic key: without one nothing runs
+  const ai = await anthropicFor(clientId).catch(aiErrorMessage);
+  if (typeof ai === "string") return { ...run, errors: [ai], stopped: "provider" };
   const [{ data: prompts }, { data: last }, { data: client }, { data: gbp }] = await Promise.all([
     admin.from("ai_prompts").select("id, prompt, created_at").eq("client_id", clientId).order("created_at").limit(MAX_PROMPTS),
     admin.from("ai_checks").select("prompt_id, checked_on").eq("client_id", clientId).order("checked_on", { ascending: false }).limit(2000),
@@ -292,7 +297,7 @@ export async function runAiChecks(admin: SupabaseClient, clientId: string, site:
     if (opts.deadline && Date.now() > opts.deadline) { run.stopped = "time"; break; }
     if (run.cost >= RUN_COST_LIMIT) { run.stopped = "cost limit"; break; }
     try {
-      const r = await checkPrompt(admin, clientId, p, { site, terms, name, search: opts.search !== false, engines, city: meta.lbm_location?.city ?? null, source: opts.source ?? "auto" });
+      const r = await checkPrompt(admin, clientId, p, { site, terms, name, search: opts.search !== false, engines, city: meta.lbm_location?.city ?? null, source: opts.source ?? "auto", ai });
       if (r.checks.length) run.checked++;
       run.cost += r.cost;
       run.errors.push(...r.errors);

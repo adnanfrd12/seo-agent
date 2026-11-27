@@ -3,6 +3,7 @@ import { Unavailable } from "@/components/report/report-ui";
 import { RoadmapView } from "@/components/roadmap/roadmap-view";
 import { getSession } from "@/lib/analytics/client-context";
 import { todayIn } from "@/lib/analytics/range";
+import { aiUnavailable } from "@/lib/ai/claude";
 import { first, type SearchParams } from "@/lib/analytics/url";
 import { getMonth, getTasks, listMonths } from "@/lib/roadmap/store";
 import { monthOf, type RoadmapTask } from "@/lib/roadmap/types";
@@ -36,13 +37,14 @@ export default async function RoadmapPage({ searchParams }: { searchParams: Prom
       ]} />
   );
   if (setupNeeded) return (<>{header}<Unavailable title="Database update needed" body="Apply migration 20261125000025_roadmap_nova.sql in Supabase to enable the roadmap and Nova." /></>);
+  const aiConfigured = !(await aiUnavailable(client.id));
 
   return (
     <>
       {header}
       <RoadmapView
         month={month} current={current} today={today} months={months.map((m) => m.month)} row={row} tasks={tasks}
-        canEdit={["owner", "admin"].includes(client.role)} aiConfigured={Boolean(process.env.ANTHROPIC_API_KEY)}
+        canEdit={["owner", "admin"].includes(client.role)} aiConfigured={aiConfigured}
       />
     </>
   );

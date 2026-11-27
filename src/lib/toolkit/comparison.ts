@@ -2,7 +2,7 @@ import "server-only";
 import type { SupabaseClient } from "@supabase/supabase-js";
 import { betaZodOutputFormat } from "@anthropic-ai/sdk/helpers/beta/zod";
 import { z } from "zod";
-import { anthropic } from "@/lib/ai/claude";
+import { anthropicFor } from "@/lib/ai/claude";
 import { fetchHtml, htmlAttr } from "./store";
 
 /**
@@ -35,6 +35,8 @@ async function siteBrand(domain: string, fallback: string): Promise<string> {
 }
 
 export async function runComparison(admin: SupabaseClient, clientId: string, target: { domain: string; competitors: string[] }, clientName: string): Promise<CompRun> {
+  // the organization's own Anthropic key, checked before the website is read
+  const claude = await anthropicFor(clientId);
   // the website can be slow: when it doesn't answer, keep the brand found on the previous run
   const prev = await admin.from("dfs_cache").select("data").eq("client_id", clientId).eq("endpoint", "tk_seo-competitor-pages").maybeSingle();
   const brand = await siteBrand(target.domain, (prev.data?.data as { brand?: string } | null)?.brand ?? clientName);
@@ -54,7 +56,7 @@ export async function runComparison(admin: SupabaseClient, clientId: string, tar
       sharedKws: shared.slice(0, 12).map((r) => String(r.keyword)), gapKws: gap.slice(0, 12).map((r) => String(r.keyword)), topPages: pages.slice(0, 8).map((r) => String(r.page)),
     };
   });
-  const res = await anthropic().beta.messages.parse({
+  const res = await claude.beta.messages.parse({
     model: COMP_MODEL, max_tokens: 6000, thinking: { type: "disabled" },
     output_config: { effort: "low", format: betaZodOutputFormat(schema) },
     system: "You plan comparison pages for a local sign and LED lighting business. For each competitor produce one 'vs' page outline, then ONE 'alternatives' page outline for the strongest competitor. Be fair and factual: never invent competitor prices, ratings or weaknesses; where a claim needs evidence, list it under proof_needed for the business to verify. 5-8 sections each, comparison_rows = the attributes of the comparison table (e.g. 'Local Houston fabrication'). slug lower-case with hyphens. Use the keywords provided to choose target_keyword and section topics.",

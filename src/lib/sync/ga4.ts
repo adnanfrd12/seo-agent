@@ -2,6 +2,7 @@ import "server-only";
 import type { SupabaseClient } from "@supabase/supabase-js";
 import { runGa4Report } from "@/lib/composio/ga4";
 import type { AdapterContext, DateRange } from "@/lib/analytics/types";
+import { ConfigError } from "@/lib/org/config";
 import type { Ga4Report } from "@/lib/validation/ga4";
 import type { SyncResult } from "./types";
 
@@ -297,6 +298,8 @@ export async function syncGa4(
     try {
       written[job.name] = await job.run();
     } catch (e) {
+      // the organization's Composio settings are missing or refused: every report would fail the same way
+      if (e instanceof ConfigError) throw e;
       const kind = e && typeof e === "object" && "kind" in e ? (e as { kind: string }).kind : null;
       // rate limited: abandon and retry the whole (idempotent) job later instead of leaving a gap
       if (kind === "rate_limit") throw e;

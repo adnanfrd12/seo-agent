@@ -2,18 +2,20 @@
 
 import { revalidatePath } from "@/lib/revalidate";
 import { getSession } from "@/lib/analytics/client-context";
+import { aiUnavailable } from "@/lib/ai/claude";
 import { COACH_COOLDOWN_HOURS, COACH_MODES, generateCoach, type CoachMode } from "@/lib/ai/coach";
 import { createAdminClient } from "@/lib/supabase/admin";
 
 type Result = { ok: true; message: string } | { ok: false; error: string };
 
-/** Writes one of the four analyses from the stored data (owners and admins; about 15 cents on the Anthropic key). */
+/** Writes one of the four analyses from the stored data (owners and admins; about 15 cents on the organization's Anthropic key). */
 export async function runCoach(mode: CoachMode, force: boolean): Promise<Result> {
   const { client } = await getSession();
   if (!client) return { ok: false, error: "No client selected." };
   if (!["owner", "admin"].includes(client.role)) return { ok: false, error: "Only owners and admins can generate these analyses." };
   if (!COACH_MODES.includes(mode)) return { ok: false, error: "Unknown analysis." };
-  if (!process.env.ANTHROPIC_API_KEY) return { ok: false, error: "ANTHROPIC_API_KEY isn't set on the server." };
+  const aiOff = await aiUnavailable(client.id);
+  if (aiOff) return { ok: false, error: aiOff };
   const db = createAdminClient();
   if (!force) {
     const { data } = await db.from("dfs_cache").select("fetched_at").eq("client_id", client.id).eq("endpoint", `coach_${mode}`).maybeSingle();

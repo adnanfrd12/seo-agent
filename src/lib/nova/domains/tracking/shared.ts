@@ -1,7 +1,7 @@
 import "server-only";
 import type { SupabaseClient } from "@supabase/supabase-js";
 import { ACTIVE_DAYS } from "@/lib/activity";
-import { getSettings, PER_CLIENT_SHARE, spendOrZero } from "@/lib/dataforseo/budget";
+import { clientSpendOrZero, getSettings, orgSpendOrZero, PER_CLIENT_SHARE } from "@/lib/dataforseo/budget";
 import { hostOf } from "@/lib/dataforseo/research";
 
 /** Helpers shared by the tracked-list tools (rank tracking, AI visibility, competitors, brand terms). */
@@ -68,10 +68,11 @@ export const sameDomain = (a: string, b: string) => a.replace(/^www\./, "").toLo
 
 /**
  * Today's DataForSEO spend against the caps assertBudget() enforces for button-started ("manual") runs:
- * the daily budget for everything, and PER_CLIENT_SHARE of it for one client. `left` is what this client may still spend today.
+ * the organization's daily budget for all its clients, and PER_CLIENT_SHARE of it for one client. `left` is what this client
+ * may still spend today.
  */
 export async function dfsBudget(admin: SupabaseClient, clientId: string) {
-  const [settings, all, mine] = await Promise.all([getSettings(admin), spendOrZero(admin), spendOrZero(admin, clientId)]);
+  const [settings, all, mine] = await Promise.all([getSettings(admin, { clientId }), orgSpendOrZero(admin, { clientId }), clientSpendOrZero(admin, clientId)]);
   const cap = settings.dailyBudget, clientCap = cap * PER_CLIENT_SHARE;
   const left = Math.max(0, Math.min(cap - all, clientCap - mine));
   return {
@@ -82,11 +83,11 @@ export async function dfsBudget(admin: SupabaseClient, clientId: string) {
 }
 
 /**
- * Whether the scheduled DataForSEO jobs run for this client: the agency-wide switch (Integrations page) and the
+ * Whether the scheduled DataForSEO jobs run for this client: the organization's switch (Integrations page) and the
  * client's own automatic refresh must both be on. Returns null when they run, else why not.
  */
-export async function scheduleOff(admin: SupabaseClient, target: TargetInfo | null): Promise<string | null> {
-  if (!(await getSettings(admin)).autoRefresh) return "automatic refresh is off for all clients (Integrations page)";
+export async function scheduleOff(admin: SupabaseClient, clientId: string, target: TargetInfo | null): Promise<string | null> {
+  if (!(await getSettings(admin, { clientId })).autoRefresh) return "automatic refresh is off for this organization's clients (Integrations page)";
   if (target && !target.auto_refresh) return "this client's automatic research refresh is off";
   return null;
 }

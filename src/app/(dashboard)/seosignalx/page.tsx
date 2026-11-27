@@ -13,7 +13,7 @@ const ICON = { eeat: <ShieldCheck className="size-4" />, semantic: <Sparkles cla
 export default async function SeoSignalXDashboard() {
   const v = await sxPage();
   if (!v) return null;
-  if (!v.configured) return <Empty title="SEOSignalX isn't connected" body="Add SEOSIGNALX_MCP_TOKEN to the environment, then redeploy." />;
+  if (!v.configured) return <Empty title="SEOSignalX isn't set up" body="An owner of this organization adds the SEOSignalX MCP token in Settings → Integrations." />;
   const b = v.bundle;
   const p = b?.project ?? null;
   if (!p) {

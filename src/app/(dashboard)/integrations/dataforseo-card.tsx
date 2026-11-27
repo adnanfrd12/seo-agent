@@ -1,21 +1,32 @@
 import Link from "next/link";
-import { AUTO_SHARE, DEFAULT_DAILY_BUDGET, getSettings, PER_CLIENT_SHARE, spendHistory, spendOrZero } from "@/lib/dataforseo/budget";
+import { getSession } from "@/lib/analytics/client-context";
+import { AUTO_SHARE, clientSpendOrZero, DEFAULT_DAILY_BUDGET, getSettings, orgSpendOrZero, PER_CLIENT_SHARE, spendHistory } from "@/lib/dataforseo/budget";
 import { dfsBalance, dfsConfigured } from "@/lib/dataforseo/client";
+import { clientOrgId } from "@/lib/org/config";
+import { can } from "@/lib/org/permissions";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { StackedColumns } from "@/components/charts/ops-charts";
 import { DataForSeoSettings } from "./dataforseo-settings";
 
-/** DataForSEO status: credentials, balance, today's spend against the cap, and the last 7 days. */
+/**
+ * DataForSEO status for the client's organization (each organization uses its own DataForSEO account): credentials,
+ * balance, today's spend against the organization's cap, and the last 7 days. Organization-wide figures and the limit
+ * are for organization owners and admins; a client's own owners/admins see that client's spend.
+ */
 export async function DataForSeoCard({ canEdit, clientId }: { canEdit: boolean; clientId: string }) {
-  const configured = dfsConfigured();
+  const [{ organization }, orgId, configured] = await Promise.all([getSession(), clientOrgId(clientId), dfsConfigured(clientId)]);
+  const orgAdmin = can.manageSettings(organization?.id === orgId ? organization.role : null);
   const admin = canEdit && configured ? createAdminClient() : null;
-  const [balance, today, mine, history, targets] = admin
+  const [balance, today, mine, history, targets, settings] = admin
     ? await Promise.all([
-        dfsBalance(), spendOrZero(admin), spendOrZero(admin, clientId), spendHistory(admin, 7),
-        admin.from("research_targets").select("client_id", { count: "exact", head: true }).eq("auto_refresh", true),
+        orgAdmin ? dfsBalance(clientId) : null,
+        orgAdmin ? orgSpendOrZero(admin, { orgId }) : 0,
+        clientSpendOrZero(admin, clientId),
+        orgAdmin ? spendHistory(admin, { orgId }, 7) : [],
+        orgAdmin ? admin.from("research_targets").select("client_id, clients!inner(organization_id)", { count: "exact", head: true }).eq("auto_refresh", true).eq("clients.organization_id", orgId) : null,
+        getSettings(admin, { orgId }),
       ])
-    : [null, 0, 0, [], null];
-  const settings = admin ? await getSettings(admin) : { dailyBudget: DEFAULT_DAILY_BUDGET, autoRefresh: true };
+    : [null, 0, 0, [], null, { dailyBudget: DEFAULT_DAILY_BUDGET, autoRefresh: true }];
   const cap = settings.dailyBudget;
   const pct = Math.min(100, (today / cap) * 100);
 
@@ -26,12 +37,17 @@ export async function DataForSeoCard({ canEdit, clientId }: { canEdit: boolean; 
           <h2 id="dfs-title" className="text-base font-semibold">DataForSEO</h2>
           <p className="text-sm text-muted">Backlinks, organic keywords and keyword research. Paid per request.</p>
         </div>
-        <span className={configured ? "text-sm font-medium text-positive" : "text-sm text-negative"}>{configured ? "Connected" : "Not configured"}</span>
+        <span className={configured ? "text-sm font-medium text-positive" : "text-sm text-negative"}>{configured ? "Connected" : "Not set up"}</span>
       </div>
       {!configured ? (
-        <p className="mt-3 text-sm text-muted">Add DATAFORSEO_LOGIN and DATAFORSEO_PASSWORD (from DataForSEO → API Access) to the environment and redeploy.</p>
+        <p className="mt-3 text-sm text-muted">An owner of this organization adds the DataForSEO API login and password (from DataForSEO → API Access) in Settings → Integrations.</p>
       ) : !canEdit ? (
         <p className="mt-3 text-sm text-muted">Spend details are visible to owners and admins.</p>
+      ) : !orgAdmin ? (
+        <dl className="mt-3 grid gap-x-6 gap-y-1 text-sm sm:grid-cols-[auto_1fr]">
+          <dt className="text-muted">This client today</dt><dd>${mine.toFixed(2)} of ${(cap * PER_CLIENT_SHARE).toFixed(2)} per-client cap</dd>
+          <dt className="text-muted">Daily limit</dt><dd>${cap.toFixed(2)} for the whole organization{settings.autoRefresh ? "" : " · automatic refresh off"}</dd>
+        </dl>
       ) : (
         <>
           <div className="mt-3 grid items-start gap-4 lg:grid-cols-2">
@@ -45,9 +61,9 @@ export async function DataForSeoCard({ canEdit, clientId }: { canEdit: boolean; 
             <dt className="text-muted">This client today</dt><dd>${mine.toFixed(2)} of ${(cap * PER_CLIENT_SHARE).toFixed(2)} per-client cap</dd>
             <dt className="text-muted">Automatic refresh</dt><dd>{settings.autoRefresh ? `${targets?.count ?? 0} clients, weekly, using at most $${(cap * AUTO_SHARE).toFixed(2)}/day of the limit` : "Off"}</dd>
           </dl>
-          <DataForSeoSettings dailyBudget={cap} autoRefresh={settings.autoRefresh} defaultBudget={DEFAULT_DAILY_BUDGET} />
+          <DataForSeoSettings orgId={orgId} dailyBudget={cap} autoRefresh={settings.autoRefresh} defaultBudget={DEFAULT_DAILY_BUDGET} />
           </div>
-          <StackedColumns title="Spend per day" sub={`Last 7 days, all clients · daily cap $${cap.toFixed(2)}`} format="usd" valueLabel="USD" empty="Nothing spent in the last 7 days."
+          <StackedColumns title="Spend per day" sub={`Last 7 days, all clients of this organization · daily cap $${cap.toFixed(2)}`} format="usd" valueLabel="USD" empty="Nothing spent in the last 7 days."
             keys={[{ key: "auto", label: "Automatic", color: "var(--series)" }, { key: "manual", label: "Manual", color: "color-mix(in oklab, var(--series) 40%, var(--surface))" }]}
             columns={[...history].reverse().map((d) => ({ label: new Date(`${d.day}T00:00:00Z`).toLocaleDateString("en-US", { month: "short", day: "numeric", timeZone: "UTC" }), values: { auto: d.auto, manual: d.manual } }))} />
           </div>

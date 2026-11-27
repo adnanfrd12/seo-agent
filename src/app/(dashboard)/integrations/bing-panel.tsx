@@ -48,7 +48,7 @@ export function BingPanel({ connected, canEdit, hasEnvKey, selected, suggest }: 
       <div className="space-y-2">
         <label className="block text-sm font-medium" htmlFor="bing-key">API key</label>
         <input id="bing-key" type="password" autoComplete="off" className={input} value={key} onChange={(e) => setKey(e.target.value)}
-          placeholder={hasEnvKey ? "Leave empty to use the key configured on the server" : "Bing Webmaster Tools → Settings → API access"} />
+          placeholder={hasEnvKey ? "Leave empty to use the organization's API key" : "Bing Webmaster Tools → Settings → API access"} />
         <button className={btn} disabled={pending || (!key.trim() && !hasEnvKey)} onClick={() => run(() => connectBing(key))}>
           {pending && <Loader2 className="size-4 animate-spin" />} Connect Bing Webmaster Tools
         </button>

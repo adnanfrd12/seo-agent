@@ -42,7 +42,7 @@ export default async function OrganicKeywordsPage() {
           { term: "Intent", text: "What the searcher wants: information, a comparison, or to buy. Match the page to the intent." },
           { term: "Quick wins", text: "Keywords at positions 4-20 with 100+ monthly searches: improving the page's content, title and internal links is usually the cheapest traffic gain." },
         ]} />;
-  if (!configured) return <>{header}<EmptyState title="DataForSEO isn't configured" body="Add DATAFORSEO_LOGIN and DATAFORSEO_PASSWORD to the environment, then redeploy." action={{ href: "/integrations", label: "Open Integrations" }} /></>;
+  if (!configured) return <>{header}<EmptyState title="DataForSEO isn't set up" body="An owner of this organization adds the DataForSEO API login and password in Settings → Integrations." action={{ href: "/integrations", label: "Open Integrations" }} /></>;
   if (!cache.target) return <>{header}<EmptyState title="No website to analyse yet" body="Connect Bing, Search Console or Business Profile for this client so the website can be detected, or ask an owner or admin to set it." action={{ href: "/integrations", label: "Open Integrations" }} /></>;
 
   const { target } = cache;

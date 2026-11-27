@@ -53,7 +53,7 @@ export default async function ReviewsPage() {
     { term: "Faves", text: "Nextdoor's recommendations: neighbors who recommend the business. Nextdoor has no star ratings, so they're counted separately." },
     { term: "Blocked", text: "BBB, Houzz and Thumbtack usually refuse automated reading (DataForSEO's crawler too). They're tried every week and the link is kept; Google's rating for the listing is shown when Google has one." },
   ]} />;
-  if (!configured) return <>{header}<EmptyState title="DataForSEO isn't configured" body="Add DATAFORSEO_LOGIN and DATAFORSEO_PASSWORD to the environment, then redeploy." action={{ href: "/integrations", label: "Open Integrations" }} /></>;
+  if (!configured) return <>{header}<EmptyState title="DataForSEO isn't set up" body="An owner of this organization adds the DataForSEO API login and password in Settings → Integrations." action={{ href: "/integrations", label: "Open Integrations" }} /></>;
 
   const { profiles, saved, views, discovery } = await loadPlatformReviews(await createClient(), createAdminClient(), client.id);
   const live = views.filter((v) => v.source === "live" && ((v.total ?? 0) > 0 || v.reviews.length > 0 || (v.faves ?? 0) > 0));

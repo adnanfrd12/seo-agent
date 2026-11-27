@@ -6,8 +6,11 @@ const nextConfig: NextConfig = {
   experimental: { agentUpgrade: "security" },
   serverExternalPackages: ["@sparticuz/chromium", "puppeteer-core"],
   // @sparticuz/chromium loads its compressed browser from bin/ at runtime; file tracing can't see
-  // that dynamic path, so include it explicitly for the PDF function.
-  outputFileTracingIncludes: { "/api/report/pdf": ["./node_modules/@sparticuz/chromium/bin/**"] },
+  // that dynamic path, so include it explicitly for the PDF functions (report export, integration setup guides).
+  outputFileTracingIncludes: {
+    "/api/report/pdf": ["./node_modules/@sparticuz/chromium/bin/**"],
+    "/api/org/guides/*": ["./node_modules/@sparticuz/chromium/bin/**"],
+  },
   // Every page is per-user and reads auth cookies, so Cache Components /
   // partial prefetching (enabled by the scaffold) are intentionally off.
   turbopack: {

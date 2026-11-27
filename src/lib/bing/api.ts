@@ -1,10 +1,13 @@
 import "server-only";
+import { configForClient } from "@/lib/org/config";
 
 /**
  * Bing Webmaster Tools API (JSON endpoint), API-key auth:
  *   GET https://ssl.bing.com/webmaster/api.svc/json/{Method}?apikey=...&siteUrl=...
  * Responses are wrapped in { d: ... }; dates use the WCF format "/Date(ms)/".
  * Only read methods are used; nothing here changes the Bing account.
+ * The key is a client connection's own (stored encrypted when it was connected) or its organization's
+ * (BING_WEBMASTER_API_KEY in Settings → Integrations); never another organization's.
  */
 const BASE = "https://ssl.bing.com/webmaster/api.svc/json";
 
@@ -13,6 +16,12 @@ export class BingError extends Error {
 }
 
 export const cleanKey = (k: string) => k.trim();
+
+/** The Bing Webmaster API key of the client's organization (Settings → Integrations), or null when it has none. */
+export async function bingOrgKey(clientId: string): Promise<string | null> {
+  const k = (await configForClient(clientId).catch(() => null))?.get("BING_WEBMASTER_API_KEY");
+  return k ? cleanKey(k) : null;
+}
 
 async function call<T>(key: string, method: string, params: Record<string, string> = {}): Promise<T> {
   const url = new URL(`${BASE}/${method}`);

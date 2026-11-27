@@ -1,13 +1,14 @@
 import "server-only";
 import { z } from "zod";
 import { crawlBlogNow, fetchBlogKeywordsNow, syncBlogNow } from "@/app/(dashboard)/blog/actions";
+import { aiUnavailable } from "@/lib/ai/claude";
 import { claudeBudget } from "@/lib/ai/usage";
 import { shiftDays, todayIn } from "@/lib/analytics/range";
 import { keywordCost, POST_KW_EST } from "@/lib/blog/keywords";
 import { analyseBlog, ISSUE_ORDER, ISSUES, loadBlog, loadBlogPerformance, type BlogAnalysis, type BlogPerf, type BlogPost, type IssueKey } from "@/lib/blog/load";
 import { pathOf } from "@/lib/blog/parse";
 import { auditEstimate, DEFAULT_AUDIT_PAGES, loadAudit } from "@/lib/dataforseo/audit";
-import { dfsConfigured } from "@/lib/dataforseo/client";
+import { DFS_NOT_CONFIGURED, dfsConfigured } from "@/lib/dataforseo/client";
 import { bullets, fromAction, json, plural, read, ToolError, write, type NovaCtx, type NovaTool } from "../../kit";
 import { ago, clip, compactObj, dfsLeftToday, fit, usd, websiteOf, when } from "./shared";
 
@@ -99,7 +100,7 @@ async function storedPosts(ctx: NovaCtx) {
  * `pending`: stored posts not read yet (null = only newly found posts are read).
  */
 async function claudeLine(ctx: NovaCtx, posts: Awaited<ReturnType<typeof storedPosts>>, pending: number | null) {
-  if (!process.env.ANTHROPIC_API_KEY) return "Claude isn't configured, so places and keywords aren't read (posts are still stored).";
+  if (await aiUnavailable(ctx.client.id)) return "Claude isn't set up for this organization, so places and keywords aren't read (posts are still stored).";
   const b = await claudeBudget(ctx.admin, ctx.client.id).catch(() => null);
   if (b && b.left <= 0) return `Reading posts with Claude is paused: this month's Claude budget (${usd(b.budget)}) is used up. Posts are still stored.`;
   const paid = posts.map((p) => Number(p.geo_cost ?? 0)).filter((c) => c > 0);
@@ -207,7 +208,7 @@ export const blogTools: NovaTool[] = [
       }
 
       if (i.mode === "keywords_new" || i.mode === "keywords_all") {
-        if (!dfsConfigured()) return { error: "DataForSEO isn't configured (Integrations), so keywords can't be fetched." };
+        if (!(await dfsConfigured(ctx.client.id))) return { error: `${DFS_NOT_CONFIGURED} Until then keywords can't be fetched.` };
         if (!posts.length) return { error: "No blog posts are stored yet: read the blog first (mode read)." };
         const all = i.mode === "keywords_all";
         // the same selection refreshPostKeywords() makes
@@ -267,7 +268,7 @@ export const blogTools: NovaTool[] = [
           expectSeconds: 120,
         };
       }
-      if (!dfsConfigured()) return { error: "DataForSEO isn't configured (Integrations), so a site crawl can't be started." };
+      if (!(await dfsConfigured(ctx.client.id))) return { error: `${DFS_NOT_CONFIGURED} Until then a site crawl can't be started.` };
       const est = auditEstimate(DEFAULT_AUDIT_PAGES);
       const { left } = await dfsLeftToday(ctx.admin, ctx.client.id);
       if (left < est) return { error: `Starting a crawl costs about ${usd(est)}, but only ${usd(left)} of today's DataForSEO budget is left for this client. Try again tomorrow or raise the budget on Integrations.` };

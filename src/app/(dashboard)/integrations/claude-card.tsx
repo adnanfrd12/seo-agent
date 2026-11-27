@@ -1,5 +1,6 @@
 import Link from "next/link";
 import { StackedColumns } from "@/components/charts/ops-charts";
+import { aiUnavailable } from "@/lib/ai/claude";
 import { claudeUsage } from "@/lib/ai/usage";
 import { clientSettings } from "@/lib/aiqw/run";
 import { MODELS } from "@/lib/aiqw/settings";
@@ -11,7 +12,9 @@ const modelName = (id: string) => (id in MODELS ? MODELS[id as keyof typeof MODE
 
 /** Claude (Anthropic API): the model in use, the monthly budget, and spend in total, this month, today and by feature. */
 export async function ClaudeCard({ canEdit, clientId, timezone }: { canEdit: boolean; clientId: string; timezone: string }) {
-  const configured = Boolean(process.env.ANTHROPIC_API_KEY?.trim());
+  // the client's organization's own Anthropic key (Settings → Integrations)
+  const aiOff = await aiUnavailable(clientId);
+  const configured = !aiOff;
   const admin = canEdit && configured ? createAdminClient() : null;
   const [settingsRow, usage, budgetUsed] = admin
     ? await Promise.all([clientSettings(admin, clientId), claudeUsage(admin, clientId, timezone), claudeMonthSpend(admin, clientId)])
@@ -29,8 +32,8 @@ export async function ClaudeCard({ canEdit, clientId, timezone }: { canEdit: boo
         </div>
         <span className={configured ? "text-sm font-medium text-positive" : "text-sm text-negative"}>{configured ? "Connected" : "Not configured"}</span>
       </div>
-      {!configured ? (
-        <p className="mt-3 text-sm text-muted">Add ANTHROPIC_API_KEY (from the Anthropic Console) to the environment and redeploy.</p>
+      {aiOff ? (
+        <p className="mt-3 text-sm text-muted">{aiOff}</p>
       ) : !canEdit || !usage || !settings ? (
         <p className="mt-3 text-sm text-muted">Model and spend details are visible to owners and admins.</p>
       ) : (

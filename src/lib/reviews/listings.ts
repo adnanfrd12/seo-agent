@@ -89,7 +89,7 @@ export async function openPage(ctx: Ctx, url: string, label: string, meter: Mete
   await assertBudget(ctx.admin, ctx.clientId, CRAWL_EST, ctx.source);
   let res: Awaited<ReturnType<typeof dfsPost>>;
   try {
-    res = await dfsPost("/on_page/instant_pages", { url, enable_javascript: true, enable_browser_rendering: true, store_raw_html: true }, { timeoutMs: 110_000, attempts: 1 });
+    res = await dfsPost(ctx.clientId, "/on_page/instant_pages", { url, enable_javascript: true, enable_browser_rendering: true, store_raw_html: true }, { timeoutMs: 110_000, attempts: 1 });
   } catch (e) {
     if (e instanceof DfsError && (e.kind === "payment" || e.kind === "auth" || e.kind === "config")) throw e;
     return { status: null, html: "", error: /too long|50402|timeout/i.test(e instanceof Error ? e.message : "") ? "no answer in time" : "the crawler couldn't open it" };
@@ -98,7 +98,7 @@ export async function openPage(ctx: Ctx, url: string, label: string, meter: Mete
   const status = num(arr(res.result?.items)[0]?.status_code);
   if (status !== 200 || !res.id) return { status, html: "" };
   try {
-    const raw = await dfsPost("/on_page/raw_html", { id: res.id, url }, { timeoutMs: 60_000, attempts: 2 });
+    const raw = await dfsPost(ctx.clientId, "/on_page/raw_html", { id: res.id, url }, { timeoutMs: 60_000, attempts: 2 });
     const html = str(obj(raw.result?.items).html) ?? "";
     return html ? { status, html } : { status, html: "", error: "the page came back empty" };
   } catch { return { status, html: "", error: "the page's HTML couldn't be fetched" }; }
@@ -294,7 +294,7 @@ const fromCrumb = (c: string) => (!c || /\.\.\.|â€¦/.test(c) ? null : c.split("â
 
 async function googleFind(ctx: Ctx, nap: Nap, p: (typeof GOOGLE_FIND)[number], meter: Meter): Promise<FoundLink | null> {
   await assertBudget(ctx.admin, ctx.clientId, SEARCH_EST, ctx.source);
-  const { result, cost } = await dfsPost("/serp/google/organic/live/advanced", {
+  const { result, cost } = await dfsPost(ctx.clientId, "/serp/google/organic/live/advanced", {
     keyword: `"${nap.name}" ${p.label}${nap.city ? ` ${nap.city}` : ""}`, location_name: "United States", language_code: "en", depth: 10,
   }, { attempts: 3 });
   if (cost) { meter.cost += cost; await recordSpend(ctx.admin, ctx.clientId, `listing_find_${p.key}`, cost, ctx.source); }

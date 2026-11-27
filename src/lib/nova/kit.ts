@@ -29,6 +29,10 @@ export interface NovaCtx {
   brief: () => Promise<Brief>;
   /** the dashboard page the user has open while chatting */
   page: { path: string; label: string; text?: string } | null;
+  /** the organization's page access (null/undefined = every page): tools outside it aren't offered or run (./pages) */
+  enabledPages?: readonly string[] | null;
+  /** the user's role in the client's organization (owner | admin | member | viewer), null when unknown */
+  orgRole?: string | null;
 }
 
 /** What `execute` gets when the user confirms. The request also carries the user's session, so the dashboard's

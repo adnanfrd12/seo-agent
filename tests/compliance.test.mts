@@ -66,17 +66,20 @@ test("status lookups are rate limited per IP", () => {
 /* ------------------------------------------------------------------ endpoints (fake deletion service) */
 function fakeDeps() {
   const calls: string[] = [];
-  return { calls, deps: async () => ({
-    deauthorize: async (p: string, uid: string) => { calls.push(`deauth:${p}:${uid}`); return 1; },
-    deletionRequest: async (p: string, uid: string) => { calls.push(`delete:${p}:${uid}`); return "ABCDEFGHJKLM"; },
+  const orgs: string[][] = [];
+  return { calls, orgs, deps: async () => ({
+    deauthorize: async (p: string, uid: string, orgIds: string[]) => { calls.push(`deauth:${p}:${uid}`); orgs.push(orgIds); return 1; },
+    deletionRequest: async (p: string, uid: string, orgIds: string[]) => { calls.push(`delete:${p}:${uid}`); orgs.push(orgIds); return "ABCDEFGHJKLM"; },
   }) };
 }
+/** each organization's own app secret, as the routes read them from the organization credentials */
+const secrets = (...list: [orgId: string, secret: string][]) => async () => list.map(([orgId, secret]) => ({ orgId, secret }));
 const form = (sr: string) => new Request("https://x.test/hook", { method: "POST", headers: { "content-type": "application/x-www-form-urlencoded" }, body: new URLSearchParams({ signed_request: sr }).toString() });
 
 for (const [platform, kind] of [["facebook_pages", "deauthorize"], ["facebook_pages", "delete"], ["instagram", "deauthorize"], ["instagram", "delete"], ["threads", "deauthorize"], ["threads", "delete"]] as const) {
   test(`Meta ${platform} ${kind}: unsigned → 400, signed → handled`, async () => {
     const f = fakeDeps();
-    const POST = metaRoute({ platform, kind, secret: () => SECRET, deps: f.deps });
+    const POST = metaRoute({ platform, kind, secrets: secrets(["org-1", SECRET]), deps: f.deps });
     assert.equal((await POST(new Request("https://x.test/hook", { method: "POST" }))).status, 400);
     assert.equal((await POST(form(makeSignedRequest({ algorithm: "HMAC-SHA256", user_id: "42" }, "wrong")))).status, 400);
     const res = await POST(form(makeSignedRequest({ algorithm: "HMAC-SHA256", user_id: "42" }, SECRET)));
@@ -91,15 +94,15 @@ for (const [platform, kind] of [["facebook_pages", "deauthorize"], ["facebook_pa
   });
 }
 
-test("Meta endpoint rejects everything when the app secret is missing", async () => {
-  const POST = metaRoute({ platform: "threads", kind: "delete", secret: () => undefined, deps: fakeDeps().deps });
+test("Meta endpoint rejects everything when no organization has the app secret", async () => {
+  const POST = metaRoute({ platform: "threads", kind: "delete", secrets: secrets(), deps: fakeDeps().deps });
   assert.equal((await POST(form(makeSignedRequest({ algorithm: "HMAC-SHA256", user_id: "42" }, SECRET)))).status, 400);
 });
 
 test("TikTok webhook: unsigned → 400, authorization.removed → deletion, other events → 200 only", async () => {
   const f = fakeDeps();
   const now = 1_800_000_000;
-  const POST = tiktokRoute({ secret: () => SECRET, deps: f.deps, now: () => now });
+  const POST = tiktokRoute({ secrets: secrets(["org-1", SECRET]), deps: f.deps, now: () => now });
   const send = (body: string, sig: string | null) => POST(new Request("https://x.test/tt", { method: "POST", headers: sig ? { "TikTok-Signature": sig } : {}, body }));
   const removed = JSON.stringify({ client_key: "k", event: "authorization.removed", create_time: now, user_openid: "open-1", content: "{\"reason\":1}" });
   assert.equal((await send(removed, null)).status, 400);
@@ -108,6 +111,20 @@ test("TikTok webhook: unsigned → 400, authorization.removed → deletion, othe
   const other = JSON.stringify({ event: "video.publish.completed", user_openid: "open-1" });
   assert.equal((await send(other, signTikTok(other, SECRET, now))).status, 200);
   assert.deepEqual(f.calls, ["delete:tiktok:open-1"]);
+});
+
+test("platform notifications act only within the organization whose app secret signed them", async () => {
+  const f = fakeDeps();
+  const POST = metaRoute({ platform: "instagram", kind: "deauthorize", secrets: secrets(["org-a", "secret-a"], ["org-b", "secret-b"]), deps: f.deps });
+  assert.equal((await POST(form(makeSignedRequest({ algorithm: "HMAC-SHA256", user_id: "7" }, "secret-b")))).status, 200);
+  assert.deepEqual(f.orgs, [["org-b"]]);
+  assert.equal((await POST(form(makeSignedRequest({ algorithm: "HMAC-SHA256", user_id: "7" }, "secret-c")))).status, 400, "another app's secret");
+  const t = fakeDeps();
+  const now = 1_800_000_000;
+  const TT = tiktokRoute({ secrets: secrets(["org-a", "secret-a"], ["org-b", "secret-b"]), deps: t.deps, now: () => now });
+  const body = JSON.stringify({ event: "authorization.removed", user_openid: "open-9" });
+  assert.equal((await TT(new Request("https://x.test/tt", { method: "POST", headers: { "TikTok-Signature": signTikTok(body, "secret-a", now) }, body }))).status, 200);
+  assert.deepEqual(t.orgs, [["org-a"]]);
 });
 
 /* ------------------------------------------------------------------ registry */

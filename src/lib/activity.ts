@@ -17,6 +17,7 @@ export async function touchClient(admin: SupabaseClient, clientId: string) {
 /** Clients opened within the last ACTIVE_DAYS days: the ones that get daily competitor analysis. */
 export async function activeClientIds(admin: SupabaseClient): Promise<Set<string>> {
   const since = new Date(Date.now() - ACTIVE_DAYS * 86_400_000).toISOString();
-  const { data } = await admin.from("client_activity").select("client_id").gte("last_seen_at", since).limit(5000);
+  // archived clients are paused: none of the scheduled work runs for them until they're restored
+  const { data } = await admin.from("client_activity").select("client_id, clients!inner(archived_at)").gte("last_seen_at", since).is("clients.archived_at", null).limit(5000);
   return new Set((data ?? []).map((r) => r.client_id as string));
 }

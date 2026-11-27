@@ -1,6 +1,7 @@
 import "server-only";
+import type Anthropic from "@anthropic-ai/sdk";
 import type { SupabaseClient } from "@supabase/supabase-js";
-import { aiErrorMessage } from "@/lib/ai/claude";
+import { aiErrorMessage, anthropicFor } from "@/lib/ai/claude";
 import { claudeBudget, recordClaudeUse } from "@/lib/ai/usage";
 import { loadAudit } from "@/lib/dataforseo/audit";
 import { localIdentity } from "@/lib/dataforseo/local";
@@ -52,8 +53,10 @@ type SyncOpts = { deadline?: number; force?: boolean; geo?: boolean; maxCost?: n
 
 export async function syncBlog(admin: SupabaseClient, clientId: string, opts: SyncOpts = {}): Promise<BlogRun> {
   const run: BlogRun = { source: null, listed: 0, fetched: 0, removed: 0, geoRead: 0, geoPending: 0, cost: 0, errors: [], stopped: null };
+  // posts are read with the client's organization's own Anthropic key; without one they still sync, unread
+  const ai = opts.geo === false ? null : await anthropicFor(clientId).catch(() => null);
   // reading posts with Claude counts toward the client's monthly Claude budget: never spend more than is left
-  if (opts.geo !== false && process.env.ANTHROPIC_API_KEY) {
+  if (ai) {
     const b = await claudeBudget(admin, clientId).catch(() => null);
     if (b && b.left <= 0) {
       opts = { ...opts, geo: false };
@@ -61,14 +64,14 @@ export async function syncBlog(admin: SupabaseClient, clientId: string, opts: Sy
     } else if (b) opts = { ...opts, maxCost: Math.min(opts.maxCost ?? RUN_COST_LIMIT, b.left) };
   }
   try {
-    return await syncInto(run, admin, clientId, opts);
+    return await syncInto(run, admin, clientId, opts, ai);
   } finally {
     // whatever was read before an early stop or error was still paid for
     await recordClaudeUse(admin, clientId, "blog_geo", GEO_MODEL, run.cost, Math.max(1, run.geoRead));
   }
 }
 
-async function syncInto(run: BlogRun, admin: SupabaseClient, clientId: string, opts: SyncOpts): Promise<BlogRun> {
+async function syncInto(run: BlogRun, admin: SupabaseClient, clientId: string, opts: SyncOpts, ai: Anthropic | null): Promise<BlogRun> {
   const deadline = opts.deadline ?? Date.now() + 240_000;
   const maxCost = opts.maxCost ?? RUN_COST_LIMIT;
   const target = await resolveTarget(admin, clientId);
@@ -85,7 +88,7 @@ async function syncInto(run: BlogRun, admin: SupabaseClient, clientId: string, o
     return run;
   }
   const existing = new Map(((ex.data ?? []) as Existing[]).map((r) => [r.url, r]));
-  const readGeoOn = opts.geo !== false && Boolean(process.env.ANTHROPIC_API_KEY);
+  const readGeoOn = opts.geo !== false && ai !== null;
 
   // ------------------------------------------------------------ list every post
   let site: SiteIndex = { host, posts: new Set(), services: new Map(), pages: new Set() };
@@ -155,11 +158,11 @@ async function syncInto(run: BlogRun, admin: SupabaseClient, clientId: string, o
       return readGeoOn && !(old && old.geo_hash === contentHash(r.html) && old.geo?.model);
     });
     await pool(needGeo, 5, async (r) => {
-      if (run.cost >= maxCost || Date.now() > deadline - 15_000) return;
+      if (!ai || run.cost >= maxCost || Date.now() > deadline - 15_000) return;
       const text = htmlToText(r.html);
       const map = parseMap(r.html, [], null);
       try {
-        const g = await readGeo({ title: r.title, text, place: map?.place_name ?? null, city: me?.city ?? null });
+        const g = await readGeo(ai, { title: r.title, text, place: map?.place_name ?? null, city: me?.city ?? null });
         reads.set(r.url, g);
         run.cost += g.cost;
         run.geoRead++;

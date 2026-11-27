@@ -1,7 +1,6 @@
 import "server-only";
 import Anthropic from "@anthropic-ai/sdk";
 import { zodOutputFormat } from "@anthropic-ai/sdk/helpers/zod";
-import { anthropic } from "@/lib/ai/claude";
 import { userContent } from "./prompt";
 import { QuickWinsSchema, RepairSchema, type QuickWinItem, type QuickWinsOutput } from "./schema";
 import { callCost, type AiQwSettings } from "./settings";
@@ -10,7 +9,8 @@ import type { CallLog, Candidate } from "./types";
 /**
  * Claude calls of the quick wins engine. The system prompt (rules + business profile) is the same for every chunk and
  * run, so it carries cache_control; everything that varies (candidates) is in the user message. Claude Opus 5.5 always
- * thinks adaptively: no thinking parameter is sent, only output_config.effort.
+ * thinks adaptively: no thinking parameter is sent, only output_config.effort. Every call takes the Claude client of
+ * the client's organization (anthropicFor in src/lib/ai/claude.ts), so each organization pays with its own key.
  */
 const MAX_TOKENS = 16000;
 /** About 12 candidates per request keeps an answer (about 900 output tokens per kept item) well under max_tokens. */
@@ -45,9 +45,9 @@ export function chunkCandidates(cands: Candidate[], size = CHUNK): Candidate[][]
 
 export interface ChunkResult { output: QuickWinsOutput | null; logs: CallLog[]; error: string | null }
 
-async function once(s: AiQwSettings, system: Sys, chunk: Candidate[], idx: number): Promise<{ out: QuickWinsOutput | null; stop: string | null; log: CallLog; refusal?: string }> {
+async function once(ai: Anthropic, s: AiQwSettings, system: Sys, chunk: Candidate[], idx: number): Promise<{ out: QuickWinsOutput | null; stop: string | null; log: CallLog; refusal?: string }> {
   const t0 = Date.now();
-  const res = await anthropic().messages.parse({
+  const res = await ai.messages.parse({
     model: s.model,
     max_tokens: MAX_TOKENS,
     output_config: { effort: s.effort, format: zodOutputFormat(QuickWinsSchema) },
@@ -60,11 +60,11 @@ async function once(s: AiQwSettings, system: Sys, chunk: Candidate[], idx: numbe
 }
 
 /** One chunk: retried once when the JSON doesn't parse, split in two when it hits max_tokens, skipped on a refusal. */
-export async function runChunk(s: AiQwSettings, system: Sys, chunk: Candidate[], idx: number, depth = 0): Promise<ChunkResult> {
+export async function runChunk(ai: Anthropic, s: AiQwSettings, system: Sys, chunk: Candidate[], idx: number, depth = 0): Promise<ChunkResult> {
   const logs: CallLog[] = [];
   for (let attempt = 0; attempt < 2; attempt++) {
     let r;
-    try { r = await once(s, system, chunk, idx); }
+    try { r = await once(ai, s, system, chunk, idx); }
     catch (e) {
       // the SDK already retried 429/5xx twice; one more slow retry for rate limits, then give up on this chunk
       if (e instanceof Anthropic.RateLimitError && attempt === 0) { await new Promise((ok) => setTimeout(ok, 20_000)); continue; }
@@ -75,7 +75,7 @@ export async function runChunk(s: AiQwSettings, system: Sys, chunk: Candidate[],
     if (r.stop === "max_tokens") {
       if (chunk.length < 2 || depth > 2) return { output: null, logs, error: "The answer for this chunk was too long." };
       const half = Math.ceil(chunk.length / 2);
-      const [a, b] = await Promise.all([runChunk(s, system, chunk.slice(0, half), idx, depth + 1), runChunk(s, system, chunk.slice(half), idx, depth + 1)]);
+      const [a, b] = await Promise.all([runChunk(ai, s, system, chunk.slice(0, half), idx, depth + 1), runChunk(ai, s, system, chunk.slice(half), idx, depth + 1)]);
       const items = [...(a.output?.items ?? []), ...(b.output?.items ?? [])], merged = [...(a.output?.merged ?? []), ...(b.output?.merged ?? [])];
       return { output: items.length ? { items, merged } : null, logs: [...logs, ...a.logs, ...b.logs], error: a.error ?? b.error };
     }
@@ -85,10 +85,10 @@ export async function runChunk(s: AiQwSettings, system: Sys, chunk: Candidate[],
 }
 
 /** Re-asks Claude for one item with the validation errors. */
-export async function repairItem(s: AiQwSettings, system: Sys, c: Candidate, item: QuickWinItem, errors: string[]): Promise<{ item: QuickWinItem | null; log: CallLog | null }> {
+export async function repairItem(ai: Anthropic, s: AiQwSettings, system: Sys, c: Candidate, item: QuickWinItem, errors: string[]): Promise<{ item: QuickWinItem | null; log: CallLog | null }> {
   const t0 = Date.now();
   try {
-    const res = await anthropic().messages.parse({
+    const res = await ai.messages.parse({
       model: s.model, max_tokens: 4000,
       output_config: { effort: "low", format: zodOutputFormat(RepairSchema) },
       system,
@@ -115,9 +115,9 @@ export async function pool<T, R>(items: T[], limit: number, fn: (x: T, i: number
 export const batchCustomId = (runId: string, chunk: number) => `${runId.replace(/[^a-zA-Z0-9_]/g, "_").slice(0, 56)}-${chunk}`;
 
 /** One batch request per chunk; custom_id = batchCustomId(runId, chunkIndex) (the API allows only letters, digits, "_" and "-"). Batch requests don't stream. */
-export async function submitBatch(s: AiQwSettings, systemText: string, runId: string, chunks: Candidate[][]): Promise<string> {
+export async function submitBatch(ai: Anthropic, s: AiQwSettings, systemText: string, runId: string, chunks: Candidate[][]): Promise<string> {
   const fmt = zodOutputFormat(QuickWinsSchema);
-  const batch = await anthropic().messages.batches.create({
+  const batch = await ai.messages.batches.create({
     requests: chunks.map((chunk, i) => ({
       custom_id: batchCustomId(runId, i),
       params: {
@@ -131,12 +131,12 @@ export async function submitBatch(s: AiQwSettings, systemText: string, runId: st
   return batch.id;
 }
 
-/** null while still processing; else each chunk's output by custom_id (never by position). */
-export async function collectBatch(s: AiQwSettings, batchId: string): Promise<Map<string, ChunkResult> | null> {
-  const b = await anthropic().messages.batches.retrieve(batchId);
+/** null while still processing; else each chunk's output by custom_id (never by position). A batch is read with the key that submitted it. */
+export async function collectBatch(ai: Anthropic, s: AiQwSettings, batchId: string): Promise<Map<string, ChunkResult> | null> {
+  const b = await ai.messages.batches.retrieve(batchId);
   if (b.processing_status !== "ended") return null;
   const out = new Map<string, ChunkResult>();
-  for await (const r of await anthropic().messages.batches.results(batchId)) {
+  for await (const r of await ai.messages.batches.results(batchId)) {
     const idx = Number(r.custom_id.split("-").pop());
     if (r.result.type !== "succeeded") { out.set(r.custom_id, { output: null, logs: [], error: `Batch request ${r.result.type}` }); continue; }
     const m = r.result.message, u = m.usage;
@@ -151,7 +151,7 @@ export async function collectBatch(s: AiQwSettings, batchId: string): Promise<Ma
 }
 
 /** "ok" test for the Settings page. */
-export async function pingClaude(s: AiQwSettings): Promise<string> {
-  const res = await anthropic().messages.create({ model: s.model, max_tokens: 1000, output_config: { effort: "low" }, messages: [{ role: "user", content: "Reply with the single word: ok" }] });
+export async function pingClaude(ai: Anthropic, s: AiQwSettings): Promise<string> {
+  const res = await ai.messages.create({ model: s.model, max_tokens: 1000, output_config: { effort: "low" }, messages: [{ role: "user", content: "Reply with the single word: ok" }] });
   return res.content.filter((c): c is Anthropic.TextBlock => c.type === "text").map((c) => c.text).join("").trim();
 }

@@ -6,6 +6,7 @@ import { TabHeader } from "@/components/dashboard/tab-header";
 import { CoachRun } from "@/components/research/coach-run";
 import { Tabs } from "@/components/research/tabs";
 import { getSession } from "@/lib/analytics/client-context";
+import { aiUnavailable } from "@/lib/ai/claude";
 import { COACH_MODEL, loadCoach, type CoachMode, type CoachOutput, type CoachResult } from "@/lib/ai/coach";
 import { createClient } from "@/lib/supabase/server";
 
@@ -107,7 +108,8 @@ export default async function CoachPage() {
   if (!client) return null;
   const canEdit = ["owner", "admin"].includes(client.role);
   const header = <TabHeader source={null} title="SEO Coach" description="Guided SEO answers from this site's own data." />;
-  if (!process.env.ANTHROPIC_API_KEY) return <>{header}<EmptyState title="AI isn't configured" body="Add ANTHROPIC_API_KEY to the environment (and Vercel), then redeploy." /></>;
+  const aiOff = await aiUnavailable(client.id);
+  if (aiOff) return <>{header}<EmptyState title="AI isn't configured" body={aiOff} /></>;
   const stored = await loadCoach(await createClient(), client.id);
   const view = (m: CoachMode) => {
     const r = stored[m];

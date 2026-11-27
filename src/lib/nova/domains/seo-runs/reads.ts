@@ -10,7 +10,7 @@ import { GRID_POINT_EST, gridRivals, loadLocal, pollReviews, PROFILE_EST, REVIEW
 import { marketLabel } from "@/lib/dataforseo/locations";
 import { estimate, KW_TTL_DAYS, SPECS, TIER1, TIER2, type Row } from "@/lib/dataforseo/research";
 import { forgetAll } from "@/lib/memo";
-import { AUDITS, auditLabel, loadBundle, sxConfigured } from "@/lib/seosignalx/mcp";
+import { AUDITS, auditLabel, loadBundle, SX_NOT_CONFIGURED, sxConfigured } from "@/lib/seosignalx/mcp";
 import { scores } from "@/lib/seosignalx/view";
 import { loadTechChecks, type TechPage } from "@/lib/technical/checks";
 import { TOOLS } from "@/lib/toolkit/tools";
@@ -35,7 +35,7 @@ type Extra = { endpoint: string; params_hash: string; fetched_at: string; total:
 
 async function dataStatus(ctx: NovaCtx) {
   const id = ctx.client.id;
-  const configured = dfsConfigured();
+  const configured = await dfsConfigured(id);
   const [t, metaQ, extraQ, snapQ, autoRow] = await Promise.all([
     peekTarget(ctx.admin, id),
     ctx.admin.from("dfs_cache").select("endpoint, params_hash, params, fetched_at, row_count, cost").eq("client_id", id).in("endpoint", [...RESEARCH_ENDPOINTS, ...OTHER_ENDPOINTS]).order("fetched_at", { ascending: false }).limit(1500),
@@ -78,7 +78,7 @@ async function dataStatus(ctx: NovaCtx) {
     { data: "Lighthouse lab scores", updated: day(lh?.fetched_at), days_old: daysOld(lh?.fetched_at), tests: lh?.row_count ?? null, refresh: `run_site_checks lighthouse, ≈${money(3 * 2 * LH_EST)} for 3 pages` },
     { data: "real-user Core Web Vitals (Chrome UX Report)", updated: day(crux?.fetched_at), days_old: daysOld(crux?.fetched_at), ok: crux ? Boolean(crux.source) : null, error: cut(crux?.err, 120), refresh: "run_site_checks core_web_vitals, free; weekly by itself" },
     { data: "technical checks (robots.txt, sitemaps, HTTPS, ~25 pages)", ...when(["tech_checks"]), pages: meta.find((m) => m.endpoint === "tech_checks")?.row_count ?? null, refresh: "run_site_checks technical_checks, free; weekly by itself" },
-    { data: "SEOSignalX audits", configured: sxConfigured(), ...when(["seosignalx"]), project: sx?.project ?? null, error: cut(sx?.err, 120), refresh: "sync_seosignalx, free; also refreshed every 6 hours while its pages are opened" },
+    { data: "SEOSignalX audits", configured: await sxConfigured(id), ...when(["seosignalx"]), project: sx?.project ?? null, error: cut(sx?.err, 120), refresh: "sync_seosignalx, free; also refreshed every 6 hours while its pages are opened" },
   ];
 
   // newest grid per keyword and size (rows are newest first)
@@ -100,11 +100,17 @@ async function dataStatus(ctx: NovaCtx) {
 
   let spending: Record<string, unknown> = { configured };
   if (configured && ctx.canEdit) {
-    const [b, balance] = await Promise.all([budgetNow(ctx.admin, id), dfsBalance()]);
+    // the organization's totals and account balance are for its owners and admins (as on the Integrations page);
+    // a client admin sees this client's own figures
+    const orgWide = ctx.orgRole === "owner" || ctx.orgRole === "admin";
+    const [b, balance] = await Promise.all([budgetNow(ctx.admin, id), orgWide ? dfsBalance(id) : Promise.resolve(null)]);
     spending = {
-      configured, daily_limit: b.cap, spent_today_all_clients: b.all == null ? "tracking unavailable" : round(b.all, 3), this_client_today: b.mine == null ? null : round(b.mine, 3), per_client_cap: round(b.clientCap, 2),
-      left_for_this_client_today: round(b.left, 3), scheduled_refreshes_may_use: round(b.cap * AUTO_SHARE, 2), automatic_weekly_refresh: b.autoRefresh, account_balance: balance == null ? null : round(balance, 2),
-      resets: "midnight UTC", change_with: "update_dataforseo_settings",
+      configured, daily_limit: b.cap, this_client_today: b.mine == null ? null : round(b.mine, 3), per_client_cap: round(b.clientCap, 2),
+      left_for_this_client_today: round(b.left, 3), scheduled_refreshes_may_use: round(b.cap * AUTO_SHARE, 2), automatic_weekly_refresh: b.autoRefresh,
+      resets: "midnight UTC",
+      ...(orgWide
+        ? { spent_today_all_clients: b.all == null ? "tracking unavailable" : round(b.all, 3), account_balance: balance == null ? null : round(balance, 2), change_with: "update_dataforseo_settings" }
+        : { organization_totals: "visible to organization owners and admins only" }),
     };
   } else if (configured) spending = { configured, spend: "visible to owners and admins only" };
 
@@ -246,7 +252,7 @@ async function auditSection(ctx: Ctx, a: { section: string; issue?: string }): P
     case "audit": case "audit_pages": {
       let { result, task } = await loadAudit(ctx.admin, id);
       let changed = false;
-      if (task?.data.status === "crawling" && dfsConfigured()) {
+      if (task?.data.status === "crawling" && (await dfsConfigured(id))) {
         // the same free progress check the Site Audit page makes while a crawl runs; it collects a finished crawl
         const s = await pollAudit(ctx.admin, id).catch(() => null);
         if (s && s.state !== "crawling") { changed = true; ({ result, task } = await loadAudit(ctx.admin, id)); }
@@ -327,7 +333,7 @@ async function auditSection(ctx: Ctx, a: { section: string; issue?: string }): P
       };
     }
     default: {
-      if (!sxConfigured()) return { content: json({ seosignalx: null, note: "SEOSignalX isn't connected on the server (SEOSIGNALX_MCP_TOKEN)." }), summary: "Checked SEOSignalX" };
+      if (!(await sxConfigured(id))) return { content: json({ seosignalx: null, note: SX_NOT_CONFIGURED }), summary: "Checked SEOSignalX" };
       const { bundle, fetchedAt } = await loadBundle(ctx.admin, id);
       if (!bundle) return { content: json({ seosignalx: null, note: "Not synced yet. sync_seosignalx reads it (free)." }), summary: "Checked SEOSignalX" };
       const sc = scores(bundle);
@@ -357,7 +363,7 @@ async function auditSection(ctx: Ctx, a: { section: string; issue?: string }): P
 async function localSection(ctx: Ctx, section: string): Promise<{ content: string; changed: boolean }> {
   const id = ctx.client.id;
   let changed = false;
-  if (dfsConfigured()) {
+  if (await dfsConfigured(id)) {
     // the free collection checks the Local SEO page makes while review / post collections are running
     const { data: pend } = await ctx.admin.from("dfs_cache").select("endpoint, status:data->>status").eq("client_id", id).in("endpoint", ["reviews_task", "gbp_posts"]);
     const waiting = (e: string) => (pend ?? []).some((r) => r.endpoint === e && r.status === "pending");
@@ -458,7 +464,7 @@ export const readTools: NovaTool[] = [
       const t = await peekTarget(ctx.admin, ctx.client.id);
       const m = marketOf(a.market, t?.location_code ?? 2840);
       const term = normSeed(a.seed);
-      const row = await storedSearch(ctx.admin, a.kind, term, m.code, m.lang, true);
+      const row = await storedSearch(ctx.admin, a.kind, term, m.code, m.lang, true, ctx.client.id);
       if (!row?.data) return json({ seed: term, kind: a.kind, market: m.label, stored: false, note: `Not researched yet for this market. run_keyword_research fetches it (about ${a.kind === "related" ? "$0.02" : "$0.03"}).` });
       const rows = row.data.rows.filter((r) => (a.min_volume == null || Number(r.volume ?? 0) >= a.min_volume) && (a.max_difficulty == null || (r.difficulty != null && Number(r.difficulty) <= a.max_difficulty)))
         .sort((x, y) => Number(y.volume ?? 0) - Number(x.volume ?? 0));

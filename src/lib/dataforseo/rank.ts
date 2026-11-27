@@ -139,7 +139,7 @@ export async function refreshKeywordMetrics(ctx: Ctx, target: Target, keywords: 
   const list = [...new Set(keywords.map((k) => k.keyword.toLowerCase()))].slice(0, 700);
   if (!list.length) return 0;
   await assertBudget(ctx.admin, ctx.clientId, 0.02, ctx.source);
-  const { result, cost } = await dfsPost("/dataforseo_labs/google/keyword_overview/live", { keywords: list, location_code: target.location_code, language_code: target.language_code });
+  const { result, cost } = await dfsPost(ctx.clientId, "/dataforseo_labs/google/keyword_overview/live", { keywords: list, location_code: target.location_code, language_code: target.language_code });
   await recordSpend(ctx.admin, ctx.clientId, "rank_metrics", cost, ctx.source);
   const at = new Date().toISOString().slice(0, 10);
   for (const it of arr(result?.items)) {
@@ -161,7 +161,7 @@ export async function checkKeyword(ctx: Ctx, target: Target, kw: RankKeyword, de
   const local = place?.lat != null && place.lng != null;
   const where = local ? { location_coordinate: `${place!.lat},${place!.lng},10` } : { location_code: kw.location_code };
   // the advanced result also carries the map pack, ads and AI Overview on the same page, at the same price
-  const { result, cost } = await dfsPost("/serp/google/organic/live/advanced", {
+  const { result, cost } = await dfsPost(ctx.clientId, "/serp/google/organic/live/advanced", {
     keyword: kw.keyword, ...where, language_code: kw.language_code, device: kw.device, depth,
   }, { timeoutMs: 110_000, attempts: 1 }); // a 100-result search can take over a minute; one attempt, so it is never billed twice
   await recordSpend(ctx.admin, ctx.clientId, "rank", cost, ctx.source);

@@ -2,6 +2,7 @@ import "server-only";
 import type { SupabaseClient } from "@supabase/supabase-js";
 import { GSC_SEARCH_TYPES, queryGsc, type GscSearchType } from "@/lib/composio/gsc";
 import type { AdapterContext, DateRange } from "@/lib/analytics/types";
+import { ConfigError } from "@/lib/org/config";
 import type { GscRow } from "@/lib/validation/gsc";
 import type { SyncResult } from "./types";
 
@@ -56,6 +57,7 @@ export async function syncGsc(
     try {
       written[name] = await run();
     } catch (e) {
+      if (e instanceof ConfigError) throw e; // the organization's Composio settings: every step would fail the same way
       const kind = kindOf(e);
       if (kind === "rate_limit") throw e; // the whole job is idempotent: retry it later with backoff
       if (kind === "auth") authError = e;

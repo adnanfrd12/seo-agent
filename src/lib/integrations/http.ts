@@ -39,16 +39,16 @@ export function errorResponse(err: unknown) {
     return NextResponse.json({ error: msg }, { status: 503 });
   }
   if (/Invalid API key|APIKey_InvalidAPIKey/i.test(msg)) {
-    console.error("integration route error: Composio rejected COMPOSIO_API_KEY");
+    console.error("integration route error: Composio rejected the API key");
     return NextResponse.json(
-      { error: "Composio rejected the API key. Check COMPOSIO_API_KEY in .env, then restart the server." },
+      { error: "Composio rejected the API key. An organization owner can update it in Settings → Integrations → Composio." },
       { status: 502 },
     );
   }
   if (/auth.?config|AuthConfig/i.test(msg) && /not.?found|404/i.test(msg)) {
     console.error("integration route error: Composio auth config not found");
     return NextResponse.json(
-      { error: "Composio could not find that auth config. Check COMPOSIO_AUTH_CONFIG_* belongs to the same project as the API key." },
+      { error: "Composio could not find that auth config. In Settings → Integrations → Composio, check the auth config IDs belong to the same Composio project as the API key." },
       { status: 502 },
     );
   }

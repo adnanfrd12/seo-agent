@@ -2,7 +2,12 @@ import { createServerClient } from "@supabase/ssr";
 import { NextResponse, type NextRequest } from "next/server";
 import { isRangePath } from "@/lib/analytics/range-paths";
 
-const PUBLIC_PREFIXES = ["/login", "/auth", "/api/cron", "/privacy", "/terms", "/data-deletion", "/platforms", "/api/platform-webhooks"];
+/** Same name as PATH_HEADER in lib/analytics/client-context.ts (not imported: that module is server-only). */
+const PATH_HEADER = "x-sa-path";
+
+// /invite: invitation links must open signed out (the page itself checks the token); /api/org/branding: public
+// logo/name/colours for a branded login page (no private fields)
+const PUBLIC_PREFIXES = ["/login", "/auth", "/api/cron", "/privacy", "/terms", "/data-deletion", "/platforms", "/api/platform-webhooks", "/invite", "/api/org/branding"];
 /** public without a login: the homepage, crawler files and the legal aliases below */
 const PUBLIC_EXACT = new Set(["/", "/robots.txt", "/sitemap.xml"]);
 /** old or common legal URLs, permanently (301) redirected to the current pages */
@@ -54,9 +59,13 @@ export async function proxy(request: NextRequest) {
     );
   }
 
+  // the path being rendered, for the page-access check of getSession() (layouts don't re-render on soft
+  // navigations, pages do). Always overwritten here, so a value sent by the browser is never trusted.
+  const path0 = request.nextUrl.pathname;
+  request.headers.set(PATH_HEADER, path0);
+
   // public pages (login, legal, homepage, webhooks, cron) need no session: skip the Supabase check entirely so
   // they're served without an extra round trip (the session is refreshed on the next dashboard request)
-  const path0 = request.nextUrl.pathname;
   if (PUBLIC_EXACT.has(path0) || PUBLIC_PREFIXES.some((p) => path0 === p || path0.startsWith(`${p}/`))) return NextResponse.next({ request });
 
   let response = NextResponse.next({ request });

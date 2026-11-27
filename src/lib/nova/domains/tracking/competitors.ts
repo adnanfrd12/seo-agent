@@ -4,7 +4,7 @@ import { refreshCompetitorExtrasNow } from "@/app/(dashboard)/competitors/action
 import { saveCompetitors, saveResearchTarget } from "@/app/(dashboard)/research-actions";
 import { ACTIVE_DAYS } from "@/lib/activity";
 import { getSettings } from "@/lib/dataforseo/budget";
-import { dfsConfigured } from "@/lib/dataforseo/client";
+import { DFS_NOT_CONFIGURED, dfsConfigured } from "@/lib/dataforseo/client";
 import { COMP_SPECS, EXTRAS_MAX, loadCompetitors, MAX_TRACKED, pickTracked, type SnapshotRow } from "@/lib/dataforseo/competitors";
 import { marketByCode, marketLabel } from "@/lib/dataforseo/locations";
 import { loadRankSettings } from "@/lib/dataforseo/rank";
@@ -62,7 +62,7 @@ export const tools: NovaTool[] = [
         ctx.admin.from("dfs_cache").select("endpoint, params, fetched_at").eq("client_id", ctx.client.id).in("endpoint", ["comp_history", "comp_pages"]).order("fetched_at", { ascending: false }).limit(60),
       ]);
       if (!target) throw new ToolError(NO_TARGET);
-      const off = await scheduleOff(ctx.admin, target);
+      const off = await scheduleOff(ctx.admin, ctx.client.id, target);
       const tracked = new Set(comp.tracked), removed = new Set(target.competitors_excluded.map(bare));
       const byDomain = new Map<string, SnapshotRow[]>();
       for (const s of comp.snapshots) byDomain.set(s.domain, [...(byDomain.get(s.domain) ?? []), s]);
@@ -111,10 +111,10 @@ export const tools: NovaTool[] = [
       mode: z.enum(["auto", "manual"]).optional().describe("auto = your picks plus the strongest overlapping sites; manual = only your picks"),
     }),
     async prepare(ctx, a) {
-      if (!dfsConfigured()) return { error: "DataForSEO isn't configured on the server, so competitors can't be changed." };
+      if (!(await dfsConfigured(ctx.client.id))) return { error: `${DFS_NOT_CONFIGURED} Until then competitors can't be changed.` };
       const [target, comp] = await Promise.all([readTarget(ctx.admin, ctx.client.id), loadCompetitors(ctx.admin, ctx.client.id)]);
       if (!target || !comp.target) return { error: NO_TARGET };
-      const off = await scheduleOff(ctx.admin, target);
+      const off = await scheduleOff(ctx.admin, ctx.client.id, target);
       const self = bare(target.domain);
       const bad: string[] = [];
       const norm = (list?: string[]) => uniq((list ?? []).map((raw) => { const d = cleanDomain(raw); if (!d) bad.push(raw); return d; }).filter((d): d is string => !!d));
@@ -181,7 +181,7 @@ export const tools: NovaTool[] = [
     description: `Fetch monthly link history and top pages for the first ${EXTRAS_MAX} tracked competitors, plus the client's own link history, now (paid DataForSEO, about ${money(COMP_SPECS.comp_history.est + COMP_SPECS.comp_pages.est)} per competitor). Parts under a week old are reused.`,
     schema: z.object({}),
     async prepare(ctx) {
-      if (!dfsConfigured()) return { error: "DataForSEO isn't configured on the server." };
+      if (!(await dfsConfigured(ctx.client.id))) return { error: DFS_NOT_CONFIGURED };
       const [target, comp, { data: rows }, budget] = await Promise.all([
         readTarget(ctx.admin, ctx.client.id), loadCompetitors(ctx.admin, ctx.client.id),
         ctx.admin.from("dfs_cache").select("endpoint, params, fetched_at").eq("client_id", ctx.client.id).in("endpoint", ["comp_history", "comp_pages"]),
@@ -222,13 +222,13 @@ export const tools: NovaTool[] = [
     description: "Turn the client's automatic research refresh on or off (scheduled rank checks, competitor analysis, backlink and keyword data, site audit, brand lookup). Changing the website or market isn't possible here because it deletes stored data; that is done on the Backlinks page.",
     schema: z.object({ auto_refresh: z.boolean() }),
     async prepare(ctx, a) {
-      if (!dfsConfigured()) return { error: "DataForSEO isn't configured on the server." };
+      if (!(await dfsConfigured(ctx.client.id))) return { error: DFS_NOT_CONFIGURED };
       const t = await readTarget(ctx.admin, ctx.client.id);
       if (!t) return { error: NO_TARGET };
       if (t.auto_refresh === a.auto_refresh) return { error: `Automatic research refresh is already ${a.auto_refresh ? "on" : "off"}.` };
       const problem = roundTripProblem(t);
       if (problem) return { error: problem };
-      const [{ schedule }, dfs] = await Promise.all([loadRankSettings(ctx.admin, ctx.client.id), getSettings(ctx.admin)]);
+      const [{ schedule }, dfs] = await Promise.all([loadRankSettings(ctx.admin, ctx.client.id), getSettings(ctx.admin, { clientId: ctx.client.id })]);
       return {
         title: `Turn automatic research refresh ${a.auto_refresh ? "on" : "off"}`,
         detail: [

@@ -69,7 +69,7 @@ export default async function BlogPage({ searchParams }: { searchParams: Promise
   ]));
   const sixtyDays = shiftDays(today, -60);
   const ownList = (p: (typeof blog.posts)[number]) => p.keywords?.dfs_source === "page";
-  const actions = canEdit ? <BlogSync dfs={dfsConfigured()} perPost={POST_KW_EST}
+  const actions = canEdit ? <BlogSync dfs={await dfsConfigured(client.id)} perPost={POST_KW_EST}
     newPosts={blog.posts.filter((p) => !ownList(p) && (p.published_date ?? "") >= sixtyDays).length} allPosts={blog.posts.filter((p) => !ownList(p)).length} /> : undefined;
   const header = (
     <TabHeader source={null} eyebrow="Your website" title="Blog Content"

@@ -8,7 +8,7 @@ import { clientSettings } from "@/lib/aiqw/run";
 import { DFS_FEATURES, EFFORTS, MODELS, type AiQwSettings, type BusinessProfile, type DfsFeature, type ModelId } from "@/lib/aiqw/settings";
 import { claudeMonthSpend } from "@/lib/aiqw/store";
 import { SOURCE_LABEL, SOURCES } from "@/lib/aiqw/types";
-import { dfsConfigured } from "@/lib/dataforseo/client";
+import { DFS_NOT_CONFIGURED, dfsConfigured } from "@/lib/dataforseo/client";
 import { bullets, fromAction, json, read, write, type NovaTool } from "../../kit";
 import { clip, storedSettings, usd } from "./util";
 
@@ -102,7 +102,7 @@ export const tools: NovaTool[] = [
           ...(usage ? { spend: { today: usd(usage.today), this_month_all_features: usd(usage.month), total: usd(usage.total), by_feature_all_time: usage.byFeature.slice(0, 10).map(([k, v]) => `${k}: ${usd(v)}`) } } : {}),
         },
         dataforseo: {
-          configured: dfsConfigured(), monthly_limit_for_quick_wins: usd(raw.dfsMonthlyBudget), spent_this_month: usd(dfs),
+          configured: await dfsConfigured(id), monthly_limit_for_quick_wins: usd(raw.dfsMonthlyBudget), spent_this_month: usd(dfs),
           features: Object.fromEntries(DFS_KEYS.map((k) => [k, `${onOff(raw.dfs[k])}: ${DFS_FEATURES[k]}`])),
           location: raw.locationName || "(empty: the research target's)", language: raw.languageCode || "(empty: the research target's)",
         },
@@ -148,7 +148,7 @@ export const tools: NovaTool[] = [
     async prepare(ctx) {
       const id = ctx.client.id;
       const [s, spent, src, kw] = await Promise.all([storedSettings(ctx.admin, id), dfsMonthSpend(ctx.admin, id, true), sourceStatus(ctx.admin, id), loadKw(ctx.admin, id)]);
-      if (!dfsConfigured()) return { error: "DataForSEO isn't configured on the server." };
+      if (!(await dfsConfigured(id))) return { error: DFS_NOT_CONFIGURED };
       if (!s.dfs.volume) return { error: "Search volume is switched off in the AI settings (DataForSEO features). Turn it on with update_ai_settings first." };
       if (spent >= s.dfsMonthlyBudget) return { error: `The monthly DataForSEO limit for quick wins is used (${usd(spent)} of ${usd(s.dfsMonthlyBudget)}). Raise it with update_ai_settings first.` };
       if (!src.gsc.ok) return { error: "Connect Search Console first (Integrations)." };

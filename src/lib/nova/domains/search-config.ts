@@ -5,7 +5,7 @@ import { setLeadType, setServiceArea } from "@/app/(dashboard)/analytics/ga4x-ac
 import { addRecordingReview } from "@/app/(dashboard)/clarity/actions";
 import { checkPlatformReviews, findReviewListings, refreshPlatformReviews, saveReviewProfiles } from "@/app/(dashboard)/reviews/actions";
 import { saveGscSettings } from "@/app/(dashboard)/search-console/gscx-actions";
-import { dfsConfigured } from "@/lib/dataforseo/client";
+import { DFS_NOT_CONFIGURED, dfsConfigured } from "@/lib/dataforseo/client";
 import { LEAD_TYPES } from "@/lib/ga4x/model";
 import { clientNap, CRAWLED } from "@/lib/reviews/listings";
 import { defaultProfiles, getProfiles, loadPlatformReviews, PLATFORMS } from "@/lib/reviews/platforms";
@@ -401,14 +401,14 @@ export const tools: NovaTool[] = [
       const list = v.all.filter((r) => (!a.platform || r.platform === a.platform) && (!a.unanswered_only || !r.reply))
         .sort((x, y) => (y.date ?? "").localeCompare(x.date ?? "")).slice(0, a.reviews)
         .map((r) => ({ platform: labelOf(r.platform), rating: r.rating, date: r.date, author: r.author, text: clip(r.text, 280), reply: clip(r.reply, 160) }));
-      const configured = dfsConfigured();
+      const configured = await dfsConfigured(ctx.client.id);
       const c = configured ? await reviewCosts(ctx.admin, ctx.client.id, v.views, v.discovery?.at ?? null) : null;
       const content = fit({
         summary: v.summary, platforms: v.platforms, latest_reviews: list, listing_search: v.listingSearch,
         ...(v.pending ? { collecting: "Some reviews are still being collected; they appear within a few minutes." } : {}),
         ...(v.collected ? { just_collected: `${plural(v.collected, "finished collection")} saved now.` } : {}),
         // the spend line is for owners and admins, as on the Reviews page
-        costs: c ? { refresh_all: usd(c.refresh), find_listings_again: usd(c.find), ...(ctx.canEdit ? { spent_today: usd(c.spentAll), daily_budget: usd(c.cap) } : {}) } : "DataForSEO isn't configured on the server: reviews can't be refreshed.",
+        costs: c ? { refresh_all: usd(c.refresh), find_listings_again: usd(c.find), ...(ctx.canEdit ? { spent_today: usd(c.spentAll), daily_budget: usd(c.cap) } : {}) } : "DataForSEO isn't set up for this organization: reviews can't be refreshed.",
         note: "Refreshes run weekly on their own. Saved links win over found ones and the defaults.",
       });
       if (!v.collected) return content;
@@ -461,7 +461,7 @@ export const tools: NovaTool[] = [
     description: "Paid (DataForSEO): refresh reviews on every readable platform now (mode refresh), or search again for the business's listings on YellowPages, Nextdoor, Yelp, BBB, Angi, Houzz and Thumbtack and read them (mode find_listings). The prepared change states the cost.",
     schema: z.object({ mode: z.enum(["refresh", "find_listings"]).default("refresh") }),
     async prepare(ctx, a) {
-      if (!dfsConfigured()) return { error: "DataForSEO isn't configured on the server, so reviews can't be refreshed." };
+      if (!(await dfsConfigured(ctx.client.id))) return { error: `${DFS_NOT_CONFIGURED} Until then reviews can't be refreshed.` };
       const { views, discovery } = await loadPlatformReviews(ctx.admin, ctx.admin, ctx.client.id);
       const c = await reviewCosts(ctx.admin, ctx.client.id, views, discovery?.at ?? null);
       const est = a.mode === "find_listings" ? c.find : c.refresh;

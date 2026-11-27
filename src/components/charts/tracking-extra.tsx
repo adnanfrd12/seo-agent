@@ -75,7 +75,7 @@ export function CruxPanel({ run, latest, right }: { run: CruxRun | null; latest:
         <div role="alert" className="mb-4 rounded-[10px] border border-warn/40 bg-warn/10 p-3 text-sm">
           <p className="font-medium">Google didn&apos;t return real-user data on {failed.checkedAt.slice(0, 10)}.</p>
           <p className="mt-1 break-words text-xs text-muted">{failed.error}</p>
-          <p className="mt-1 text-xs text-muted">Fix: in Google Cloud, enable the &quot;Chrome UX Report API&quot; and &quot;PageSpeed Insights API&quot; and allow them on the API key (or set PAGESPEED_API_KEY to a key that has them). Both are free.</p>
+          <p className="mt-1 text-xs text-muted">Fix: in Google Cloud, enable the &quot;Chrome UX Report API&quot; and &quot;PageSpeed Insights API&quot; and allow them on the API key (or save a PageSpeed Insights API key that has them in Settings → Integrations). Both are free.</p>
         </div>
       )}
       {!run ? (

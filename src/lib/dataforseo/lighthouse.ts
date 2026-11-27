@@ -1,5 +1,6 @@
 import "server-only";
 import type { SupabaseClient } from "@supabase/supabase-js";
+import { configForClient } from "@/lib/org/config";
 import { assertBudget, recordSpend } from "./budget";
 import { dfsPost } from "./client";
 import { num, obj, str, type Ctx } from "./research";
@@ -29,7 +30,7 @@ export async function runLighthouse(ctx: Ctx, urls: string[], devices: ("mobile"
     const done = await Promise.all(jobs.slice(i, i + 3).map(async ({ url, device }): Promise<LhRow> => {
       try {
         // a slow page can take over a minute; one attempt only, so a timeout never bills twice
-        const r = await dfsPost("/on_page/lighthouse/live/json", { url, for_mobile: device === "mobile" }, { timeoutMs: 125_000, attempts: 1 });
+        const r = await dfsPost(ctx.clientId, "/on_page/lighthouse/live/json", { url, for_mobile: device === "mobile" }, { timeoutMs: 125_000, attempts: 1 });
         cost += r.cost;
         const res = obj(r.result), cat = obj(res.categories), au = obj(res.audits);
         const a = (k: string) => num(obj(au[k]).numericValue);
@@ -67,7 +68,8 @@ export async function loadLighthouse(supabase: SupabaseClient, clientId: string)
  * the page. Google's Chrome UX Report (CrUX) has what real Chrome users experienced over the last 28 days,
  * per page when a page has enough visits, else for the whole site (origin). Free: the CrUX API (needs an API
  * key with "Chrome UX Report API" allowed), falling back to PageSpeed Insights v5, which carries the same
- * field data. Stored in dfs_cache (endpoint "crux", one row per day, cost 0) and refreshed weekly.
+ * field data. Stored in dfs_cache (endpoint "crux", one row per day, cost 0) and refreshed weekly. The API key is the
+ * client's organization's (Settings → Integrations → Google API keys); without one PageSpeed is asked without a key.
  */
 export type CruxKey = "inp" | "lcp" | "cls" | "ttfb" | "fcp";
 /** p75 in ms (CLS unitless); good / ni / poor are shares 0-1 of page loads */
@@ -148,7 +150,8 @@ async function pageSpeed(key: string | null, url: string, device: "mobile" | "de
 
 /** Reads real-user data for these pages (mobile and desktop) and the whole site, and stores it. Never charged. */
 export async function refreshCrux(admin: SupabaseClient, clientId: string, urls: string[]): Promise<CruxRun> {
-  const key = process.env.PAGESPEED_API_KEY?.trim() || process.env.GOOGLE_API_KEY?.trim() || null;
+  const cfg = await configForClient(clientId).catch(() => null);
+  const key = cfg?.get("PAGESPEED_API_KEY") || cfg?.get("GOOGLE_API_KEY") || null;
   const devices = ["mobile", "desktop"] as const;
   const list = [...new Set(urls)].slice(0, 5);
   let origin = "";

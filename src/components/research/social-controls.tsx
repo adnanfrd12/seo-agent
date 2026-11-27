@@ -42,7 +42,7 @@ export function SocialRefresh({ canEdit }: { canEdit: boolean }) {
 }
 
 /** Owner form: profile URLs plus optional per-client tokens (stored encrypted, never shown again). */
-export function SocialSettings({ profiles, tokens, linkedinOrgId }: { profiles: Partial<Record<Platform, string>>; tokens: Record<Platform, "client" | "env" | null>; linkedinOrgId: string | null }) {
+export function SocialSettings({ profiles, tokens, linkedinOrgId }: { profiles: Partial<Record<Platform, string>>; tokens: Record<Platform, "client" | "org" | null>; linkedinOrgId: string | null }) {
   const router = useRouter();
   const [open, setOpen] = useState(false);
   const [pending, start] = useTransition();
@@ -68,7 +68,7 @@ export function SocialSettings({ profiles, tokens, linkedinOrgId }: { profiles: 
               <label htmlFor={`url-${p}`} className="text-sm font-medium">{PLATFORM_INFO[p].label}</label>
               <input id={`url-${p}`} className={input} placeholder="Profile URL" value={urls[p] ?? ""} onChange={(e) => setUrls({ ...urls, [p]: e.target.value })} />
               <input aria-label={`${PLATFORM_INFO[p].label} token`} type="password" autoComplete="off" className={input}
-                placeholder={tokens[p] === "client" ? "Token saved (type - to remove)" : tokens[p] === "env" ? `Using ${PLATFORM_INFO[p].env}` : PLATFORM_INFO[p].tokenLabel}
+                placeholder={tokens[p] === "client" ? "Token saved (type - to remove)" : tokens[p] === "org" ? "Using the organization's token" : PLATFORM_INFO[p].tokenLabel}
                 value={secrets[p] ?? ""} onChange={(e) => setSecrets({ ...secrets, [p]: e.target.value })} />
             </div>
           ))}

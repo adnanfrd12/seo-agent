@@ -34,9 +34,11 @@ const btnPrimary =
   "inline-flex items-center gap-1.5 rounded-lg bg-accent px-3 py-1.5 text-sm font-medium text-accent-foreground outline-none transition hover:opacity-90 focus-visible:ring-2 focus-visible:ring-accent disabled:cursor-not-allowed disabled:opacity-50";
 
 export function IntegrationCard({
-  provider, status, canEdit, available = true, notes, extra,
+  provider, status, canEdit, available = true, unavailableMessage, notes, extra,
 }: {
   provider: ProviderId; status: ProviderStatus; canEdit: boolean; available?: boolean;
+  /** why Connect can't start (what an owner must add for the organization), shown while `available` is false */
+  unavailableMessage?: string | null;
   /** a short note per resource id, shown under its name in the picker */
   notes?: Record<string, string>;
   /** provider-specific settings shown at the bottom (Business Profile: the owner's Google API credentials) */
@@ -138,11 +140,7 @@ export function IntegrationCard({
 
       {!available ? (
         <div className="space-y-2 text-sm text-muted">
-          <p>
-            {provider === "gbp"
-              ? "Save your Google OAuth client ID and secret below (or set GOOGLE_GBP_CLIENT_ID / GOOGLE_GBP_CLIENT_SECRET on the server). TOKEN_ENCRYPTION_KEY must be set."
-              : "Add the provider's credentials to the environment, then redeploy."}
-          </p>
+          <p>{unavailableMessage ?? "This organization hasn't set this integration up yet: an owner adds its credentials under Organization credentials on this page."}</p>
           <button className={btn} disabled>Connect Account</button>
         </div>
       ) : (

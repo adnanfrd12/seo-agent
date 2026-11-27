@@ -4,7 +4,7 @@ import { after } from "next/server";
 import { revalidatePath } from "@/lib/revalidate";
 import { z } from "zod";
 import { getSession } from "@/lib/analytics/client-context";
-import { BingError, cleanKey, userSites } from "@/lib/bing/api";
+import { BingError, bingOrgKey, cleanKey, userSites } from "@/lib/bing/api";
 import { decryptSecret, encryptSecret } from "@/lib/crypto";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { createClient } from "@/lib/supabase/server";
@@ -27,12 +27,12 @@ async function connection(clientId: string) {
 
 const refresh = () => { revalidatePath("/integrations"); revalidatePath("/bing"); revalidatePath("/overview"); };
 
-/** Validates the key with a real API call, then stores it encrypted. Empty input uses BING_WEBMASTER_API_KEY. */
+/** Validates the key with a real API call, then stores it encrypted. Empty input uses the organization's key (Settings → Integrations). */
 export async function connectBing(input: string): Promise<Result> {
   const { client, allowed } = await adminClient();
   if (!allowed) return { ok: false, error: "Only owners and admins can connect integrations." };
-  const parsed = z.string().min(16).max(200).safeParse(cleanKey(input.trim() || process.env.BING_WEBMASTER_API_KEY || ""));
-  if (!parsed.success) return { ok: false, error: "Paste the API key from Bing Webmaster Tools → Settings → API access (or set BING_WEBMASTER_API_KEY)." };
+  const parsed = z.string().min(16).max(200).safeParse(cleanKey(input.trim() || (await bingOrgKey(client.id)) || ""));
+  if (!parsed.success) return { ok: false, error: "Paste the API key from Bing Webmaster Tools → Settings → API access (or an owner adds the organization's key in Settings → Integrations)." };
   try {
     await userSites(parsed.data);
   } catch (e) {
@@ -59,9 +59,14 @@ export async function bingSites(): Promise<{ ok: true; sites: BingSiteOption[] }
   const { data: secret } = conn
     ? await admin.from("integration_secrets").select("refresh_token_encrypted").eq("connection_id", conn.id).maybeSingle()
     : { data: null };
-  if (!secret?.refresh_token_encrypted) return { ok: false, error: "Connect Bing first." };
+  if (!conn) return { ok: false, error: "Connect Bing first." };
+  // the connection's own key, else the organization's (Settings → Integrations)
+  let key: string | null = null;
+  try { key = secret?.refresh_token_encrypted ? decryptSecret(secret.refresh_token_encrypted) : null; } catch { /* unreadable: the organization's key */ }
+  key ??= await bingOrgKey(client.id);
+  if (!key) return { ok: false, error: "Connect Bing first." };
   try {
-    const sites = await userSites(decryptSecret(secret.refresh_token_encrypted));
+    const sites = await userSites(key);
     return { ok: true, sites: (sites ?? []).map((s) => ({ url: s.Url, verified: s.IsVerified })).sort((a, b) => a.url.localeCompare(b.url)) };
   } catch (e) {
     return { ok: false, error: e instanceof BingError ? e.message : "Couldn't load sites." };

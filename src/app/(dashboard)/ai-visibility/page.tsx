@@ -13,6 +13,7 @@ import { ResearchTable } from "@/components/research/research-table";
 import { Tabs } from "@/components/research/tabs";
 import { AiControls, RemoveButton } from "@/components/research/tracking-controls";
 import { getSession } from "@/lib/analytics/client-context";
+import { aiUnavailable } from "@/lib/ai/claude";
 import {
   AI_EVERY_DAYS, brandKey, brandStats, ENGINE_KEYS, ENGINES, enginesFrom, loadAi, promptEstimate, suggestPrompts, type AiCheck, type EngineKey,
 } from "@/lib/ai/visibility";
@@ -54,7 +55,8 @@ export default async function AiVisibilityPage() {
     { term: "Detection rate", text: "Share of questions where at least one assistant names the business." },
     { term: "Sentiment", text: "0-100: how favourably the answer describes a brand (50 = neutral)." },
   ]} />;
-  if (!process.env.ANTHROPIC_API_KEY) return <>{header}<EmptyState title="AI isn't configured" body="Add ANTHROPIC_API_KEY to the environment (and Vercel), then redeploy." /></>;
+  const aiOff = await aiUnavailable(client.id);
+  if (aiOff) return <>{header}<EmptyState title="AI isn't configured" body={aiOff} /></>;
 
   const supabase = await createClient();
   // every read in one parallel batch

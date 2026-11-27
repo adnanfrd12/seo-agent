@@ -1,12 +1,12 @@
 "use server";
 
 import { getSession } from "@/lib/analytics/client-context";
-import { aiErrorMessage } from "@/lib/ai/claude";
+import { aiErrorMessage, anthropicFor } from "@/lib/ai/claude";
 import { budgetMessage, claudeBudget, recordClaudeUse } from "@/lib/ai/usage";
-import { altCandidates, runAlt, runFix } from "@/lib/audit/ai";
+import { altCandidates, askClaude, runAlt, runFix } from "@/lib/audit/ai";
 import { auditDetail, readDetail, saveDetail, type AuditDetail } from "@/lib/audit/details";
 import { estimateAltCost, estimateFixCost } from "@/lib/audit/guide";
-import { dfsConfigured } from "@/lib/dataforseo/client";
+import { DFS_NOT_CONFIGURED, dfsConfigured } from "@/lib/dataforseo/client";
 import type { AuditResult } from "@/lib/dataforseo/audit";
 import { resolveTarget } from "@/lib/dataforseo/research";
 import { createAdminClient } from "@/lib/supabase/admin";
@@ -29,7 +29,7 @@ export async function loadAuditDetail(key: string, force = false): Promise<Detai
   if (force && !canEdit) return { ok: false, error: "Only owners and admins can refresh details." };
   const db = await createClient();
   const cached = await readDetail(db, client.id, key);
-  if (!cached && !dfsConfigured()) return { ok: false, error: "DataForSEO isn't configured on the server." };
+  if (!cached && !(await dfsConfigured(client.id))) return { ok: false, error: DFS_NOT_CONFIGURED };
   return auditDetail(db, createAdminClient(), client.id, key, force);
 }
 
@@ -57,7 +57,7 @@ export async function fixAuditIssue(key: string): Promise<AiResponse> {
     const target = await resolveTarget(admin, client.id);
     const { data: a } = await admin.from("dfs_cache").select("data").eq("client_id", client.id).eq("endpoint", "audit").maybeSingle();
     const livePages = ((a?.data as AuditResult | undefined)?.rows ?? []).filter((r) => r.status === 200).map((r) => r.url);
-    const r = await runFix(detail, { domain: target?.domain ?? "", livePages });
+    const r = await runFix(detail, { domain: target?.domain ?? "", livePages }, askClaude(await anthropicFor(client.id)));
     await recordClaudeUse(admin, client.id, "site_audit_ai", r.model, r.cost);
     const next: AuditDetail = { ...detail, ai: { at: new Date().toISOString(), cost: r.cost, model: r.model, summary: r.summary, fixes: r.fixes } };
     await saveDetail(admin, client.id, next);
@@ -82,7 +82,7 @@ export async function suggestAltText(key: string): Promise<AiResponse> {
   if (b.left < estimateAltCost(batch.length)) return { ok: false, error: b.left <= 0 ? budgetMessage(b.budget) : `About $${estimateAltCost(batch.length).toFixed(2)} is needed, but only $${b.left.toFixed(2)} of this month's Claude budget is left.` };
   try {
     const target = await resolveTarget(admin, client.id);
-    const r = await runAlt(target?.domain ?? "", batch);
+    const r = await runAlt(target?.domain ?? "", batch, askClaude(await anthropicFor(client.id)));
     await recordClaudeUse(admin, client.id, "alt_text", r.model, r.cost);
     const next: AuditDetail = { ...detail, alt: { ...(detail.alt ?? {}), ...r.suggestions }, altSkipped: [...new Set([...(detail.altSkipped ?? []), ...r.skipped])] };
     await saveDetail(admin, client.id, next);

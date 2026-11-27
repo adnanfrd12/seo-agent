@@ -84,7 +84,7 @@ export async function loadKw(admin: SupabaseClient, clientId: string): Promise<M
  * 700 keywords. Returns what was spent. Budget is the caller's job.
  */
 export async function refreshKw(admin: SupabaseClient, clientId: string, s: AiQwSettings, keywords: string[], max = 700): Promise<{ fetched: number; cost: number }> {
-  if (!dfsConfigured()) return { fetched: 0, cost: 0 };
+  if (!(await dfsConfigured(clientId))) return { fetched: 0, cost: 0 };
   const t = await dfsTarget(admin, clientId, s);
   if (!t) return { fetched: 0, cost: 0 };
   const have = await loadKw(admin, clientId);
@@ -94,7 +94,7 @@ export async function refreshKw(admin: SupabaseClient, clientId: string, s: AiQw
   let cost = 0, fetched = 0;
   for (let i = 0; i < want.length; i += 700) {
     const batch = want.slice(i, i + 700);
-    const { result, cost: c } = await dfsPost("/dataforseo_labs/google/keyword_overview/live", { keywords: batch, ...t.loc, language_code: t.language_code, include_serp_info: true });
+    const { result, cost: c } = await dfsPost(clientId, "/dataforseo_labs/google/keyword_overview/live", { keywords: batch, ...t.loc, language_code: t.language_code, include_serp_info: true });
     cost += c;
     await recordSpend(admin, clientId, "aiqw_kw", c, "manual");
     const at = new Date().toISOString();
@@ -127,7 +127,7 @@ export async function loadSerp(admin: SupabaseClient, clientId: string): Promise
 
 /** Live Google top 10 for up to `max` keywords that have no result from the last 24 hours. */
 export async function refreshSerp(admin: SupabaseClient, clientId: string, s: AiQwSettings, keywords: string[], max = 20): Promise<{ fetched: number; cost: number }> {
-  if (!dfsConfigured()) return { fetched: 0, cost: 0 };
+  if (!(await dfsConfigured(clientId))) return { fetched: 0, cost: 0 };
   const t = await dfsTarget(admin, clientId, s);
   if (!t) return { fetched: 0, cost: 0 };
   const have = await loadSerp(admin, clientId);
@@ -136,7 +136,7 @@ export async function refreshSerp(admin: SupabaseClient, clientId: string, s: Ai
   const want = [...new Set(keywords.map(norm))].filter((k) => { const h = have.get(k); return !h || now - Date.parse(h.at) > TTL || h.loc !== t.serpLocLabel; }).slice(0, max);
   let cost = 0, fetched = 0;
   const one = async (keyword: string) => {
-    const { result, cost: c } = await dfsPost("/serp/google/organic/live/advanced", { keyword, ...t.serpLoc, language_code: t.language_code, depth: 10 });
+    const { result, cost: c } = await dfsPost(clientId, "/serp/google/organic/live/advanced", { keyword, ...t.serpLoc, language_code: t.language_code, depth: 10 });
     cost += c;
     await recordSpend(admin, clientId, "aiqw_serp", c, "manual");
     const items = arr(result?.items);

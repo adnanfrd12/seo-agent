@@ -1,6 +1,7 @@
 import "server-only";
 import { z } from "zod";
 import { setWinOwner, setWinStatus, startQuickWins } from "@/app/(dashboard)/ai-quick-wins/actions";
+import { aiUnavailable } from "@/lib/ai/claude";
 import { pickForScope, ruleLabel, weightedGain } from "@/lib/aiqw/candidates";
 import { CHUNK, chunkCandidates } from "@/lib/aiqw/claude";
 import { dfsMonthSpend } from "@/lib/aiqw/dfs";
@@ -252,7 +253,8 @@ export const tools: NovaTool[] = [
     description: "Generate AI quick wins with Claude (paid; runs in the background for a few minutes): the whole site, one dashboard screen, one page, or regenerate one quick win (key). Standard uses stored DataForSEO data; deep also fetches fresh DataForSEO data (paid).",
     schema: runSchema,
     async prepare(ctx, a) {
-      if (!process.env.ANTHROPIC_API_KEY?.trim()) return { error: "AI isn't configured on the server (ANTHROPIC_API_KEY)." };
+      const aiOff = await aiUnavailable(ctx.client.id);
+      if (aiOff) return { error: aiOff };
       const id = ctx.client.id;
       const [runs, status, settings, last, items, spent, dfsSpent] = await Promise.all([
         listRuns(ctx.admin, id, 30), sourceStatus(ctx.admin, id), storedSettings(ctx.admin, id), loadCandidates(ctx.admin, id), readItems(ctx.admin, id),

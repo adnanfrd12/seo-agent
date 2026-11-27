@@ -1,5 +1,7 @@
 import "server-only";
+import type Anthropic from "@anthropic-ai/sdk";
 import type { SupabaseClient } from "@supabase/supabase-js";
+import { anthropicFor } from "@/lib/ai/claude";
 import type { Profile } from "@/lib/dataforseo/local";
 import { DfsError } from "@/lib/dataforseo/client";
 import { ga4WinsFor } from "@/lib/ga4x/load";
@@ -201,7 +203,7 @@ async function gather(admin: SupabaseClient, run: RunState): Promise<Gathered> {
 }
 
 /** Steps 5–6 for chunk outputs (live or batch): validate (repair once), rank, merge with stored items, diff. */
-async function finish(admin: SupabaseClient, run: RunState, d: Gathered, chunks: Candidate[][], results: ChunkResult[]) {
+async function finish(admin: SupabaseClient, run: RunState, d: Gathered, chunks: Candidate[][], results: ChunkResult[], ai: Anthropic) {
   const step = stepper(admin, run);
   await step("check", "running");
   const system = systemBlocks(systemPrompt(d.settings, d.name, d.domain));
@@ -235,7 +237,7 @@ async function finish(admin: SupabaseClient, run: RunState, d: Gathered, chunks:
   }
   // repair once by re-asking Claude for that item with the error (4 at a time), else drop it and log why
   await pool(repairs, 4, async (r) => {
-    const fix = await repairItem(d.settings, system, r.c, r.item, r.errs);
+    const fix = await repairItem(ai, d.settings, system, r.c, r.item, r.errs);
     if (fix.log) { run.usage.log.push(fix.log); addUsage(run, fix.log); }
     const again = fix.item ? validateItem({ ...fix.item, candidate_id: r.item.candidate_id, keep: true }, r.byId, d.inventory, d.settings.bannedWords, r.also) : ["no answer"];
     if (fix.item && !again) { run.counts.repaired++; kept.push({ item: { ...fix.item, candidate_id: r.item.candidate_id, keep: true }, c: r.c }); }
@@ -307,12 +309,14 @@ function addUsage(run: RunState, l: RunState["usage"]["log"][number]) {
 /** A whole on-demand run (chunks in parallel, concurrency 4). Never throws: failures end in run.status = "failed". */
 export async function executeRun(admin: SupabaseClient, run: RunState): Promise<RunState> {
   try {
+    // the client's organization's own Anthropic key, checked before anything is read or spent
+    const ai = await anthropicFor(run.clientId);
     const d = await gather(admin, run);
     run.usage.model = d.settings.model;
     const claudeStep = run.steps.find((s) => s.key === "claude")!;
     if (!d.picked.length) {
       claudeStep.state = "skipped"; claudeStep.detail = "No candidates for this scope";
-      await finish(admin, run, d, [], []);
+      await finish(admin, run, d, [], [], ai);
     } else {
       const chunks = chunkCandidates(d.picked);
       run.counts.chunks = chunks.length;
@@ -330,11 +334,11 @@ export async function executeRun(admin: SupabaseClient, run: RunState): Promise<
         await saveRun(admin, run);
       };
       // the first chunk writes the prompt cache; the others start a few seconds later so they read it
-      const firstP = runChunk(d.settings, system, chunks[0], 0).then(async (r) => { await onDone(r); return r; });
+      const firstP = runChunk(ai, d.settings, system, chunks[0], 0).then(async (r) => { await onDone(r); return r; });
       if (chunks.length > 1) await new Promise((ok) => setTimeout(ok, 8000));
       const late: ChunkResult = { output: null, logs: [], error: "Not run: the run reached its time limit. Run this screen or page on its own." };
       const runT0 = Date.parse(run.startedAt);
-      const rest = await pool(chunks.slice(1), CONCURRENCY - 1, (c, i) => (Date.now() - runT0 > CHUNK_DEADLINE_MS ? Promise.resolve(late) : runChunk(d.settings, system, c, i + 1)), onDone);
+      const rest = await pool(chunks.slice(1), CONCURRENCY - 1, (c, i) => (Date.now() - runT0 > CHUNK_DEADLINE_MS ? Promise.resolve(late) : runChunk(ai, d.settings, system, c, i + 1)), onDone);
       const results = [await firstP, ...rest];
       const failed = results.filter((r) => !r.output).length;
       claudeStep.state = failed === results.length ? "failed" : "done";
@@ -342,7 +346,7 @@ export async function executeRun(admin: SupabaseClient, run: RunState): Promise<
       claudeStep.detail = `${results.length - failed} of ${chunks.length} chunks answered · ${d.settings.model} · effort ${d.settings.effort} · ${n(run.usage.input + run.usage.cacheRead + run.usage.cacheWrite)} input / ${n(run.usage.output)} output tokens · ${n(run.usage.cacheRead)} read from cache · $${run.usage.cost.toFixed(3)}`;
       await saveRun(admin, run);
       if (failed === results.length) throw new Error(results[0].error ?? "Claude didn't answer.");
-      await finish(admin, run, d, chunks, results);
+      await finish(admin, run, d, chunks, results, ai);
     }
     run.status = "done";
   } catch (e) {
@@ -359,6 +363,8 @@ export async function executeRun(admin: SupabaseClient, run: RunState): Promise<
 export async function submitNightly(admin: SupabaseClient, clientId: string): Promise<RunState> {
   const run = newRun(clientId, { scope: { kind: "site" }, depth: "standard", sources: ["gsc", "ga4", "dataforseo", "crawl"], trigger: "nightly", startedBy: null });
   try {
+    // the client's organization's own Anthropic key, checked before anything is read or spent
+    const ai = await anthropicFor(clientId);
     const d = await gather(admin, run);
     run.usage.model = d.settings.model;
     const chunks = chunkCandidates(d.picked);
@@ -366,7 +372,7 @@ export async function submitNightly(admin: SupabaseClient, clientId: string): Pr
     const spent = await claudeMonthSpend(admin, clientId);
     if (spent + (chunks.length * EST_PER_CHUNK[d.settings.model]) / 2 > d.settings.monthlyBudget) throw new Error(`Monthly Claude budget reached ($${spent.toFixed(2)} of $${d.settings.monthlyBudget.toFixed(2)}).`);
     if (!chunks.length) { run.status = "done"; run.finishedAt = new Date().toISOString(); await saveRun(admin, run); return run; }
-    run.batchId = await submitBatch(d.settings, systemPrompt(d.settings, d.name, d.domain), run.id, chunks);
+    run.batchId = await submitBatch(ai, d.settings, systemPrompt(d.settings, d.name, d.domain), run.id, chunks);
     const s = run.steps.find((x) => x.key === "claude")!; s.state = "running"; s.detail = `Message Batch ${run.batchId} submitted (${chunks.length} requests)`;
     run.status = "waiting_batch";
     await savePending(admin, clientId, { batchId: run.batchId, runId: run.id, chunks: chunks.map((c) => c.map((x) => x.candidate_id)), submittedAt: new Date().toISOString() });
@@ -375,8 +381,8 @@ export async function submitNightly(admin: SupabaseClient, clientId: string): Pr
   return run;
 }
 
-/** Finishes a nightly batch once it has ended: same validation and storage as a live run. */
-export async function finishBatch(admin: SupabaseClient, clientId: string, runId: string, chunkIds: string[][], results: Map<string, ChunkResult>): Promise<RunState | null> {
+/** Finishes a nightly batch once it has ended: same validation and storage as a live run (repairs on `ai`, the organization's client). */
+export async function finishBatch(admin: SupabaseClient, clientId: string, runId: string, chunkIds: string[][], results: Map<string, ChunkResult>, ai: Anthropic): Promise<RunState | null> {
   const run = await loadRun(admin, clientId, runId);
   if (!run) return null;
   try {
@@ -390,7 +396,7 @@ export async function finishBatch(admin: SupabaseClient, clientId: string, runId
     const s = run.steps.find((x) => x.key === "claude")!; s.state = "done"; s.detail = `${ordered.filter((r) => r.output).length} of ${chunks.length} batch requests answered · $${run.usage.cost.toFixed(3)} (batch price)`;
     const inventory = new Set<string>((last?.candidates ?? []).map((c) => c.page_url));
     for (const r of gsc?.inv ?? []) inventory.add(pathOf(r.url));
-    await finish(admin, run, { settings, name, domain: target?.domain ?? null, gsc, ga4: null, candidates: last?.candidates ?? [], perRule: last?.perRule ?? {}, inventory, picked: chunks.flat() }, chunks, ordered);
+    await finish(admin, run, { settings, name, domain: target?.domain ?? null, gsc, ga4: null, candidates: last?.candidates ?? [], perRule: last?.perRule ?? {}, inventory, picked: chunks.flat() }, chunks, ordered, ai);
     run.status = "done";
   } catch (e) { run.status = "failed"; run.error = (e instanceof Error ? e.message : "failed").slice(0, 400); }
   run.finishedAt = new Date().toISOString();

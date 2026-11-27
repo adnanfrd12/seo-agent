@@ -3,6 +3,7 @@ import { SplitBar } from "@/components/charts/ops-charts";
 import { TabHeader } from "@/components/dashboard/tab-header";
 import { Unavailable } from "@/components/report/report-ui";
 import { getSession } from "@/lib/analytics/client-context";
+import { aiUnavailable } from "@/lib/ai/claude";
 import { fmtDecimal, fmtInt, fmtPercent, toNum } from "@/lib/analytics/format";
 import { first, type SearchParams } from "@/lib/analytics/url";
 import { createClient } from "@/lib/supabase/server";
@@ -30,6 +31,7 @@ export default async function ImportsPage({ searchParams }: { searchParams: Prom
   if (!client) return null;
   const sp = await searchParams;
   const canEdit = ["owner", "admin"].includes(client.role);
+  const aiOff = await aiUnavailable(client.id);
   const supabase = await createClient();
   const { data: reports, error } = await supabase.from("imported_reports").select("*").eq("client_id", client.id).order("created_at", { ascending: false }).limit(30);
   const selectedId = first(sp.id) ?? (reports?.[0] as Report | undefined)?.id;
@@ -53,7 +55,7 @@ export default async function ImportsPage({ searchParams }: { searchParams: Prom
     <div className="space-y-8">
       <TabHeader source={null} eyebrow="Reporting" title="Import PDF Reports" description="Upload an SEO report and review the figures it contains." />
       {error ? <Unavailable title="Database update needed" body="Apply migration 20261021000011 in Supabase to enable report imports." />
-        : !process.env.ANTHROPIC_API_KEY ? <Unavailable title="AI isn't configured" body="Report extraction needs ANTHROPIC_API_KEY." />
+        : aiOff ? <Unavailable title="AI isn't configured" body={aiOff} />
         : canEdit ? <UploadForm /> : <p className="text-sm text-muted">Only owners and admins can import reports.</p>}
 
       {(reports ?? []).length > 0 && (

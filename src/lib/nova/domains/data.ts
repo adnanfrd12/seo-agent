@@ -1,7 +1,9 @@
 import "server-only";
 import { z } from "zod";
 import { DATA_VIEWS, dataSources, detail, history, pageData } from "@/lib/ai/intelligence";
+import { pageAllowed } from "@/lib/org/pages";
 import { json, read, ToolError, type NovaTool } from "../kit";
+import { NOT_IN_PLAN, viewAllowed } from "../pages";
 
 /** Reading the client's data: the open page, connected sources, detailed views, competitors and monthly history. */
 export const tools: NovaTool[] = [
@@ -11,6 +13,7 @@ export const tools: NovaTool[] = [
     schema: z.object({}),
     async run(ctx) {
       if (!ctx.page) throw new ToolError("No page context: ask the user which data they mean.");
+      if (!pageAllowed(ctx.enabledPages, ctx.page.path)) throw new ToolError(NOT_IN_PLAN);
       const data = await pageData(ctx.admin, ctx.client.id, await ctx.brief(), ctx.page.path);
       // what the user sees on screen (explanations, settings, tables) alongside the stored data behind it
       return ctx.page.text ? `${data}\n\nTEXT VISIBLE ON THE PAGE (as the user sees it):\n${ctx.page.text}` : data;
@@ -28,7 +31,10 @@ export const tools: NovaTool[] = [
     name: "get_client_analytics",
     description: `One detailed dataset as JSON (more than the brief). Views: ${DATA_VIEWS.map((v) => `${v.key} (${v.label})`).join("; ")}.`,
     schema: z.object({ view: z.enum(DATA_VIEWS.map((v) => v.key) as [string, ...string[]]) }),
-    async run(ctx, a) { return detail(ctx.admin, ctx.client.id, await ctx.brief(), a.view); },
+    async run(ctx, a) {
+      if (!viewAllowed(a.view, ctx.enabledPages)) throw new ToolError(NOT_IN_PLAN);
+      return detail(ctx.admin, ctx.client.id, await ctx.brief(), a.view);
+    },
     summary: (a) => `Read ${DATA_VIEWS.find((v) => v.key === a.view)?.label ?? a.view}`,
   }),
   read({

@@ -1,30 +1,57 @@
 import "server-only";
-import { composio } from "@/lib/composio/client";
+import type { Composio } from "@composio/core";
+import { composioConfigProblem, composioFor, entityId } from "@/lib/composio/client";
 import { ga4Adapter } from "@/lib/composio/ga4";
 import { gscAdapter } from "@/lib/composio/gsc";
 import { serverEnv } from "@/lib/env";
+import { configForClient, missingMessage } from "@/lib/org/config";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { createClient } from "@/lib/supabase/server";
 import type { DiscoveredResource } from "@/lib/analytics/types";
 import { HttpError } from "./http";
 import { PROVIDER_META, type ProviderId } from "./providers";
 
-function authConfigId(provider: ProviderId): string {
-  const env = serverEnv();
-  if (provider === "ga4") return env.COMPOSIO_AUTH_CONFIG_GA4;
-  if (provider === "gsc") return env.COMPOSIO_AUTH_CONFIG_GSC;
+/**
+ * Google Analytics and Search Console connect through the Composio project of the client's ORGANIZATION
+ * (Settings → Integrations → Composio). Business Profile uses the organization's Google OAuth client
+ * (src/lib/integrations/gbp-service.ts). Nothing here falls back to another organization's settings.
+ */
+const AUTH_CONFIG_KEY = { ga4: "COMPOSIO_AUTH_CONFIG_GA4", gsc: "COMPOSIO_AUTH_CONFIG_GSC" } as const;
+
+function authConfigKey(provider: ProviderId): (typeof AUTH_CONFIG_KEY)[keyof typeof AUTH_CONFIG_KEY] {
+  if (provider === "ga4" || provider === "gsc") return AUTH_CONFIG_KEY[provider];
   throw new HttpError(501, `${PROVIDER_META[provider].label} is not available through Composio`);
 }
 
 /** Composio toolkit slugs (as reported by connected accounts). */
 const TOOLKIT_SLUG = { ga4: "google_analytics", gsc: "google_search_console" } as const;
 
-/** Composio "user id" for a client. One entity per client keeps tenants separated. */
-const entityId = (clientId: string) => `client:${clientId}`;
+export interface Readiness { ready: boolean; message: string | null }
+
+/**
+ * For the Integrations UI: whether Connect can start for each Google provider of this client, from its
+ * organization's settings, and otherwise the message to show (what an owner must add, and where). It only checks
+ * that the values exist; Settings → Integrations → Test connection checks that they work.
+ */
+export async function connectReadiness(clientId: string): Promise<Record<ProviderId, Readiness>> {
+  const cfg = await configForClient(clientId);
+  const need = (keys: string[]): Readiness => {
+    const missing = keys.find((k) => !cfg.get(k));
+    return missing ? { ready: false, message: missingMessage(missing) } : { ready: true, message: null };
+  };
+  const gbp = need(["GOOGLE_GBP_CLIENT_ID", "GOOGLE_GBP_CLIENT_SECRET"]);
+  return {
+    ga4: need(["COMPOSIO_API_KEY", AUTH_CONFIG_KEY.ga4]),
+    gsc: need(["COMPOSIO_API_KEY", AUTH_CONFIG_KEY.gsc]),
+    gbp: gbp.ready && !process.env.TOKEN_ENCRYPTION_KEY?.trim()
+      ? { ready: false, message: "TOKEN_ENCRYPTION_KEY isn't set on the server, so Google tokens can't be stored." }
+      : gbp,
+  };
+}
 
 /** All of this client's Composio accounts for a toolkit, newest first. */
-async function listAccounts(clientId: string, provider: "ga4" | "gsc") {
-  const res = await composio().connectedAccounts.list({
+async function listAccounts(c: Composio, clientId: string, provider: "ga4" | "gsc") {
+  const res = await c.connectedAccounts.list({
     userIds: [entityId(clientId)],
     toolkitSlugs: [TOOLKIT_SLUG[provider]],
     limit: 50,
@@ -32,12 +59,20 @@ async function listAccounts(clientId: string, provider: "ga4" | "gsc") {
   return [...res.items].sort((a, b) => b.createdAt.localeCompare(a.createdAt));
 }
 
-/** Step 1-2: backend starts the Composio OAuth flow and records a pending connection. */
+/** Organization settings that stop a connection, as the HTTP error the Connect button shows (503, with what to fix). */
+function settingsError(e: unknown, key?: string): HttpError | null {
+  const problem = composioConfigProblem(e, key);
+  return problem ? new HttpError(503, problem.message) : null;
+}
+
+/** Step 1-2: backend starts the Composio OAuth flow (the client organization's project) and records a pending connection. */
 export async function startConnect(clientId: string, provider: ProviderId): Promise<string> {
   const env = serverEnv();
-  const request = await composio().connectedAccounts.link(entityId(clientId), authConfigId(provider), {
+  const key = authConfigKey(provider);
+  const cfg = await configForClient(clientId);
+  const request = await (async () => composioFor(cfg).connectedAccounts.link(entityId(clientId), cfg.require(key), {
     callbackUrl: `${env.NEXT_PUBLIC_APP_URL}/api/integrations/${provider}/callback`,
-  });
+  }))().catch((e: unknown) => { throw settingsError(e, key) ?? e; });
   if (!request.redirectUrl) throw new Error("Composio did not return a redirect URL");
 
   const admin = createAdminClient();
@@ -85,7 +120,18 @@ export async function completeConnect(clientId: string, provider: ProviderId): P
     .maybeSingle();
   if (!conn) return { ok: false, reason: "No connection in progress. Click Connect Account to start." };
 
-  let accounts = await listAccounts(clientId, provider);
+  // the client organization's Composio project (the one startConnect opened the login in)
+  let c: Composio;
+  let accounts: Awaited<ReturnType<typeof listAccounts>>;
+  try {
+    c = composioFor(await configForClient(clientId));
+    accounts = await listAccounts(c, clientId, provider);
+  } catch (e) {
+    const problem = composioConfigProblem(e);
+    if (!problem) throw e;
+    await admin.from("integration_connections").update({ last_error: problem.message }).eq("id", conn.id);
+    return { ok: false, reason: problem.message };
+  }
   let active = accounts.find((a) => a.status === "ACTIVE");
 
   if (!active) {
@@ -93,11 +139,11 @@ export async function completeConnect(clientId: string, provider: ProviderId): P
     const inflight = accounts.find((a) => a.status === "INITIALIZING" || a.status === "INITIATED");
     if (inflight) {
       try {
-        await composio().connectedAccounts.waitForConnection(inflight.id, 20_000);
+        await c.connectedAccounts.waitForConnection(inflight.id, 20_000);
       } catch {
         // still not active; handled below
       }
-      accounts = await listAccounts(clientId, provider);
+      accounts = await listAccounts(c, clientId, provider);
       active = accounts.find((a) => a.status === "ACTIVE");
     }
   }
@@ -169,7 +215,7 @@ export async function completeConnect(clientId: string, provider: ProviderId): P
 
   // Revoke superseded/expired duplicates so no unused live OAuth grants are left behind.
   await Promise.allSettled(
-    accounts.filter((a) => a.id !== active.id).map((a) => composio().connectedAccounts.delete(a.id)),
+    accounts.filter((a) => a.id !== active.id).map((a) => c.connectedAccounts.delete(a.id)),
   );
   return { ok: true };
 }

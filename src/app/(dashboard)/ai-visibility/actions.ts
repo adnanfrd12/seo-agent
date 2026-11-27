@@ -2,6 +2,7 @@
 
 import { revalidatePath } from "@/lib/revalidate";
 import { getSession } from "@/lib/analytics/client-context";
+import { aiUnavailable } from "@/lib/ai/claude";
 import { brandNamesFor, llmTopics, refreshBrandLookup, refreshLlmMentions } from "@/lib/ai/llm-mentions";
 import { ENGINE_KEYS, ENGINES, enginesFrom, MAX_PROMPTS, promptEstimate, runAiChecks, type EngineKey } from "@/lib/ai/visibility";
 import { localIdentity } from "@/lib/dataforseo/local";
@@ -71,7 +72,8 @@ export async function setAiEngines(engines: string[]): Promise<Result> {
 export async function runAiVisibilityNow(force: boolean): Promise<Result> {
   const g = await guard();
   if ("error" in g) return { ok: false, error: String(g.error) };
-  if (!process.env.ANTHROPIC_API_KEY) return { ok: false, error: "ANTHROPIC_API_KEY isn't set on the server." };
+  const aiOff = await aiUnavailable(g.client.id);
+  if (aiOff) return { ok: false, error: aiOff };
   const target = await resolveTarget(g.db, g.client.id);
   if (!target) return { ok: false, error: "Set the client's website first (connect Search Console, Bing or Business Profile)." };
   const { data } = await g.db.from("clients").select("settings").eq("id", g.client.id).maybeSingle();

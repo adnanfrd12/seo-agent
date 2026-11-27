@@ -1,7 +1,7 @@
 import "server-only";
+import type Anthropic from "@anthropic-ai/sdk";
 import { betaZodOutputFormat } from "@anthropic-ai/sdk/helpers/beta/zod";
 import { z } from "zod";
-import { anthropic } from "@/lib/ai/claude";
 
 /**
  * Reads a post the way a local-SEO reviewer would: the search phrase it targets, and every place it
@@ -33,8 +33,9 @@ const SYSTEM = `You read blog posts written by local businesses and return what 
 - zip_codes: 5-digit ZIP codes written in the text.
 Return empty lists when the text names nothing of that kind.`;
 
-export async function readGeo(post: { title: string; text: string; place: string | null; city: string | null }): Promise<{ geo: GeoRead; cost: number }> {
-  const res = await anthropic().beta.messages.parse({
+/** `ai`: Claude on the client's organization's own key (anthropicFor). */
+export async function readGeo(ai: Anthropic, post: { title: string; text: string; place: string | null; city: string | null }): Promise<{ geo: GeoRead; cost: number }> {
+  const res = await ai.beta.messages.parse({
     model: GEO_MODEL, max_tokens: 1200, thinking: { type: "disabled" },
     output_config: { effort: "low", format: betaZodOutputFormat(schema) },
     system: SYSTEM,

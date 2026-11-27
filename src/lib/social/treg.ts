@@ -1,12 +1,17 @@
 import "server-only";
+import { configForClient, type OrgConfig } from "@/lib/org/config";
 import { handleOf, type Platform } from "./platforms";
 
 /**
  * treg.to: public profile numbers (followers, posts, recent post likes) for any account, no login needed.
- * One agency token (TREG_API_KEY). Calls cost fractions of a cent and failed/empty answers are free.
- * Used when a client hasn't connected an account through Composio, and for competitor profiles.
+ * One token per organization (TREG_API_KEY in Settings → Integrations). Calls cost fractions of a cent and
+ * failed/empty answers are free. Used when a client hasn't connected an account through Composio.
  */
-export const tregConfigured = () => Boolean(process.env.TREG_API_KEY?.trim());
+export const tregConfiguredIn = (cfg: OrgConfig | null) => Boolean(cfg?.get("TREG_API_KEY"));
+/** True when the client's organization has a treg.to API key. */
+export async function tregConfigured(clientId: string): Promise<boolean> {
+  try { return tregConfiguredIn(await configForClient(clientId)); } catch { return false; }
+}
 
 type Ep = { id: string; body: (handle: string, url: string) => Record<string, unknown>; usd: number; posts?: boolean };
 const EP: Partial<Record<Platform, Ep>> = {
@@ -60,11 +65,12 @@ const FOLLOWING = ["following", "following_count", "follows_count", "followingCo
 const POSTS = ["posts_count", "post_count", "media_count", "video_count", "videoCount", "tweet_count", "statuses_count", "postsCount", "videos"];
 const LIKES = ["likes", "like_count", "likes_count", "heart_count", "heartCount", "total_likes"];
 
-export async function tregProfile(p: Platform, url: string): Promise<TregProfile> {
+/** Public numbers for one profile, read with the organization's treg.to key (`cfg`: the client's organization). */
+export async function tregProfile(p: Platform, url: string, cfg: OrgConfig | null): Promise<TregProfile> {
   const ep = EP[p];
   if (!ep) throw new TregError("No public-profile source for this platform.");
-  const token = process.env.TREG_API_KEY?.trim();
-  if (!token) throw new TregError("TREG_API_KEY isn't set.");
+  const token = cfg?.get("TREG_API_KEY");
+  if (!token) throw new TregError("treg.to isn't set up for this organization: an owner needs to add the treg.to API key in Settings → Integrations.");
   const handle = (handleOf(url) ?? "").replace(/^@/, "");
   if (!handle) throw new TregError("The profile URL has no handle.");
   const r = await fetch(`https://treg.to/call/${ep.id}`, {
@@ -73,7 +79,7 @@ export async function tregProfile(p: Platform, url: string): Promise<TregProfile
   });
   const j = (await r.json().catch(() => null)) as Record<string, unknown> | null;
   if (r.status === 402) throw new TregError("The treg.to balance is empty. Top it up at treg.to.");
-  if (r.status === 401 || r.status === 403) throw new TregError("treg.to refused the token (check TREG_API_KEY).");
+  if (r.status === 401 || r.status === 403) throw new TregError("treg.to refused this organization's API key. Check it in Settings → Integrations.");
   if (!r.ok || !j) throw new TregError(`Public profile read failed (HTTP ${r.status}).`);
   const micro = Number(r.headers.get("x-treg-cost-micro"));
   const posts = findArray(j, ["posts", "items", "threads", "videos", "tweets"]).slice(0, 20).map((x, i) => ({

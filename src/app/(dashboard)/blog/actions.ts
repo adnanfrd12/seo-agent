@@ -4,7 +4,7 @@ import { getSession } from "@/lib/analytics/client-context";
 import { refreshPostKeywords } from "@/lib/blog/keywords";
 import { syncBlog } from "@/lib/blog/sync";
 import { auditEstimate, DEFAULT_AUDIT_PAGES, loadAudit, pollAudit, startAudit } from "@/lib/dataforseo/audit";
-import { dfsConfigured } from "@/lib/dataforseo/client";
+import { DFS_NOT_CONFIGURED, dfsConfigured } from "@/lib/dataforseo/client";
 import { resolveTarget } from "@/lib/dataforseo/research";
 import { revalidatePath } from "@/lib/revalidate";
 import { createAdminClient } from "@/lib/supabase/admin";
@@ -42,7 +42,7 @@ export async function syncBlogNow(): Promise<Result> {
 export async function fetchBlogKeywordsNow(scope: "new" | "all"): Promise<Result> {
   const g = await guard();
   if ("error" in g) return { ok: false, error: String(g.error) };
-  if (!dfsConfigured()) return { ok: false, error: "DataForSEO isn't configured (Integrations)." };
+  if (!(await dfsConfigured(g.client.id))) return { ok: false, error: DFS_NOT_CONFIGURED };
   const r = await refreshPostKeywords(g.db, g.client.id, { paid: scope, source: "manual", deadline: Date.now() + 220_000, maxPaid: 400 });
   revalidatePath("/blog");
   if (!r.paid && r.errors.length) return { ok: false, error: r.errors[0] };
@@ -59,7 +59,7 @@ export async function crawlBlogNow(): Promise<Result> {
   const { result } = await loadAudit(g.db, g.client.id);
   const recent = result && Date.now() - Date.parse(result.data.finishedAt) < 14 * 86_400_000;
   if (!recent) {
-    if (!dfsConfigured()) return { ok: false, error: "DataForSEO isn't configured (Integrations)." };
+    if (!(await dfsConfigured(g.client.id))) return { ok: false, error: DFS_NOT_CONFIGURED };
     const target = await resolveTarget(g.db, g.client.id);
     if (!target) return { ok: false, error: "No website is known for this client yet." };
     try {

@@ -45,7 +45,7 @@ export function LbmPanel({ connected, canEdit, hasEnvToken, selected }: {
       <div className="space-y-2">
         <label className="block text-sm font-medium" htmlFor="lbm-token">API token</label>
         <input id="lbm-token" type="password" autoComplete="off" className={input} value={token} onChange={(e) => setToken(e.target.value)}
-          placeholder={hasEnvToken ? "Leave empty to use the token configured on the server" : "Token from app.localbrandmanager.com/api_tokens"} />
+          placeholder={hasEnvToken ? "Leave empty to use the organization's API token" : "Token from app.localbrandmanager.com/api_tokens"} />
         <button className={btn} disabled={pending || (!token.trim() && !hasEnvToken)} onClick={() => run(() => connectLbm(token))}>
           {pending && <Loader2 className="size-4 animate-spin" />} Connect Local Brand Manager
         </button>

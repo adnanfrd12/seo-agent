@@ -4,13 +4,14 @@ import { BOT_UA } from "@/lib/blog/wordpress";
 import { decryptSecret } from "@/lib/crypto";
 import { assertBudget, BudgetError, recordSpend, type SpendSource } from "@/lib/dataforseo/budget";
 import { dfsConfigured, dfsPost } from "@/lib/dataforseo/client";
+import { configForClient, type OrgConfig } from "@/lib/org/config";
 import { arr, num, obj, str } from "@/lib/dataforseo/research";
 import { ProviderAuthError, ProviderRateLimitError } from "@/lib/composio/client";
 import { socialConnections, type SocialConnection } from "./composio";
 import { readComposio } from "./composio-read";
 import { saveSnapshot } from "./snapshots";
 import type { MetricKey, SocialDemo, SocialPost, SocialSeries } from "./metrics";
-import { tregConfigured, tregProfile, tregSupports } from "./treg";
+import { tregConfiguredIn, tregProfile, tregSupports } from "./treg";
 import { handleOf, PLATFORM_INFO, PLATFORMS, platformOf, type Platform, type SocialProfiles } from "./platforms";
 
 /**
@@ -80,12 +81,15 @@ export async function clientSocial(admin: SupabaseClient, clientId: string): Pro
   return { profiles: (settings.social_profiles ?? {}) as SocialProfiles, tokens: (settings.social_tokens ?? {}) as Partial<Record<Platform, string>>, settings };
 }
 
-/** The client's own token (decrypted), else the agency-wide env var. Instagram falls back to the Facebook Page token. */
-function secretFor(p: Platform, tokens: Partial<Record<Platform, string>>): string | null {
+/**
+ * The client's own token (decrypted), else the organization's (Settings → Integrations; `cfg` is the client's
+ * organization). Instagram falls back to the Facebook Page token.
+ */
+function secretFor(p: Platform, tokens: Partial<Record<Platform, string>>, cfg: OrgConfig | null): string | null {
   const own = (k: Platform) => { try { return tokens[k] ? decryptSecret(tokens[k]!) : null; } catch { return null; } };
-  const env = (k: Platform) => process.env[PLATFORM_INFO[k].env]?.trim() || null;
-  if (p === "instagram") return own("instagram") ?? own("facebook") ?? env("facebook");
-  return own(p) ?? env(p);
+  const org = (k: Platform) => cfg?.get(PLATFORM_INFO[k].env) ?? null;
+  if (p === "instagram") return own("instagram") ?? own("facebook") ?? org("facebook");
+  return own(p) ?? org(p);
 }
 
 /* ------------------------------------------------------------------ profile discovery (free) */
@@ -151,11 +155,11 @@ async function youtubeDataApi(key: string, url: string, keywords: string[]): Pro
 }
 
 async function dfsYoutube(ctx: Ctx, url: string, keywords: string[]): Promise<Fetched> {
-  if (!dfsConfigured()) throw new NeedsError("DataForSEO isn't configured, and no YouTube Data API key is set.");
+  if (!(await dfsConfigured(ctx.clientId))) throw new NeedsError("DataForSEO isn't set up for this organization, and no YouTube Data API key is set (Settings → Integrations).");
   let cost = 0;
   const search = async (keyword: string) => {
     await assertBudget(ctx.admin, ctx.clientId, YT_SEARCH_EST, ctx.source);
-    const r = await dfsPost("/serp/youtube/organic/live/advanced", { keyword, location_code: 2840, language_code: "en" });
+    const r = await dfsPost(ctx.clientId, "/serp/youtube/organic/live/advanced", { keyword, location_code: 2840, language_code: "en" });
     cost += r.cost; await recordSpend(ctx.admin, ctx.clientId, "yt_organic", r.cost, ctx.source);
     return arr(r.result?.items);
   };
@@ -188,7 +192,7 @@ async function dfsYoutube(ctx: Ctx, url: string, keywords: string[]): Promise<Fe
   try {
     for (const v of vids.slice(0, YT_INFO_MAX)) {
       await assertBudget(ctx.admin, ctx.clientId, YT_INFO_EST, ctx.source);
-      const r = await dfsPost("/serp/youtube/video_info/live/advanced", { video_id: v.id, location_code: 2840, language_code: "en" });
+      const r = await dfsPost(ctx.clientId, "/serp/youtube/video_info/live/advanced", { video_id: v.id, location_code: 2840, language_code: "en" });
       cost += r.cost; await recordSpend(ctx.admin, ctx.clientId, "yt_video_info", r.cost, ctx.source);
       const info = obj(arr(r.result?.items)[0]);
       v.views = num(info.views_count) ?? v.views; v.likes = num(info.likes_count); v.comments = num(info.comments_count);
@@ -305,9 +309,10 @@ async function pinterest(token: string): Promise<Fetched> {
   };
 }
 
-async function tiktok(refreshToken: string): Promise<Fetched> {
-  const key = process.env.TIKTOK_CLIENT_KEY?.trim(), secret = process.env.TIKTOK_CLIENT_SECRET?.trim();
-  if (!key || !secret) throw new NeedsError("Set TIKTOK_CLIENT_KEY and TIKTOK_CLIENT_SECRET (TikTok for Developers app) so the refresh token can be used.");
+/** `cfg`: the client's organization, whose TikTok app (client key and secret) the refresh token belongs to. */
+async function tiktok(refreshToken: string, cfg: OrgConfig | null): Promise<Fetched> {
+  const key = cfg?.get("TIKTOK_CLIENT_KEY"), secret = cfg?.get("TIKTOK_CLIENT_SECRET");
+  if (!key || !secret) throw new NeedsError("The TikTok app isn't set up for this organization: an owner needs to add the TikTok client key and secret in Settings → Integrations so the refresh token can be used.");
   const tok = await getJson("https://open.tiktokapis.com/v2/oauth/token/", {
     method: "POST", headers: { "Content-Type": "application/x-www-form-urlencoded" },
     body: new URLSearchParams({ client_key: key, client_secret: secret, grant_type: "refresh_token", refresh_token: refreshToken }).toString(),
@@ -388,8 +393,8 @@ function mergeSeries(prev: SocialSeries | undefined, next: SocialSeries | undefi
   return out;
 }
 
-async function viaTreg(ctx: Ctx, p: Platform, url: string): Promise<Fetched> {
-  const t = await tregProfile(p, url);
+async function viaTreg(ctx: Ctx, p: Platform, url: string, cfg: OrgConfig | null): Promise<Fetched> {
+  const t = await tregProfile(p, url, cfg);
   await recordSpend(ctx.admin, ctx.clientId, `treg_${p}`, t.cost, ctx.source);
   return { source: "Public profile (treg.to)", profile: { name: t.name, followers: t.followers, following: t.following, posts: t.posts, views: null, likes: t.likes }, posts: t.recent, cost: t.cost };
 }
@@ -405,7 +410,9 @@ export async function refreshPlatform(ctx: Ctx, p: Platform, social?: Awaited<Re
   let row: SocialRow;
   if (!url && p !== "instagram" && !acc) row = { ...base, status: "no_profile" };
   else {
-    const token = secretFor(p, s.tokens);
+    // the organization's credentials (tokens, TikTok app, treg.to); none when they can't be read
+    const cfg = await configForClient(ctx.clientId).catch(() => null);
+    const token = secretFor(p, s.tokens, cfg);
     let mode: SocialRow["mode"] = "token";
     try {
       let f: Fetched;
@@ -413,12 +420,12 @@ export async function refreshPlatform(ctx: Ctx, p: Platform, social?: Awaited<Re
       if (acc) {
         mode = "connected";
         try { f = await viaComposio(ctx, p, acc, url, typeof s.settings.linkedin_org_id === "string" ? s.settings.linkedin_org_id : null, base.posts); }
-        catch (e) { if (url && tregConfigured() && tregSupports(p) && !token) { mode = "public"; f = await viaTreg(ctx, p, url); f.source = `${f.source}; connected analytics pending`; } else throw e; }
+        catch (e) { if (url && tregConfiguredIn(cfg) && tregSupports(p) && !token) { mode = "public"; f = await viaTreg(ctx, p, url, cfg); f.source = `${f.source}; connected analytics pending`; } else throw e; }
       }
       // 2. a pasted token (old setup) or YouTube's own path
       else if (p === "youtube") f = token ? await youtubeDataApi(token, url!, await trackedKeywords(ctx.admin, ctx.clientId)) : await dfsYoutube(ctx, url!, await trackedKeywords(ctx.admin, ctx.clientId));
       // 3. nothing connected: public numbers through treg.to
-      else if (!token && url && tregConfigured() && tregSupports(p)) { mode = "public"; f = await viaTreg(ctx, p, url); }
+      else if (!token && url && tregConfiguredIn(cfg) && tregSupports(p)) { mode = "public"; f = await viaTreg(ctx, p, url, cfg); }
       else if (!token) throw new NeedsError(`Press Connect and log in to ${PLATFORM_INFO[p].label} to read its analytics.`);
       else if (p === "facebook") f = await facebook(token);
       else if (p === "instagram") f = await instagram(token);
@@ -426,11 +433,17 @@ export async function refreshPlatform(ctx: Ctx, p: Platform, social?: Awaited<Re
       else if (p === "x") f = await xApi(token, url!);
       else if (p === "linkedin") f = await linkedin(token, url!, typeof s.settings.linkedin_org_id === "string" ? s.settings.linkedin_org_id : null);
       else if (p === "pinterest") f = await pinterest(token);
-      else f = await tiktok(token);
+      else f = await tiktok(token, cfg);
       if (f.newSecret && s.tokens[p]) {
         const { encryptSecret } = await import("@/lib/crypto");
         const { settings } = await clientSocial(ctx.admin, ctx.clientId);
         await ctx.admin.from("clients").update({ settings: { ...settings, social_tokens: { ...((settings.social_tokens ?? {}) as object), [p]: encryptSecret(f.newSecret) } } }).eq("id", ctx.clientId);
+      } else if (f.newSecret && cfg?.get(PLATFORM_INFO[p].env)) {
+        // the organization's token (Settings → Integrations) was the one used and the platform issued a new one:
+        // keep it there, so the next sync doesn't send a token the platform has replaced
+        const { setCredential } = await import("@/lib/org/credentials");
+        const saved = await setCredential(ctx.admin, cfg.orgId, null, PLATFORM_INFO[p].env, f.newSecret);
+        if (!saved.ok) console.error(`social: couldn't save the renewed ${PLATFORM_INFO[p].label} token of the organization: ${saved.error}`);
       }
       if (mode === "connected" && acc && f.ids && Object.keys(f.ids).length) {
         const { recordPlatformAccount } = await import("@/lib/compliance/deletion");
@@ -489,12 +502,13 @@ export async function loadSocial(supabase: SupabaseClient, clientId: string): Pr
   return out;
 }
 
-/** Which platforms have a token configured (never the token itself). */
-export function tokenState(tokens: Partial<Record<Platform, string>>): Record<Platform, "client" | "env" | null> {
-  const out = {} as Record<Platform, "client" | "env" | null>;
+/** Which platforms have a token: the client's own, or its organization's (never the token itself). */
+export async function tokenState(clientId: string, tokens: Partial<Record<Platform, string>>): Promise<Record<Platform, "client" | "org" | null>> {
+  const cfg = await configForClient(clientId).catch(() => null);
+  const out = {} as Record<Platform, "client" | "org" | null>;
   for (const p of PLATFORMS) {
-    const env = p === "instagram" ? PLATFORM_INFO.facebook.env : PLATFORM_INFO[p].env;
-    out[p] = tokens[p] || (p === "instagram" && tokens.facebook) ? "client" : process.env[env]?.trim() ? "env" : null;
+    const key = p === "instagram" ? PLATFORM_INFO.facebook.env : PLATFORM_INFO[p].env;
+    out[p] = tokens[p] || (p === "instagram" && tokens.facebook) ? "client" : cfg?.get(key) ? "org" : null;
   }
   return out;
 }

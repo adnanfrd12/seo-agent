@@ -54,7 +54,7 @@ export default async function CompetitorsPage() {
     { term: "Traffic share", text: "Each site's estimated traffic as a share of the total across you and your tracked competitors: a simple share-of-voice yardstick." },
   ]} />;
   if (!configured) {
-    return <>{header}<EmptyState title="DataForSEO isn't configured" body="Add DATAFORSEO_LOGIN and DATAFORSEO_PASSWORD to the environment, then redeploy." action={{ href: "/integrations", label: "Open Integrations" }} /></>;
+    return <>{header}<EmptyState title="DataForSEO isn't set up" body="An owner of this organization adds the DataForSEO API login and password in Settings → Integrations." action={{ href: "/integrations", label: "Open Integrations" }} /></>;
   }
   const supabase = await createClient();
   const comp = await loadCompetitors(supabase, client.id);

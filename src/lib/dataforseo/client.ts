@@ -1,7 +1,12 @@
 import "server-only";
+import { createHash } from "node:crypto";
+import { ConfigError, configForClient, type OrgConfig } from "@/lib/org/config";
 
 /**
  * DataForSEO API v3 (HTTP Basic auth: API login + API password, sent on the server only).
+ * Each organization uses its own DataForSEO account (Settings → Integrations): every call names whose account it
+ * uses (a client, i.e. its organization, or an organization's configuration) and there is no fallback to another
+ * organization's account.
  * All endpoints used here are Live calls billed per request (~$0.01-0.03, plus a tiny per-row cost).
  * Callers must go through budget.ts + research.ts so nothing is fetched twice or beyond the cap.
  */
@@ -12,13 +17,32 @@ export class DfsError extends Error {
   constructor(message: string, public kind: DfsErrorKind) { super(message); }
 }
 
-export const dfsConfigured = () => Boolean(process.env.DATAFORSEO_LOGIN?.trim() && process.env.DATAFORSEO_PASSWORD?.trim());
+/** Whose DataForSEO account a call uses: a client id (its organization's credentials) or an organization's configuration. */
+export type DfsScope = string | OrgConfig;
 
-function authHeader() {
-  const login = process.env.DATAFORSEO_LOGIN?.trim();
-  const password = process.env.DATAFORSEO_PASSWORD?.trim();
-  if (!login || !password) throw new DfsError("DataForSEO isn't configured (DATAFORSEO_LOGIN / DATAFORSEO_PASSWORD).", "config");
-  return `Basic ${Buffer.from(`${login}:${password}`).toString("base64")}`;
+export const DFS_NOT_CONFIGURED = "DataForSEO isn't set up for this organization: an owner needs to add the DataForSEO API login and password in Settings → Integrations.";
+const REJECTED = "DataForSEO rejected this organization's API login. Check the API login and password in Settings → Integrations.";
+
+async function configOf(scope: DfsScope): Promise<OrgConfig> {
+  if (typeof scope !== "string") return scope;
+  try { return await configForClient(scope); }
+  catch (e) { throw new DfsError(e instanceof ConfigError ? e.message : "Couldn't read this organization's DataForSEO settings. Try again.", e instanceof ConfigError ? "config" : "other"); }
+}
+
+/** True when the organization has a DataForSEO login and password. */
+export const dfsConfiguredIn = (cfg: OrgConfig) => cfg.has("DATAFORSEO_LOGIN", "DATAFORSEO_PASSWORD");
+
+/** True when the client's organization (or the given organization) has DataForSEO credentials; false when they can't be read. */
+export async function dfsConfigured(scope: DfsScope): Promise<boolean> {
+  try { return dfsConfiguredIn(await configOf(scope)); } catch { return false; }
+}
+
+async function auth(scope: DfsScope): Promise<{ header: string; orgId: string }> {
+  const cfg = await configOf(scope);
+  const login = cfg.get("DATAFORSEO_LOGIN");
+  const password = cfg.get("DATAFORSEO_PASSWORD");
+  if (!login || !password) throw new DfsError(DFS_NOT_CONFIGURED, "config");
+  return { header: `Basic ${Buffer.from(`${login}:${password}`).toString("base64")}`, orgId: cfg.orgId };
 }
 
 type TaskResponse = {
@@ -28,15 +52,16 @@ type TaskResponse = {
 
 /** One Live call. Returns the first result object (or null when DataForSEO has no data), what it cost and the task id. */
 export async function dfsPost(
-  path: string, body: Record<string, unknown>, opts: { timeoutMs?: number; attempts?: number } = {},
+  scope: DfsScope, path: string, body: Record<string, unknown>, opts: { timeoutMs?: number; attempts?: number } = {},
 ): Promise<{ result: Record<string, unknown> | null; cost: number; id?: string }> {
+  const { header } = await auth(scope);
   let lastErr: unknown;
   for (let attempt = 0; attempt < (opts.attempts ?? 3); attempt++) {
     let res: Response;
     try {
       res = await fetch(`${BASE}${path}`, {
         method: "POST",
-        headers: { Authorization: authHeader(), "Content-Type": "application/json" },
+        headers: { Authorization: header, "Content-Type": "application/json" },
         body: JSON.stringify([body]),
         signal: AbortSignal.timeout(opts.timeoutMs ?? 45_000),
         cache: "no-store",
@@ -47,7 +72,7 @@ export async function dfsPost(
       await new Promise((r) => setTimeout(r, 1500 * (attempt + 1)));
       continue;
     }
-    if (res.status === 401) throw new DfsError("DataForSEO rejected the login. Check DATAFORSEO_LOGIN and the API password.", "auth");
+    if (res.status === 401) throw new DfsError(REJECTED, "auth");
     if (res.status === 402) throw new DfsError("DataForSEO credit is used up. Top up the balance.", "payment");
     if (res.status === 429 || res.status >= 500) {
       lastErr = new DfsError(`DataForSEO is busy (${res.status}).`, "rate_limit");
@@ -68,7 +93,7 @@ export async function dfsPost(
       await new Promise((r) => setTimeout(r, 2000 * (attempt + 1)));
       continue;
     }
-    if (task.status_code === 40100) throw new DfsError("DataForSEO rejected the login.", "auth");
+    if (task.status_code === 40100) throw new DfsError(REJECTED, "auth");
     if (task.status_code === 40202 || task.status_code === 50301) throw new DfsError("DataForSEO rate limit reached. Try again shortly.", "rate_limit");
     throw new DfsError(`DataForSEO: ${task.status_message} (${task.status_code})`, task.status_code >= 40000 && task.status_code < 50000 ? "bad_request" : "other");
   }
@@ -80,18 +105,19 @@ export async function dfsPost(
  * arrives later, so the id is stored and the result is collected with dfsGet. Once DataForSEO has
  * answered, the task exists and is billed, so a response is never retried.
  */
-export async function dfsTaskPost(path: string, body: Record<string, unknown>): Promise<{ id: string; cost: number }> {
+export async function dfsTaskPost(scope: DfsScope, path: string, body: Record<string, unknown>): Promise<{ id: string; cost: number }> {
+  const { header } = await auth(scope);
   let res: Response | null = null;
   for (let attempt = 0; attempt < 2 && !res; attempt++) {
     try {
       res = await fetch(`${BASE}${path}`, {
-        method: "POST", headers: { Authorization: authHeader(), "Content-Type": "application/json" },
+        method: "POST", headers: { Authorization: header, "Content-Type": "application/json" },
         body: JSON.stringify([body]), signal: AbortSignal.timeout(45_000), cache: "no-store",
       });
     } catch { await new Promise((r) => setTimeout(r, 1500)); }
   }
   if (!res) throw new DfsError("Couldn't reach DataForSEO. Try again.", "other");
-  if (res.status === 401) throw new DfsError("DataForSEO rejected the login. Check DATAFORSEO_LOGIN and the API password.", "auth");
+  if (res.status === 401) throw new DfsError(REJECTED, "auth");
   if (res.status === 402) throw new DfsError("DataForSEO credit is used up. Top up the balance.", "payment");
   if (res.status === 429 || res.status >= 500) throw new DfsError(`DataForSEO is busy (${res.status}). Try again shortly.`, "rate_limit");
   const json = (await res.json().catch(() => null)) as (TaskResponse & { tasks?: { id?: string }[] }) | null;
@@ -102,27 +128,36 @@ export async function dfsTaskPost(path: string, body: Record<string, unknown>): 
   return { id: task.id, cost: Number(task.cost ?? json.cost ?? 0) || 0 };
 }
 
-/** A free GET (task status). Returns the task's own status code so callers can tell "not found" from "still running". */
-export async function dfsGet(path: string): Promise<{ status: number; result: Record<string, unknown> | null }> {
-  const res = await fetch(`${BASE}${path}`, { headers: { Authorization: authHeader() }, signal: AbortSignal.timeout(30_000), cache: "no-store" });
-  if (res.status === 401) throw new DfsError("DataForSEO rejected the login.", "auth");
+/**
+ * A free GET (task status). Returns the task's own status code so callers can tell "not found" from "still running".
+ * A task can only be read with the account that posted it, so this uses the same organization's account.
+ */
+export async function dfsGet(scope: DfsScope, path: string): Promise<{ status: number; result: Record<string, unknown> | null }> {
+  const { header } = await auth(scope);
+  const res = await fetch(`${BASE}${path}`, { headers: { Authorization: header }, signal: AbortSignal.timeout(30_000), cache: "no-store" });
+  if (res.status === 401) throw new DfsError(REJECTED, "auth");
   const json = (await res.json().catch(() => null)) as TaskResponse | null;
   const task = json?.tasks?.[0];
   if (!task) throw new DfsError("DataForSEO returned an unreadable response.", "other");
   return { status: task.status_code, result: task.result?.[0] ?? null };
 }
 
-let balanceCache: { at: number; value: number | null } | null = null;
-/** Account balance (a free endpoint). Cached for 5 minutes. */
-export async function dfsBalance(): Promise<number | null> {
-  if (balanceCache && Date.now() - balanceCache.at < 300_000) return balanceCache.value;
+const balanceCache = new Map<string, { at: number; value: number | null }>();
+/** The organization's account balance (a free endpoint), cached 5 minutes per organization and login. Null when unknown. */
+export async function dfsBalance(scope: DfsScope): Promise<number | null> {
+  let a: { header: string; orgId: string };
+  try { a = await auth(scope); } catch { return null; }
+  // keyed by the login too, so a changed login shows the new account's balance at once
+  const key = `${a.orgId}:${createHash("sha256").update(a.header).digest("hex").slice(0, 16)}`;
+  const hit = balanceCache.get(key);
+  if (hit && Date.now() - hit.at < 300_000) return hit.value;
+  let value: number | null = null;
   try {
-    const res = await fetch(`${BASE}/appendix/user_data`, { headers: { Authorization: authHeader() }, signal: AbortSignal.timeout(20_000), cache: "no-store" });
+    const res = await fetch(`${BASE}/appendix/user_data`, { headers: { Authorization: a.header }, signal: AbortSignal.timeout(20_000), cache: "no-store" });
     const j = (await res.json()) as TaskResponse;
     const money = (j.tasks?.[0]?.result?.[0] as { money?: { balance?: number } } | undefined)?.money;
-    balanceCache = { at: Date.now(), value: typeof money?.balance === "number" ? money.balance : null };
-  } catch {
-    balanceCache = { at: Date.now(), value: null };
-  }
-  return balanceCache.value;
+    value = typeof money?.balance === "number" ? money.balance : null;
+  } catch { /* unknown */ }
+  balanceCache.set(key, { at: Date.now(), value });
+  return value;
 }

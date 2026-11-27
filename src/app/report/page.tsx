@@ -1,11 +1,12 @@
 import type { Metadata } from "next";
-import { BrandLockup } from "@/components/brand/brand-mark";
 import { ReportBody, reportChapters } from "@/components/report/report-body";
+import { ReportBrandHeader, ReportCompany, ReportPageStyle } from "@/components/report/report-brand";
 import { CHAPTER_COLORS } from "@/components/report/report-ui";
 import { getSession } from "@/lib/analytics/client-context";
 import { isMonth, monthLabel, monthRange, resolveRange } from "@/lib/analytics/range";
 import { resourceScope } from "@/lib/analytics/resource-scope";
 import { first, type SearchParams } from "@/lib/analytics/url";
+import { getBranding } from "@/lib/org/branding";
 import { loadReportData } from "@/lib/report/data";
 import { PrintControls } from "./print-controls";
 
@@ -31,7 +32,8 @@ export default async function ReportPage({ searchParams }: { searchParams: Promi
     || (range.start.endsWith("-01") && range.end === monthRange(range.start.slice(0, 7)).end);
   const periodLabel = isFullMonth ? monthLabel(range.start.slice(0, 7)) : `${range.start} – ${range.end}`;
 
-  const scope = await resourceScope(client.id, sp);
+  // branding of the organization that owns this client (default look when it set none)
+  const [scope, brand] = await Promise.all([resourceScope(client.id, sp), getBranding(client.organizationId)]);
   const data = await loadReportData(scope.supabase, client.id, { start: range.start, end: range.end }, true);
   const generated = new Date().toLocaleDateString("en-US", { year: "numeric", month: "long", day: "numeric" });
   const toc = reportChapters(data, executive);
@@ -40,22 +42,26 @@ export default async function ReportPage({ searchParams }: { searchParams: Promi
   return (
     <div className="report-root min-h-screen bg-background">
       <PrintControls autoPrint={first(sp.print) === "1"} />
+      <ReportPageStyle brand={brand} />
 
       <div className="mx-auto max-w-[210mm] bg-surface px-[14mm] py-[14mm] print:max-w-none print:p-0">
         {/* cover */}
         <section className="report-cover flex min-h-[250mm] flex-col justify-between print:min-h-[265mm]">
-          <BrandLockup tagline="Analytics Dashboard" />
+          <ReportBrandHeader brand={brand} />
           <div>
-            <p className="text-xs font-semibold uppercase tracking-[0.2em] text-accent">
+            <p className="text-xs font-semibold uppercase tracking-[0.2em] text-[var(--highlight,var(--accent))]">
               {executive ? "Executive summary" : "Monthly performance report"}
             </p>
             <h1 className="mt-3 text-5xl font-extrabold leading-tight tracking-tight">{client.name}</h1>
             <p className="mt-4 text-2xl font-semibold text-foreground/80">{periodLabel}</p>
             {properties && <p className="mt-2 text-sm text-muted">{properties}</p>}
           </div>
-          <div className="flex items-end justify-between text-sm text-muted">
-            <p>Generated {generated}</p>
-            <p>Sources: connected Google, Microsoft and partner APIs · figures are never estimated</p>
+          <div>
+            <div className="flex items-end justify-between text-sm text-muted">
+              <p>Generated {generated}</p>
+              <p>Sources: connected Google, Microsoft and partner APIs · figures are never estimated</p>
+            </div>
+            <ReportCompany brand={brand} />
           </div>
         </section>
 

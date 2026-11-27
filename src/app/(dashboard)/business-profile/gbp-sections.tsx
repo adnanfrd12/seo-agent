@@ -192,7 +192,7 @@ export async function GbpSections({ supabase, clientId, resources, range, compar
         <section className={card} aria-labelledby="kw-trend-h">
           <h2 id="kw-trend-h" className="mb-1 text-base font-semibold">Search keywords: monthly trend and search volume</h2>
           <p className="mb-3 text-xs text-muted">{fmtInt(kt.list.length)} keywords over {kt.months.length} stored month{kt.months.length === 1 ? "" : "s"} · every month Google reported is kept</p>
-          <KeywordTrends months={kt.months} rows={kwRowsOut} canEdit={canEdit} missing={missing} estimate={estimateCost(missing.length)} volumeAvailable={dfsConfigured()} />
+          <KeywordTrends months={kt.months} rows={kwRowsOut} canEdit={canEdit} missing={missing} estimate={estimateCost(missing.length)} volumeAvailable={await dfsConfigured(clientId)} />
         </section>
       )}
     </div>

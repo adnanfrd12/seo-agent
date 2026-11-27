@@ -3,7 +3,7 @@
 import { revalidatePath } from "@/lib/revalidate";
 import { getSession } from "@/lib/analytics/client-context";
 import { BudgetError } from "@/lib/dataforseo/budget";
-import { DfsError, dfsConfigured } from "@/lib/dataforseo/client";
+import { DFS_NOT_CONFIGURED, DfsError, dfsConfigured } from "@/lib/dataforseo/client";
 import { MAX_RANK_KEYWORDS, RANK_SCHEDULES, rankEstimate, rankSettingsOf, runRankChecks, type RankSchedule } from "@/lib/dataforseo/rank";
 import { resolveTarget } from "@/lib/dataforseo/research";
 import { createAdminClient } from "@/lib/supabase/admin";
@@ -49,7 +49,7 @@ export async function removeRankKeyword(id: string): Promise<Result> {
 export async function checkRanksNow(force: boolean): Promise<Result> {
   const g = await guard();
   if ("error" in g) return { ok: false, error: String(g.error) };
-  if (!dfsConfigured()) return { ok: false, error: "DataForSEO isn't configured on the server." };
+  if (!(await dfsConfigured(g.client.id))) return { ok: false, error: DFS_NOT_CONFIGURED };
   try {
     const target = await resolveTarget(g.db, g.client.id);
     if (!target) return { ok: false, error: "Set the client's website first." };

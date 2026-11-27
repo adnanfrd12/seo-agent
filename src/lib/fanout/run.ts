@@ -1,7 +1,8 @@
 import "server-only";
 import type { SupabaseClient } from "@supabase/supabase-js";
-import { aiErrorMessage } from "@/lib/ai/claude";
+import { aiErrorMessage, anthropic } from "@/lib/ai/claude";
 import { recordClaudeUse } from "@/lib/ai/usage";
+import { configForClient } from "@/lib/org/config";
 import { BudgetError } from "@/lib/dataforseo/budget";
 import { DfsError } from "@/lib/dataforseo/client";
 import type { Target } from "@/lib/dataforseo/research";
@@ -35,7 +36,9 @@ export async function fanoutReady(admin: SupabaseClient) {
 
 export async function runFanout(admin: SupabaseClient, clientId: string, target: Target, business: string, o: RunOptions): Promise<RunOutcome> {
   const inputs = o.inputs.slice(0, o.kind === "keywords" ? MAX_KEYWORDS : MAX_PAGES);
-  const ctx: MethodContext = { site: target.domain, business };
+  const ctx: MethodContext = { site: target.domain, business, cfg: await configForClient(clientId) };
+  // a Claude method runs on the organization's own Anthropic key: without one, stop with what to set up before any page is read
+  if (METHOD.model) anthropic(ctx.cfg);
   const rows: Row[] = [], errors: { input: string; error: string }[] = [], summaries: PageSummary[] = [];
   let aiCost = 0, model = METHOD.model;
 

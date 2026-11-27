@@ -1,40 +1,75 @@
 import "server-only";
 import { createHash, randomBytes } from "node:crypto";
 import { serverEnv } from "@/lib/env";
+import { ConfigError, configForClient, type OrgConfig } from "@/lib/org/config";
 
 /**
- * Google OAuth 2.0 (authorization code + PKCE) for Business Profile. Everything here runs on the
- * server: the client secret and tokens never reach the browser.
+ * Google OAuth 2.0 (authorization code + PKCE) for Business Profile, with the Google Cloud OAuth client of the
+ * ORGANIZATION the client belongs to (Settings → Integrations → Google Cloud OAuth: GOOGLE_GBP_CLIENT_ID,
+ * GOOGLE_GBP_CLIENT_SECRET, optional GOOGLE_GBP_REDIRECT_URI, and GOOGLE_API_KEY for request quotas). Connecting,
+ * the callback and every token refresh use that same organization's client; a missing value is a ConfigError,
+ * never another organization's client. Everything here runs on the server: the client secret and tokens never
+ * reach the browser.
  */
 /** httpOnly cookie holding state + PKCE verifier between connect and callback. */
 export const GBP_OAUTH_COOKIE = "gbp_oauth";
 export const GBP_SCOPE = "https://www.googleapis.com/auth/business.manage";
+/** this deployment's callback path (the redirect URI's default) */
+export const GBP_CALLBACK_PATH = "/api/integrations/gbp/callback";
 const AUTH_URL = "https://accounts.google.com/o/oauth2/v2/auth";
 const TOKEN_URL = "https://oauth2.googleapis.com/token";
 const REVOKE_URL = "https://oauth2.googleapis.com/revoke";
 
 export class GoogleAuthError extends Error {}
 
-/** The environment's (GOOGLE_GBP_*) OAuth app is configured. Owners can also save their own app (oauth-apps.ts). */
-export function gbpConfigured(): boolean {
-  const e = serverEnv();
-  return Boolean(e.GOOGLE_GBP_CLIENT_ID && e.GOOGLE_GBP_CLIENT_SECRET && e.TOKEN_ENCRYPTION_KEY);
+/** An organization's Google Cloud OAuth client. */
+export type OAuthApp = {
+  orgId: string;
+  clientId: string;
+  clientSecret: string;
+  redirectUri: string;
+  /** the organization's GOOGLE_API_KEY (same Cloud project), sent with Business Profile calls when set */
+  apiKey: string | null;
+};
+
+const validRedirect = (v: string) => {
+  try {
+    const u = new URL(v);
+    return u.protocol === "https:" || u.hostname === "localhost";
+  } catch {
+    return false;
+  }
+};
+
+/**
+ * The redirect URI to register on the organization's OAuth client: its override when it has one, else this
+ * deployment's callback. Without a configuration, the deployment's callback.
+ */
+export function gbpRedirectUri(cfg?: OrgConfig): string {
+  const override = cfg?.get("GOOGLE_GBP_REDIRECT_URI");
+  if (override) {
+    if (!validRedirect(override)) {
+      throw new ConfigError("google_oauth", ["GOOGLE_GBP_REDIRECT_URI"], "The redirect URI override saved for this organization isn't a full https:// address. An owner can fix it or leave it empty in Settings → Integrations → Google Cloud OAuth.");
+    }
+    return override;
+  }
+  return `${serverEnv().NEXT_PUBLIC_APP_URL}${GBP_CALLBACK_PATH}`;
 }
 
-/** A Google OAuth client. `owner` is the user whose saved app it is; null = the environment's app. */
-export type OAuthApp = { clientId: string; clientSecret: string; owner: string | null };
-
-export function envApp(): OAuthApp | null {
-  const e = serverEnv();
-  return e.GOOGLE_GBP_CLIENT_ID && e.GOOGLE_GBP_CLIENT_SECRET
-    ? { clientId: e.GOOGLE_GBP_CLIENT_ID, clientSecret: e.GOOGLE_GBP_CLIENT_SECRET, owner: null }
-    : null;
+/** The organization's OAuth client, or a ConfigError saying what an owner must add in Settings → Integrations. */
+export function gbpApp(cfg: OrgConfig): OAuthApp {
+  return {
+    orgId: cfg.orgId,
+    clientId: cfg.require("GOOGLE_GBP_CLIENT_ID"),
+    clientSecret: cfg.require("GOOGLE_GBP_CLIENT_SECRET"),
+    redirectUri: gbpRedirectUri(cfg),
+    apiKey: cfg.get("GOOGLE_API_KEY") ?? null,
+  };
 }
 
-/** The registered redirect URI; falls back to the app URL so local dev works. */
-export function gbpRedirectUri(): string {
-  const e = serverEnv();
-  return e.GOOGLE_GBP_REDIRECT_URI ?? `${e.NEXT_PUBLIC_APP_URL}/api/integrations/gbp/callback`;
+/** The OAuth client of the organization this client belongs to. */
+export async function gbpAppForClient(clientId: string): Promise<OAuthApp> {
+  return gbpApp(await configForClient(clientId));
 }
 
 export function newPkce() {
@@ -47,7 +82,7 @@ export function authorizationUrl(app: OAuthApp, state: string, challenge: string
   const u = new URL(AUTH_URL);
   u.search = new URLSearchParams({
     client_id: app.clientId,
-    redirect_uri: gbpRedirectUri(),
+    redirect_uri: app.redirectUri,
     response_type: "code",
     scope: `openid email ${GBP_SCOPE}`,
     access_type: "offline", // refresh token
@@ -75,6 +110,10 @@ async function tokenRequest(app: OAuthApp, body: Record<string, string>): Promis
   });
   const json = (await res.json().catch(() => ({}))) as TokenSet & { error?: string; error_description?: string };
   if (!res.ok || !json.access_token) {
+    // the organization's client ID or secret is wrong (or the client was deleted): its settings, not the grant
+    if (json.error === "invalid_client") {
+      throw new ConfigError("google_oauth", ["GOOGLE_GBP_CLIENT_ID", "GOOGLE_GBP_CLIENT_SECRET"], "Google rejected this organization's OAuth client ID or secret. An owner can copy both again from Google Cloud → APIs & Services → Credentials into Settings → Integrations → Google Cloud OAuth.");
+    }
     // invalid_grant = refresh token revoked/expired; reconnect needed
     const msg = `${json.error ?? res.status}${json.error_description ? `: ${json.error_description}` : ""}`;
     throw new GoogleAuthError(`Google token request failed (${msg})`);
@@ -83,7 +122,7 @@ async function tokenRequest(app: OAuthApp, body: Record<string, string>): Promis
 }
 
 export const exchangeCode = (app: OAuthApp, code: string, verifier: string) =>
-  tokenRequest(app, { grant_type: "authorization_code", code, code_verifier: verifier, redirect_uri: gbpRedirectUri() });
+  tokenRequest(app, { grant_type: "authorization_code", code, code_verifier: verifier, redirect_uri: app.redirectUri });
 
 export const refreshAccessToken = (app: OAuthApp, refreshToken: string) =>
   tokenRequest(app, { grant_type: "refresh_token", refresh_token: refreshToken });

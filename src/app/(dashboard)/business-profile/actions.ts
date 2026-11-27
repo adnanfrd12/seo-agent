@@ -8,6 +8,7 @@ import { locationIdOf } from "@/lib/google/gbp-view";
 import { fetchVolumes, loadVolumes, staleKeywords } from "@/lib/google/keyword-volume";
 import { GoogleAuthError } from "@/lib/google/oauth";
 import { gbpAuth, googleTwin } from "@/lib/integrations/gbp-service";
+import { ConfigError } from "@/lib/org/config";
 import { revalidatePath } from "@/lib/revalidate";
 import { createAdminClient } from "@/lib/supabase/admin";
 
@@ -21,6 +22,7 @@ async function adminOnly() {
 
 /** Why a Google call failed, in words an owner can act on. */
 function explain(e: unknown): string {
+  if (e instanceof ConfigError) return e.message; // what the organization has to set up, and where
   if (e instanceof GoogleAuthError) return "Google authorization expired. Reconnect Business Profile on the Integrations page.";
   if (e instanceof GbpApiError) {
     if (e.kind === "not_approved") return "Google hasn't approved Business Profile API access for this Google Cloud project yet, so replies can't be posted from here. Reply in Google Business Profile for now.";

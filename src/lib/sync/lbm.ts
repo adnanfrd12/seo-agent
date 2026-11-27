@@ -1,7 +1,8 @@
 import "server-only";
 import type { SupabaseClient } from "@supabase/supabase-js";
-import { decryptSecret } from "@/lib/crypto";
-import { geogridConfigs, geogrids, getLocation, LbmError, legacyInsights, performanceMetrics, reportsList, reviews, searchImpressions } from "@/lib/lbm/api";
+import { decryptSecret, encryptSecret } from "@/lib/crypto";
+import { cleanToken, geogridConfigs, geogrids, getLocation, LbmError, lbmOrgToken, legacyInsights, performanceMetrics, reportsList, reviews, searchImpressions } from "@/lib/lbm/api";
+import { ConfigError, missingMessage } from "@/lib/org/config";
 import type { SyncResult } from "./types";
 
 /** Upserts in chunks; returns rows written. */
@@ -22,11 +23,33 @@ export async function syncLbm(
   admin: SupabaseClient,
   t: { clientId: string; resourceId: string; connectionId: string; lbmId: string; gbpId: string },
 ): Promise<SyncResult> {
+  // the connection's own token (stored when it was connected), else the organization's (Settings → Integrations)
+  const { data: secret } = await admin.from("integration_secrets").select("refresh_token_encrypted").eq("connection_id", t.connectionId).maybeSingle();
+  let stored: string | null = null;
+  try { stored = secret?.refresh_token_encrypted ? cleanToken(decryptSecret(secret.refresh_token_encrypted)) : null; } catch { /* unreadable copy: the organization's token is used */ }
+  const org = await lbmOrgToken(t.clientId);
+  const token = stored ?? org;
+  if (!token) throw new ConfigError("lbm", ["LOCAL_BRAND_MANAGER_API_TOKEN"], missingMessage("LOCAL_BRAND_MANAGER_API_TOKEN"));
+  const first = await syncWith(admin, t, token);
+  // The stored copy was refused, but the organization has a different token (e.g. replaced in Settings →
+  // Integrations after the old one was revoked): read with that one and keep it for this connection.
+  if (first.authError && stored && org && org !== stored) {
+    const second = await syncWith(admin, t, org);
+    if (!second.authError) {
+      await admin.from("integration_secrets").upsert({ connection_id: t.connectionId, refresh_token_encrypted: encryptSecret(org), updated_at: new Date().toISOString() });
+      return second;
+    }
+  }
+  return first;
+}
+
+async function syncWith(
+  admin: SupabaseClient,
+  t: { clientId: string; resourceId: string; connectionId: string; lbmId: string; gbpId: string },
+  token: string,
+): Promise<SyncResult> {
   const written: Record<string, number> = {};
   const failures: Record<string, string> = {};
-  const { data: secret } = await admin.from("integration_secrets").select("refresh_token_encrypted").eq("connection_id", t.connectionId).maybeSingle();
-  if (!secret?.refresh_token_encrypted) return { written, failures: { token: "No Local Brand Manager token stored." }, authError: new Error("no token") };
-  const token = decryptSecret(secret.refresh_token_encrypted);
   const base = { client_id: t.clientId, resource_id: t.resourceId };
   const now = () => new Date().toISOString();
 

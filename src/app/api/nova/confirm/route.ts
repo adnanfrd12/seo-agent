@@ -15,7 +15,7 @@ const body = z.object({ id: z.uuid(), decision: z.enum(["confirm", "cancel"]) })
  * for, for a role allowed to make that change, and only once.
  */
 export async function POST(req: Request) {
-  const { client, user } = await getSession();
+  const { client, user, organization } = await getSession();
   if (!client) return Response.json({ error: "Sign in first." }, { status: 401 });
   const p = body.safeParse(await req.json().catch(() => null));
   if (!p.success) return Response.json({ error: "Invalid request." }, { status: 400 });
@@ -25,7 +25,7 @@ export async function POST(req: Request) {
   const { data: pend } = await own();
   if (!pend) return Response.json({ error: "This action was already handled or has expired." }, { status: 409 });
   if (p.data.decision === "confirm") {
-    const blocked = confirmBlocked(pend.tool, client.role);
+    const blocked = confirmBlocked(pend.tool, client.role, organization?.enabledPages);
     if (blocked) return Response.json({ error: blocked }, { status: 403 });
   }
 

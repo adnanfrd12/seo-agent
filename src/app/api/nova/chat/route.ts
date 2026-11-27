@@ -1,7 +1,7 @@
 import Anthropic from "@anthropic-ai/sdk";
 import { after } from "next/server";
 import { z } from "zod";
-import { aiErrorMessage, anthropic } from "@/lib/ai/claude";
+import { aiErrorMessage, anthropicFor } from "@/lib/ai/claude";
 import { brief, briefForChat, briefText } from "@/lib/ai/intelligence";
 import { getSession } from "@/lib/analytics/client-context";
 import { todayIn } from "@/lib/analytics/range";
@@ -41,11 +41,13 @@ function uncache(m: Anthropic.MessageParam): Anthropic.MessageParam {
 }
 
 export async function POST(req: Request) {
-  const { client, user } = await getSession();
+  const { client, user, organization } = await getSession();
   if (!client) return Response.json({ error: "Sign in first." }, { status: 401 });
   const p = body.safeParse(await req.json().catch(() => null));
   if (!p.success) return Response.json({ error: "Write a message (up to 4,000 characters)." }, { status: 400 });
-  if (!process.env.ANTHROPIC_API_KEY) return Response.json({ error: "AI isn't configured (ANTHROPIC_API_KEY)." }, { status: 503 });
+  // Nova runs on the client's organization's own Anthropic key: without one, say what to set up (nothing is stored)
+  const ai = await anthropicFor(client.id).catch(aiErrorMessage);
+  if (typeof ai === "string") return Response.json({ error: ai }, { status: 503 });
 
   const admin = createAdminClient();
   const smallTalk = SMALL_TALK.test(p.data.message.trim());
@@ -94,10 +96,12 @@ export async function POST(req: Request) {
   const ctx: NovaCtx = {
     admin, db, client: { id: client.id, name: client.name, timezone: client.timezone, role: client.role },
     userId: user.id, conversationId: convId, canEdit: ["owner", "admin"].includes(client.role), brief: async () => (await briefP).brief, page: p.data.page ?? null,
+    enabledPages: organization?.enabledPages ?? null,
+    orgRole: organization?.role ?? null,
   };
   const today = todayIn(client.timezone);
   const firstName = (user.fullName ?? "").split(" ")[0];
-  const tools = toolDefinitions();
+  const tools = toolDefinitions(ctx.enabledPages);
   const effort = DEEP.test(p.data.message) || p.data.message.length > 400 ? "medium" : "low";
 
   const encoder = new TextEncoder();
@@ -109,7 +113,7 @@ export async function POST(req: Request) {
       const actions: Action[] = [];
       try {
         if (smallTalk) {
-          const s = anthropic().messages.stream({
+          const s = ai.messages.stream({
             model: settings.model, max_tokens: 400, output_config: { effort: "low" },
             system: smallTalkSystem(firstName, client.name, ctx.canEdit), messages: fromUser(messages.slice(-6)),
           }, { signal: req.signal });
@@ -126,7 +130,7 @@ export async function POST(req: Request) {
         messages[messages.length - 1] = cacheLast(messages[messages.length - 1]);
         let rolling: number | null = null;
         for (let turn = 0; turn < 8; turn++) {
-          const s = anthropic().messages.stream({
+          const s = ai.messages.stream({
             model: settings.model, max_tokens: 8000, thinking: { type: "adaptive" }, output_config: { effort },
             system: sys, tools, messages,
           }, { signal: req.signal });

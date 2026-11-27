@@ -1,8 +1,9 @@
 import "server-only";
 import type { SupabaseClient } from "@supabase/supabase-js";
 import { platformById, platformByProvider, platformBySocial } from "@/config/platforms";
-import { composio } from "@/lib/composio/client";
+import { composioForClient } from "@/lib/composio/client";
 import { revokeGbp } from "@/lib/integrations/gbp-service";
+import { ConfigError } from "@/lib/org/config";
 import { TOOLKIT, entityId } from "@/lib/social/composio";
 import { PLATFORMS as SOCIAL, type Platform } from "@/lib/social/platforms";
 import { deleteSnapshots } from "@/lib/social/snapshots";
@@ -31,8 +32,11 @@ const RESOURCE_CACHES: Record<string, string[]> = { ga4: ["ga4x"], gsc: ["gscx"]
 export const socialRef = (clientId: string, p: Platform) => `social:${clientId}:${p}`;
 
 async function deleteComposioAccounts(clientId: string, toolkit: string) {
-  const res = await composio().connectedAccounts.list({ userIds: [entityId(clientId)], toolkitSlugs: [toolkit], limit: 50 });
-  await Promise.all(res.items.map((a) => composio().connectedAccounts.delete(a.id).catch((e: unknown) => {
+  // the Composio project of the client's own organization; none configured means nothing of it is stored there
+  const c = await composioForClient(clientId).catch((e: unknown) => { if (e instanceof ConfigError) return null; throw e; });
+  if (!c) return 0;
+  const res = await c.connectedAccounts.list({ userIds: [entityId(clientId)], toolkitSlugs: [toolkit], limit: 50 });
+  await Promise.all(res.items.map((a) => c.connectedAccounts.delete(a.id).catch((e: unknown) => {
     // already gone at Composio is fine; anything else must surface so the caller can retry
     if (!/not.?found|404/i.test(String(e))) throw e;
   })));
@@ -175,8 +179,15 @@ export async function deleteWorkspace(admin: SupabaseClient, clientId: string, r
   if (error) throw new Error(`Couldn't delete the workspace: ${error.message}`);
   let users = 0;
   for (const m of members ?? []) {
-    const { count } = await admin.from("client_members").select("client_id", { count: "exact", head: true }).eq("user_id", m.user_id);
-    if (!count) { const { error: e } = await admin.auth.admin.deleteUser(m.user_id); if (!e) users++; }
+    // a login is removed only when nothing else holds it: no other client, no organization membership (an
+    // organization's owners and admins reach its clients without client rows, and deactivated members can be
+    // reactivated) and no platform administration
+    const [{ count: clientsLeft }, { count: orgs }, { count: platform }] = await Promise.all([
+      admin.from("client_members").select("client_id", { count: "exact", head: true }).eq("user_id", m.user_id),
+      admin.from("organization_members").select("user_id", { count: "exact", head: true }).eq("user_id", m.user_id),
+      admin.from("platform_admins").select("user_id", { count: "exact", head: true }).eq("user_id", m.user_id),
+    ]);
+    if (clientsLeft === 0 && orgs === 0 && platform === 0) { const { error: e } = await admin.auth.admin.deleteUser(m.user_id); if (!e) users++; }
   }
   await logDeletion(admin, { at: new Date().toISOString(), action: "workspace_deleted", platform: "workspace", reason, connection_ref: null, workspace_id: clientId, platform_user_id: null, detail: { connections: conns?.length ?? 0, users_deleted: users } });
   return { connections: conns?.length ?? 0, users };

@@ -1,9 +1,10 @@
 import "server-only";
 import type { SupabaseClient } from "@supabase/supabase-js";
-import { decryptSecret } from "@/lib/crypto";
+import { decryptSecret, encryptSecret } from "@/lib/crypto";
 import {
-  BingError, bingDate, crawlStats, userSites, keywordStats, pageQueryStats, pageStats, queryStats, rankAndTraffic, siteDetails, type BingQueryStat,
+  BingError, bingDate, bingOrgKey, cleanKey, crawlStats, userSites, keywordStats, pageQueryStats, pageStats, queryStats, rankAndTraffic, siteDetails, type BingQueryStat,
 } from "@/lib/bing/api";
+import { ConfigError, missingMessage } from "@/lib/org/config";
 import type { SyncResult } from "./types";
 
 const TOP_PAGES_FOR_QUERIES = 25;
@@ -47,11 +48,31 @@ function weekly(rows: BingQueryStat[]) {
 export async function syncBing(
   admin: SupabaseClient, t: { clientId: string; resourceId: string; connectionId: string; siteUrl: string },
 ): Promise<SyncResult> {
+  // the connection's own key (stored when it was connected), else the organization's (Settings → Integrations)
+  const { data: secret } = await admin.from("integration_secrets").select("refresh_token_encrypted").eq("connection_id", t.connectionId).maybeSingle();
+  let stored: string | null = null;
+  try { stored = secret?.refresh_token_encrypted ? cleanKey(decryptSecret(secret.refresh_token_encrypted)) : null; } catch { /* unreadable copy: the organization's key is used */ }
+  const org = await bingOrgKey(t.clientId);
+  const key = stored ?? org;
+  if (!key) throw new ConfigError("bing", ["BING_WEBMASTER_API_KEY"], missingMessage("BING_WEBMASTER_API_KEY"));
+  const first = await syncWith(admin, t, key);
+  // The stored copy was refused, but the organization has a different key (e.g. replaced in Settings → Integrations
+  // after the old one was revoked): read with that one and keep it for this connection.
+  if (first.authError && stored && org && org !== stored) {
+    const second = await syncWith(admin, t, org);
+    if (!second.authError) {
+      await admin.from("integration_secrets").upsert({ connection_id: t.connectionId, refresh_token_encrypted: encryptSecret(org), updated_at: new Date().toISOString() });
+      return second;
+    }
+  }
+  return first;
+}
+
+async function syncWith(
+  admin: SupabaseClient, t: { clientId: string; resourceId: string; connectionId: string; siteUrl: string }, key: string,
+): Promise<SyncResult> {
   const written: Record<string, number> = {};
   const failures: Record<string, string> = {};
-  const { data: secret } = await admin.from("integration_secrets").select("refresh_token_encrypted").eq("connection_id", t.connectionId).maybeSingle();
-  if (!secret?.refresh_token_encrypted) return { written, failures: { key: "No Bing API key stored." }, authError: new Error("no key") };
-  const key = decryptSecret(secret.refresh_token_encrypted);
   const base = { client_id: t.clientId, resource_id: t.resourceId };
   const now = new Date().toISOString();
   let topQueries: string[] = [];

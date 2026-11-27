@@ -6,7 +6,8 @@ import { websiteOf } from "./shared";
 
 /**
  * Settings page: the client's name, time zone and default date range, and the user's own display name.
- * Team members and roles, passwords, the profile photo and deleting the workspace stay on the Settings page.
+ * Team members, roles, invitations and client access (Settings → Organization), passwords, the profile photo and
+ * deleting the workspace stay in the dashboard.
  */
 
 /** The IANA name Intl uses for a time zone, or null when it isn't one (the settings action checks the same way). */
@@ -33,7 +34,7 @@ export const settingsTools: NovaTool[] = [
         client: { name: row.name, time_zone: row.timezone, default_date_range_days: row.default_range_days, website: site ?? "not known yet", website_is: "the research target domain used for SEO research, blog and site checks" },
         you: { display_name: (me as { full_name: string | null } | null)?.full_name ?? null, role: ctx.client.role, can_change_client_settings: ctx.canEdit },
         settings_page: "/settings",
-        only_on_the_settings_page: "team members and roles, password, profile photo, deleting the workspace",
+        only_on_the_settings_page: "password, profile photo and deleting the workspace (Settings → My account); team members, roles, invitations and client access (Settings → Organization → Team members)",
       });
     },
     summary: () => "Read client settings",

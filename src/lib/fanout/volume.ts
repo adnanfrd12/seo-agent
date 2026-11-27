@@ -29,10 +29,10 @@ export async function volumes(admin: SupabaseClient, clientId: string, target: T
   for (const [k, v] of kw) if (v.volume != null) map.set(k, v.volume);
   for (const r of prev.data ?? []) map.set(norm(String(r.query)), Number(r.volume));
   const missing = want.filter((k) => !map.has(k)).slice(0, 700);
-  if (!missing.length || !dfsConfigured()) return { map, cost: 0, fetched: 0 };
+  if (!missing.length || !(await dfsConfigured(clientId))) return { map, cost: 0, fetched: 0 };
 
   await assertBudget(admin, clientId, EST.volume(missing.length), "manual");
-  const { result, cost } = await dfsPost("/dataforseo_labs/google/keyword_overview/live", { keywords: missing, location_code: target.location_code, language_code: target.language_code });
+  const { result, cost } = await dfsPost(clientId, "/dataforseo_labs/google/keyword_overview/live", { keywords: missing, location_code: target.location_code, language_code: target.language_code });
   await recordSpend(admin, clientId, "fanout_volume", cost, "manual");
   for (const k of missing) map.set(k, null);
   for (const it of arr(result?.items)) {

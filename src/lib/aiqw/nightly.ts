@@ -1,5 +1,6 @@
 import "server-only";
 import type { SupabaseClient } from "@supabase/supabase-js";
+import { anthropicFor } from "@/lib/ai/claude";
 import { emailConfigured } from "@/lib/notify";
 import { collectBatch } from "./claude";
 import { clientSettings, finishBatch, submitNightly } from "./run";
@@ -14,7 +15,7 @@ import type { RunState, StoredWin } from "./types";
 const esc = (s: string) => s.replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" })[c] as string);
 
 export async function nightlyClients(admin: SupabaseClient): Promise<{ id: string; name: string }[]> {
-  const { data } = await admin.from("clients").select("id, name, settings").limit(500);
+  const { data } = await admin.from("clients").select("id, name, settings").is("archived_at", null).limit(500);
   return (data ?? []).filter((c) => ((c.settings as Record<string, unknown> | null)?.ai_qw as { nightly?: boolean } | undefined)?.nightly === true).map((c) => ({ id: c.id, name: c.name }));
 }
 
@@ -34,15 +35,17 @@ export async function collectAll(admin: SupabaseClient): Promise<{ client: strin
     const p = await loadPending(admin, c.id);
     if (!p) continue;
     const { settings } = await clientSettings(admin, c.id);
-    const results = await collectBatch(settings, p.batchId).catch(() => null);
-    if (!results) {
+    // the batch belongs to the organization's Anthropic key; without it the batch can't be read
+    const ai = await anthropicFor(c.id).catch(() => null);
+    const results = ai && (await collectBatch(ai, settings, p.batchId).catch(() => null));
+    if (!ai || !results) {
       // still processing (or unreachable): try again on the next collect; give up after 30 hours
       if (Date.now() - Date.parse(p.submittedAt) > 30 * 3_600_000) { await clearPending(admin, c.id); out.push({ client: c.name, status: "expired" }); }
       else out.push({ client: c.name, status: "processing" });
       continue;
     }
     const before = await loadItems(admin, c.id);
-    const run = await finishBatch(admin, c.id, p.runId, p.chunks, results);
+    const run = await finishBatch(admin, c.id, p.runId, p.chunks, results, ai);
     await clearPending(admin, c.id);
     const emailed = run ? await morningEmail(admin, c.id, c.name, run, before, settings.emailTo) : false;
     out.push({ client: c.name, status: run?.status ?? "missing run", emailed });

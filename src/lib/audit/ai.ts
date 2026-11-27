@@ -1,7 +1,8 @@
 import "server-only";
+import type Anthropic from "@anthropic-ai/sdk";
 import { betaZodOutputFormat } from "@anthropic-ai/sdk/helpers/beta/zod";
 import { z } from "zod";
-import { AI_MODEL, anthropic, costUsd } from "@/lib/ai/claude";
+import { AI_MODEL, costUsd } from "@/lib/ai/claude";
 import type { AiFix, AltSuggestion, AuditDetail, ImageRow } from "./details";
 import { AI_FIX_MAX_ITEMS, ALT_BATCH, howTo } from "./guide";
 
@@ -23,9 +24,9 @@ export interface AskInput { system: string; content: Block[]; schema: "fix" | "a
 export interface AskOutput { parsed: unknown; usage: { input_tokens: number; output_tokens: number; cache_read_input_tokens?: number | null }; model: string; refused: boolean }
 export type Ask = (i: AskInput) => Promise<AskOutput>;
 
-/** The real call: structured output, refusal fallback on the server. */
-export const askClaude: Ask = async ({ system, content, schema, maxTokens }) => {
-  const res = await anthropic().beta.messages.parse({
+/** The real call on the organization's Claude client (anthropicFor): structured output, refusal fallback on the server. */
+export const askClaude = (ai: Anthropic): Ask => async ({ system, content, schema, maxTokens }) => {
+  const res = await ai.beta.messages.parse({
     model: AUDIT_AI_MODEL, max_tokens: maxTokens, betas: ["server-side-fallback-2026-07-01"], fallbacks: "default",
     output_config: { effort: "low", format: betaZodOutputFormat(schema === "fix" ? fixSchema : altSchema) },
     system, messages: [{ role: "user", content }],
@@ -66,7 +67,7 @@ export function readFix(out: AskOutput): { summary: string; fixes: AiFix[] } {
   };
 }
 
-export async function runFix(d: AuditDetail, site: { domain: string; livePages: string[] }, ask: Ask = askClaude) {
+export async function runFix(d: AuditDetail, site: { domain: string; livePages: string[] }, ask: Ask) {
   const out = await ask(buildFixPrompt(d, site));
   return { ...readFix(out), cost: Number(costUsd(out.usage).toFixed(5)), model: out.model };
 }
@@ -123,7 +124,7 @@ export function readAlt(out: AskOutput, imgs: { row: ImageRow }[]): Record<strin
   return map;
 }
 
-export async function runAlt(site: string, rows: ImageRow[], ask: Ask = askClaude) {
+export async function runAlt(site: string, rows: ImageRow[], ask: Ask) {
   const loaded = (await Promise.all(rows.map(async (row) => ({ row, img: await loadImage(row.src) }))))
     .filter((x): x is { row: ImageRow; img: { media: Media; data: string } } => x.img !== null).map((x) => ({ row: x.row, ...x.img }));
   const skipped = rows.filter((r) => !loaded.some((l) => l.row.src === r.src)).map((r) => r.src);

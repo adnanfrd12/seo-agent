@@ -1,18 +1,19 @@
 import { timingSafeEqual } from "node:crypto";
 import { NextResponse, type NextRequest } from "next/server";
 import { activeClientIds } from "@/lib/activity";
+import { aiUnavailable } from "@/lib/ai/claude";
 import { BRAND_EST, brandNamesFor, LLM_EST, llmTopics, refreshBrandLookup, refreshLlmMentions } from "@/lib/ai/llm-mentions";
 import { runAiChecks, suggestPrompts } from "@/lib/ai/visibility";
 import { POST_KW_EST, refreshPostKeywords } from "@/lib/blog/keywords";
 import { syncBlog } from "@/lib/blog/sync";
-import { AUTO_SHARE, BudgetError, getSettings, spend } from "@/lib/dataforseo/budget";
-import { dfsConfigured } from "@/lib/dataforseo/client";
+import { AUTO_SHARE, BudgetError, runBudgets } from "@/lib/dataforseo/budget";
 import { runLighthouse, LH_EST } from "@/lib/dataforseo/lighthouse";
 import { fetchProfile, GRID_POINT_EST, gridRivals, localIdentity, PROFILE_EST, REVIEWS_EST, runGrid, startReviews, type Grid, type Profile } from "@/lib/dataforseo/local";
 import { pollPosts, POSTS_ENDPOINT, POSTS_EST, postTargets, startPosts } from "@/lib/dataforseo/gbp-posts";
 import { EXTRAS_MAX, extrasEstimate, loadCompetitors, refreshCompetitorExtras } from "@/lib/dataforseo/competitors";
 import { ensure, refreshDeep, resolveTarget, SPECS, type Row } from "@/lib/dataforseo/research";
 import { serverEnv } from "@/lib/env";
+import { ConfigError } from "@/lib/org/config";
 import { pollPlatforms, refreshAll as refreshPlatformReviews, refreshEstimate as platformReviewsEstimate, WEEKLY_LISTINGS_EST } from "@/lib/reviews/platforms";
 import { connectedAccounts, refreshSocial, SOCIAL_ENDPOINT, SOCIAL_EST } from "@/lib/social/fetch";
 import { loggedRun } from "@/lib/jobs/log";
@@ -32,10 +33,12 @@ const SEED_KEYWORDS = 10, SEED_PROMPTS = 5, MAX_GRID_KEYWORDS = 3;
 
 /**
  * Daily, after the research run. Everything here used to need a button; it now runs on its own for
- * ACTIVE clients (opened in the last 14 days), inside the automatic share of the daily DataForSEO budget:
+ * ACTIVE clients (opened in the last 14 days), inside the automatic share of the daily DataForSEO budget of the
+ * client's organization (each organization pays its own account; one that hasn't set DataForSEO up, or turned
+ * automatic refresh off, is skipped with the reason in the summary, and one reaching its limit never stops the others):
  *   0. starter setup (once per client): tracked keywords are topped up to 10 (desktop and mobile) and
  *      AI questions to 5, from the keywords the site already ranks for; removing one later is respected
- *   1. AI visibility (ChatGPT, Perplexity, Gemini, Google AI Mode via DataForSEO; Claude via the Anthropic key), weekly,
+ *   1. AI visibility (ChatGPT, Perplexity, Gemini, Google AI Mode via DataForSEO; Claude via the organization's Anthropic key), weekly,
  *      and the AI market view for the client's topics (DataForSEO LLM Mentions, ChatGPT and Google), weekly
  *   2. Google Maps rank grids for the keywords scanned before (or the business category), weekly
  *   3. Lighthouse on the home page and the top page, mobile and desktop, weekly
@@ -57,10 +60,14 @@ async function handle(request: NextRequest) {
       const out: Record<string, unknown> = {};
       const active = [...(await activeClientIds(admin))];
       out.activeClients = active.length;
-      const settings = dfsConfigured() ? await getSettings(admin) : null;
-      const cap = settings?.dailyBudget ?? 0;
-      const spentNow = async () => { try { return await spend(admin); } catch { return Infinity; } };
-      const room = async (est: number) => settings?.autoRefresh !== false && (await spentNow()) + est <= cap * AUTO_SHARE;
+      // DataForSEO per organization: room(id, est) is true while the client's organization may still spend `est` today
+      // on automatic refreshes (its own limit, switch and spend); paid() is false for clients whose organization can't run
+      const budgets = runBudgets(admin);
+      const room = async (id: string, est: number) => (await budgets.under(id, AUTO_SHARE, est)) === true;
+      const paid = async (id: string) => Boolean(await budgets.of(id));
+      // clients skipped because their organization lacks a credential, per integration (for the summary)
+      const notSetUp = new Map<string, Set<string>>();
+      const skip = (integration: string, id: string) => notSetUp.set(integration, (notSetUp.get(integration) ?? new Set<string>()).add(id));
       const age = (iso: string | null | undefined) => (iso ? Date.now() - Date.parse(iso) : Infinity);
       const latest = async (clientId: string, endpoint: string) => {
         const { data } = await admin.from("dfs_cache").select("params_hash, data, fetched_at").eq("client_id", clientId).eq("endpoint", endpoint).order("fetched_at", { ascending: false }).limit(50);
@@ -117,7 +124,7 @@ async function handle(request: NextRequest) {
             const t = await ga4xTarget(admin, id);
             if (!t?.ctx || !isStale(await loadMeta(admin, id, t.resource.id))) continue;
             if (await syncGa4x(admin, id, t.resource.id)) synced++;
-          } catch { /* next client; this one is retried next run */ }
+          } catch (e) { if (e instanceof ConfigError) skip(e.integration, id); /* else next client; this one is retried next run */ }
         }
         out.ga4Leads = synced;
       }
@@ -131,7 +138,7 @@ async function handle(request: NextRequest) {
             const t = await gscxTarget(admin, id);
             if (!t?.ctx || !isStale(await loadOne(admin, id, t.resource.id, "meta"))) continue;
             if (await syncGscx(admin, id, t.resource.id, { inspectBudget: 150 })) synced++;
-          } catch { /* retried next run */ }
+          } catch (e) { if (e instanceof ConfigError) skip(e.integration, id); /* else retried next run */ }
         }
         out.gscModule = synced;
       }
@@ -142,13 +149,15 @@ async function handle(request: NextRequest) {
       } catch (e) { out.securityAudit = { error: e instanceof Error ? e.message : "failed" }; }
 
       // 1. AI visibility (weekly per question; the DataForSEO assistants respect the automatic budget inside runAiChecks)
-      if (process.env.ANTHROPIC_API_KEY) {
+      {
         // at most about two minutes per run, so the steps below always get their turn; the rest continues next run
         const aiDeadline = Math.min(deadline - 90_000, Date.now() + 120_000);
         let checked = 0, cost = 0;
         const errors: string[] = [];
         for (const id of active) {
           if (Date.now() > aiDeadline) break;
+          // Claude runs on the client's organization's own Anthropic key: clients whose organization has none are skipped
+          if (await aiUnavailable(id)) { skip("anthropic", id); continue; }
           const target = await resolveTarget(admin, id);
           if (!target) continue;
           const { data: s } = await admin.from("clients").select("settings").eq("id", id).maybeSingle();
@@ -161,7 +170,7 @@ async function handle(request: NextRequest) {
       }
 
       // 8. blog content: runs last so it never takes time from the steps above (the first full read
-      // of a big blog continues over a few runs); also on the early exits below
+      // of a big blog continues over a few runs)
       const blogStep = async () => {
         const blogDeadline = Math.min(deadline - 5_000, Date.now() + 75_000);
         let read = 0, geo = 0, cost = 0, kwMatched = 0, kwPaid = 0, kwCost = 0;
@@ -175,23 +184,19 @@ async function handle(request: NextRequest) {
             if (r.stopped === "setup") continue;
             // DataForSEO keywords: matched free from stored data every day; new posts' own lists (paid,
             // refreshed weekly) only inside the automatic budget share
-            const paid = settings?.autoRefresh && (await room(POST_KW_EST * 20)) ? "new" : "none";
-            const k = await refreshPostKeywords(admin, id, { paid, source: "auto", deadline: blogDeadline, maxPaid: 20 });
+            const k = await refreshPostKeywords(admin, id, { paid: (await room(id, POST_KW_EST * 20)) ? "new" : "none", source: "auto", deadline: blogDeadline, maxPaid: 20 });
             kwMatched += k.matched; kwPaid += k.paid; kwCost += k.cost;
           } catch (e) { errors.push(e instanceof Error ? e.message : "failed"); }
         }
         out.blog = { postsRead: read, placesRead: geo, cost: Number(cost.toFixed(4)), keywordsMatched: kwMatched, keywordsFetched: kwPaid, keywordCost: Number(kwCost.toFixed(4)), errors: [...new Set(errors)].slice(0, 3) };
       };
 
-      if (!settings) { out.skipped = "DataForSEO not configured"; await blogStep(); return out; }
-      if (!settings.autoRefresh) { out.skipped = "Automatic refresh is turned off on the Integrations page"; await blogStep(); return out; }
-
       // 1b. AI market data (LLM Mentions) for the client's topics
       let llm = 0;
       for (const id of active) {
         if (Date.now() > deadline - 150_000) break;
         const target = await resolveTarget(admin, id);
-        if (!target || !(await room(2 * LLM_EST))) continue;
+        if (!target || !(await room(id, 2 * LLM_EST))) continue;
         const me = await localIdentity(admin, id);
         const prof = ((await latest(id, "gbp_profile")).find((r) => r.params_hash === "self")?.data ?? null) as Profile | null;
         const ranked = ((await latest(id, "ranked_keywords"))[0]?.data ?? []) as Row[];
@@ -199,7 +204,6 @@ async function handle(request: NextRequest) {
         const topics = llmTopics((qs ?? []).map((q) => String(q.prompt)), ranked.filter((k) => typeof k.keyword === "string").map((k) => ({ keyword: k.keyword as string, volume: Number(k.volume ?? 0) })), me?.city ?? null, prof?.category ?? null);
         const r = await refreshLlmMentions({ admin, clientId: id, source: "auto" }, target, topics);
         llm += r.fetched;
-        if (r.error) break;
       }
       out.aiMarket = { fetched: llm };
 
@@ -207,6 +211,7 @@ async function handle(request: NextRequest) {
       let grids = 0;
       let gridStopped: string | null = null;
       for (const id of active) {
+        if (!(await paid(id))) continue;
         const me = await localIdentity(admin, id);
         if (!me || me.lat == null) continue;
         const rows = await latest(id, "maps_grid");
@@ -225,11 +230,11 @@ async function handle(request: NextRequest) {
         for (const { g, at } of [...byKw.values()].slice(0, MAX_GRID_KEYWORDS)) {
           if (age(at || null) < (GRID_EVERY_DAYS - 0.5) * DAY) continue;
           if (Date.now() > deadline - 60_000) { gridStopped = "time"; break; }
-          if (!(await room(g.size * g.size * GRID_POINT_EST))) { gridStopped = "budget"; break; }
+          if (!(await room(id, g.size * g.size * GRID_POINT_EST))) { gridStopped = "budget"; break; }
           try { await runGrid({ admin, clientId: id, source: "auto" }, me, g.keyword, g.size === 5 ? 5 : 3, g.spacingKm || 2); grids++; }
           catch (e) { if (e instanceof BudgetError) { gridStopped = "budget"; break; } }
         }
-        if (gridStopped) break;
+        if (gridStopped === "time") break;
       }
       out.grids = { scanned: grids, stopped: gridStopped };
 
@@ -240,7 +245,7 @@ async function handle(request: NextRequest) {
         const runs = await latest(id, "lighthouse");
         if (age(runs[0]?.fetched_at as string | undefined) < (LH_EVERY_DAYS - 0.5) * DAY) continue;
         const target = await resolveTarget(admin, id);
-        if (!target || !(await room(4 * LH_EST))) continue;
+        if (!target || !(await room(id, 4 * LH_EST))) continue;
         const rel = ((await latest(id, "relevant_pages"))[0]?.data ?? []) as { page: string | null; traffic: number | null }[];
         const home = `https://${target.domain}/`;
         const topPage = rel.filter((r) => r.page).sort((a, b) => (b.traffic ?? 0) - (a.traffic ?? 0)).map((r) => (r.page!.startsWith("http") ? r.page! : `https://${r.page}`)).find((u) => u.replace(/\/$/, "") !== home.replace(/\/$/, ""));
@@ -252,6 +257,7 @@ async function handle(request: NextRequest) {
       let rivals = 0;
       for (const id of active) {
         if (Date.now() > deadline - 40_000) break;
+        if (!(await paid(id))) continue;
         const profiles = await latest(id, "gbp_profile");
         const self = (profiles.find((r) => r.params_hash === "self")?.data ?? null) as Profile | null;
         const known = profiles.filter((r) => r.params_hash !== "self");
@@ -266,7 +272,7 @@ async function handle(request: NextRequest) {
               .map((g) => ({ key: g.cid ? `cid:${g.cid}` : `name:${g.name.toLowerCase()}`, at: "", cid: g.cid, name: g.name }));
         for (const r of list.slice(0, 3)) {
           if (age(r.at || null) < (RIVAL_EVERY_DAYS - 0.5) * DAY) continue;
-          if (!(await room(PROFILE_EST + REVIEWS_EST / 2))) break;
+          if (!(await room(id, PROFILE_EST + REVIEWS_EST / 2))) break;
           const ctx = { admin, clientId: id, source: "auto" as const };
           try {
             const p = await fetchProfile(ctx, { name: r.name, cid: r.cid }, r.key, me ?? undefined);
@@ -284,10 +290,9 @@ async function handle(request: NextRequest) {
         const last = await latest(id, "backlinks");
         if (age(last[0]?.fetched_at as string | undefined) < (DEEP_EVERY_DAYS - 0.5) * DAY) continue;
         const target = await resolveTarget(admin, id);
-        if (!target || !target.auto_refresh || !(await room(0.35))) continue;
-        const rep = await refreshDeep({ admin, clientId: id, source: "auto" }, target);
+        if (!target || !target.auto_refresh || !(await room(id, 0.35))) continue;
+        await refreshDeep({ admin, clientId: id, source: "auto" }, target);
         deep++;
-        if (rep.stoppedByBudget) break;
       }
       out.deepDive = { refreshed: deep };
 
@@ -295,6 +300,7 @@ async function handle(request: NextRequest) {
       let gaps = 0;
       for (const id of active) {
         if (Date.now() > deadline - 15_000) break;
+        if (!(await paid(id))) continue;
         const target = await resolveTarget(admin, id);
         if (!target || !target.auto_refresh) continue;
         const comp = await loadCompetitors(admin, id);
@@ -302,7 +308,7 @@ async function handle(request: NextRequest) {
         const done = new Map((rows ?? []).map((r) => [String((r.params as { competitor?: string }).competitor ?? ""), r.fetched_at as string]));
         for (const d of comp.tracked.slice(0, 3)) {
           if (age(done.get(d)) < (GAP_EVERY_DAYS - 0.5) * DAY) continue;
-          if (!(await room(SPECS.link_gap.est))) break;
+          if (!(await room(id, SPECS.link_gap.est))) break;
           try { await ensure({ admin, clientId: id, source: "auto" }, SPECS.link_gap, target, { extra: d }); gaps++; } catch (e) { if (e instanceof BudgetError) break; }
         }
       }
@@ -313,21 +319,21 @@ async function handle(request: NextRequest) {
       let brandLookups = 0, compExtras = 0;
       for (const id of active) {
         if (Date.now() > deadline - 10_000) break;
+        if (!(await paid(id))) continue;
         const target = await resolveTarget(admin, id);
         if (!target || !target.auto_refresh) continue;
         const ctx = { admin, clientId: id, source: "auto" as const };
         const brandAge = age((await latest(id, "llm_brand_history"))[0]?.fetched_at as string | undefined);
-        if (brandAge > 6.5 * DAY && (await room(4 * BRAND_EST))) {
+        if (brandAge > 6.5 * DAY && (await room(id, 4 * BRAND_EST))) {
           const r = await refreshBrandLookup(ctx, target, await brandNamesFor(admin, id, target.domain.replace(/^www\./, "")));
           brandLookups += r.fetched;
         }
         const comp = await loadCompetitors(admin, id);
         const tracked = comp.tracked.slice(0, EXTRAS_MAX);
         const freshHist = (await latest(id, "comp_history")).filter((r) => age(r.fetched_at as string) < 6.5 * DAY).length;
-        if (tracked.length && freshHist < tracked.length && (await room(extrasEstimate(tracked.length)))) {
+        if (tracked.length && freshHist < tracked.length && (await room(id, extrasEstimate(tracked.length)))) {
           const r = await refreshCompetitorExtras(ctx, target, tracked);
           compExtras += r.fetched;
-          if (r.stoppedByBudget) break;
         }
       }
       out.market = { brandLookups, competitorExtras: compExtras };
@@ -337,12 +343,13 @@ async function handle(request: NextRequest) {
       let postsStarted = 0, postsCollected = 0;
       for (const id of active) {
         if (Date.now() > deadline - 8_000) break;
+        if (!(await paid(id))) continue;
         try { postsCollected += (await pollPosts(admin, id)).done; } catch { /* next run */ }
         const have = new Map((await latest(id, POSTS_ENDPOINT)).map((r) => [r.params_hash as string, r]));
         for (const t of await postTargets(admin, id)) {
           const row = have.get(t.key);
           if ((row?.data as { status?: string } | undefined)?.status === "pending" || age(row?.fetched_at as string | undefined) < 6.5 * DAY) continue;
-          if (!(await room(POSTS_EST))) break;
+          if (!(await room(id, POSTS_EST))) break;
           try { await startPosts({ admin, clientId: id, source: "auto" }, t.who, t.key, t.own); postsStarted++; } catch (e) { if (e instanceof BudgetError) break; }
         }
       }
@@ -364,8 +371,12 @@ async function handle(request: NextRequest) {
           if (linkedDue.length) { try { await refreshSocial({ admin, clientId: id, source: "auto" }, linkedDue); socialRefreshed++; } catch { /* next run */ } }
           continue;
         }
-        if (!(await room(SOCIAL_EST))) break;
-        try { const r = await refreshSocial({ admin, clientId: id, source: "auto" }); socialRefreshed++; socialCost += r.cost; if (r.stoppedByBudget) break; } catch { /* next run */ }
+        if (!(await room(id, SOCIAL_EST))) {
+          // no paid read for this organization today: the free connected / token reads still happen daily
+          if (linkedDue.length) { try { await refreshSocial({ admin, clientId: id, source: "auto" }, linkedDue); socialRefreshed++; } catch { /* next run */ } }
+          continue;
+        }
+        try { const r = await refreshSocial({ admin, clientId: id, source: "auto" }); socialRefreshed++; socialCost += r.cost; } catch { /* next run */ }
       }
       out.social = { refreshed: socialRefreshed, cost: Number(socialCost.toFixed(4)) };
 
@@ -378,17 +389,22 @@ async function handle(request: NextRequest) {
       const reviewErrors: string[] = [];
       for (const id of active) {
         if (Date.now() > deadline - 6_000) break;
+        if (!(await paid(id))) continue;
         try { reviewPlatformsCollected += (await pollPlatforms(admin, id)).done; } catch { /* next run */ }
         const crawl = Date.now() < deadline - 130_000;
-        if (!(await room(platformReviewsEstimate(3) + (crawl ? WEEKLY_LISTINGS_EST : 0)))) break;
+        if (!(await room(id, platformReviewsEstimate(3) + (crawl ? WEEKLY_LISTINGS_EST : 0)))) continue;
         try {
           const r = await refreshPlatformReviews({ admin, clientId: id, source: "auto" }, { maxAgeDays: 6.5, crawl });
           reviewPlatformsStarted += r.started.length; reviewErrors.push(...r.errors.slice(0, 2));
-        } catch (e) { if (e instanceof BudgetError) break; }
+        } catch { /* this organization's budget is used, or this client failed: the next client continues */ }
       }
       out.reviewPlatforms = { started: reviewPlatformsStarted, collected: reviewPlatformsCollected, errors: [...new Set(reviewErrors)].slice(0, 3) };
       await blogStep();
-      out.spentToday = Number((await spentNow()).toFixed(3));
+      out.spentToday = await budgets.spent();
+      // what was left out because an organization lacks a credential (counts and organization ids only)
+      const skippedOrgs = budgets.skipped();
+      if (skippedOrgs.length) out.dataforseoSkipped = skippedOrgs;
+      if (notSetUp.size) out.notSetUp = Object.fromEntries([...notSetUp].map(([k, v]) => [k, v.size]));
       return out;
     });
     return NextResponse.json(summary);

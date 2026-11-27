@@ -1,5 +1,6 @@
 import "server-only";
 import { ProviderAuthError, ProviderRateLimitError } from "@/lib/composio/client";
+import { ConfigError } from "@/lib/org/config";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { syncGa4 } from "./ga4";
 import { GSC_TIME_ZONE, syncGsc } from "./gsc";
@@ -153,7 +154,14 @@ export async function processQueue(opts: { budgetMs?: number; concurrency?: numb
       }
     } catch (e) {
       const msg = e instanceof Error ? e.message : "unknown error";
-      if (e instanceof ProviderAuthError && (await revoked(admin, job, e))) {
+      if (e instanceof ConfigError) {
+        // The client's organization hasn't set up (or Google/Composio refused) the credentials this sync needs.
+        // Retrying can't help until an owner fixes them, and the grant itself is fine: fail the job with what to
+        // fix and show it on the connection, which stays connected so the next sync resumes once it's fixed.
+        await finish("failed", msg, {});
+        if (job.connection_id) await admin.from("integration_connections").update({ last_error: msg.slice(0, 500) }).eq("id", job.connection_id);
+        tally("config");
+      } else if (e instanceof ProviderAuthError && (await revoked(admin, job, e))) {
         tally("revoked");
       } else if (e instanceof ProviderAuthError) {
         await finish("failed", "Google authorization failed. Reconnect the integration.", {}, true);

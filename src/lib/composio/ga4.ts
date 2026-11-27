@@ -1,12 +1,9 @@
 import "server-only";
 import { executeTool } from "./client";
-import { serverEnv } from "@/lib/env";
 import {
   ga4AccountSummariesSchema, ga4PropertySchema, ga4ReportSchema, type Ga4Report,
 } from "@/lib/validation/ga4";
 import type { AdapterContext, DateRange, DiscoveredResource, ProviderAdapter } from "@/lib/analytics/types";
-
-const VERSION = () => serverEnv().COMPOSIO_TOOLKIT_VERSION_GOOGLE_ANALYTICS || undefined;
 
 /**
  * NOTE: the exact envelope of `data` returned by Composio per tool is confirmed in Phase 3
@@ -19,13 +16,9 @@ function unwrap(data: unknown): unknown {
   return data;
 }
 
+/** ctx.userId (client:<id>) picks the client organization's Composio project and toolkit version. */
 async function run(ctx: AdapterContext, slug: string, args: Record<string, unknown>) {
-  return unwrap(
-    await executeTool({
-      slug, arguments: args, userId: ctx.userId,
-      connectedAccountId: ctx.connectedAccountId, toolkitVersionEnv: VERSION(),
-    }),
-  );
+  return unwrap(await executeTool({ slug, arguments: args, userId: ctx.userId, connectedAccountId: ctx.connectedAccountId }));
 }
 
 export const ga4Adapter: ProviderAdapter<DiscoveredResource> = {

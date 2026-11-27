@@ -1,7 +1,7 @@
 import "server-only";
 import type { SupabaseClient } from "@supabase/supabase-js";
 import { assertBudget, recordSpend, type SpendSource } from "@/lib/dataforseo/budget";
-import { dfsConfigured, dfsPost } from "@/lib/dataforseo/client";
+import { DFS_NOT_CONFIGURED, dfsConfigured, dfsPost } from "@/lib/dataforseo/client";
 import { arr, num, obj, resolveTarget, str } from "@/lib/dataforseo/research";
 
 /**
@@ -51,12 +51,12 @@ export function staleKeywords(keywords: string[], have: Map<string, Volume>): st
 
 /** Fetches volumes for the given keywords within the DataForSEO budget (throws BudgetError past a cap). */
 export async function fetchVolumes(admin: SupabaseClient, clientId: string, keywords: string[], source: SpendSource) {
-  if (!dfsConfigured()) throw new Error("DataForSEO isn't configured.");
+  if (!(await dfsConfigured(clientId))) throw new Error(DFS_NOT_CONFIGURED);
   if (!keywords.length) return { fetched: 0, cost: 0 };
   const t = await resolveTarget(admin, clientId);
   const batch = keywords.slice(0, MAX_KEYWORDS);
   await assertBudget(admin, clientId, estimateCost(batch.length), source);
-  const { result, cost } = await dfsPost("/dataforseo_labs/google/keyword_overview/live", {
+  const { result, cost } = await dfsPost(clientId, "/dataforseo_labs/google/keyword_overview/live", {
     keywords: batch, location_code: t?.location_code ?? 2840, language_code: t?.language_code ?? "en",
   });
   await recordSpend(admin, clientId, VOLUME_ENDPOINT, cost, source);

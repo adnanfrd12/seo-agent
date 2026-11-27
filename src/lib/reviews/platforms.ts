@@ -145,7 +145,7 @@ export async function startPlatform(ctx: Ctx, platform: PlatformKey, url: string
   if (!t) { const row = { ...base, status: "failed" as const, error: "The link doesn't look like a listing page on this platform." }; await save(ctx.admin, ctx.clientId, row, 0); return row; }
   await assertBudget(ctx.admin, ctx.clientId, PLATFORM_EST, ctx.source);
   try {
-    const { id, cost } = await dfsTaskPost(t.path, t.body);
+    const { id, cost } = await dfsTaskPost(ctx.clientId, t.path, t.body);
     await recordSpend(ctx.admin, ctx.clientId, `reviews_${platform}`, cost, ctx.source);
     const row = { ...base, taskId: id };
     await save(ctx.admin, ctx.clientId, row, cost);
@@ -183,7 +183,7 @@ export async function pollPlatforms(admin: SupabaseClient, clientId: string): Pr
   for (const r of data ?? []) {
     const t = r.data as PlatformRow;
     if (t.status !== "pending" || !t.taskId || !GET_PATH[t.platform]) continue;
-    const { status, result } = await dfsGet(`${GET_PATH[t.platform]}${t.taskId}`);
+    const { status, result } = await dfsGet(clientId, `${GET_PATH[t.platform]}${t.taskId}`);
     if (status === 20000) {
       const s = shapePlatform(result);
       await save(admin, clientId, { ...t, ...s, status: "done", error: undefined, fetchedAt: new Date().toISOString() }, 0);

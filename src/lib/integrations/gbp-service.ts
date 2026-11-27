@@ -2,40 +2,61 @@ import "server-only";
 import type { SupabaseClient } from "@supabase/supabase-js";
 import { decryptSecret, encryptSecret } from "@/lib/crypto";
 import { listAccounts, listLocations, splitLocationName, type GbpAuth, type GbpLocation } from "@/lib/google/gbp";
-import { GoogleAuthError, refreshAccessToken, revokeToken, type TokenSet } from "@/lib/google/oauth";
-import { appForConnection } from "@/lib/google/oauth-apps";
-
-/** Short-lived access tokens are cached per connection for the life of the server instance. */
-const cache = new Map<string, { token: string; expires: number; envProject: boolean }>();
+import { gbpAppForClient, GoogleAuthError, refreshAccessToken, revokeToken, type OAuthApp, type TokenSet } from "@/lib/google/oauth";
 
 /**
- * A fresh access token from the stored (encrypted) refresh token, refreshed with the same OAuth app that made the
- * grant (the owner's saved app, or the environment app). Throws GoogleAuthError when revoked or the app is gone.
+ * Business Profile grants belong to a client and are refreshed with the Google OAuth client of that client's
+ * organization (Settings → Integrations → Google Cloud OAuth), never another organization's. Each connection
+ * records which OAuth client made its grant (integration_connections.oauth_client_id, migration
+ * 20261129000038; filled in on the first refresh for grants made before it), so a refresh token is never sent to
+ * a different client: an organization that replaces its OAuth client is asked to reconnect instead.
  */
-export async function gbpAuth(admin: SupabaseClient, connectionId: string): Promise<{ token: string; envProject: boolean }> {
+
+/** Short-lived access tokens are cached per connection for the life of the server instance. */
+const cache = new Map<string, { token: string; expires: number; client: string; oauthClientId: string }>();
+
+/** The connection's client and the OAuth client ID recorded with its grant (null: not recorded, or the column doesn't exist yet). */
+async function grantOf(admin: SupabaseClient, connectionId: string): Promise<{ client: string; oauthClientId: string | null; tracked: boolean } | null> {
+  const full = await admin.from("integration_connections").select("client_id, oauth_client_id").eq("id", connectionId).maybeSingle();
+  if (!full.error) return full.data ? { client: full.data.client_id as string, oauthClientId: (full.data.oauth_client_id as string | null) ?? null, tracked: true } : null;
+  if (!/oauth_client_id/.test(full.error.message)) throw new Error("Couldn't read the Business Profile connection.");
+  const plain = await admin.from("integration_connections").select("client_id").eq("id", connectionId).maybeSingle();
+  return plain.data ? { client: plain.data.client_id as string, oauthClientId: null, tracked: false } : null;
+}
+
+/**
+ * A fresh access token from the stored (encrypted) refresh token, refreshed with the OAuth client of the
+ * connection's organization, plus that organization's API key for request quotas. Throws ConfigError when the
+ * organization's OAuth client isn't set up (or Google refuses it), GoogleAuthError when the grant is revoked or was
+ * made with a different OAuth client.
+ */
+export async function gbpAuth(admin: SupabaseClient, connectionId: string): Promise<{ token: string; apiKey: string | null }> {
   const hit = cache.get(connectionId);
-  if (hit && hit.expires > Date.now() + 60_000) return { token: hit.token, envProject: hit.envProject };
-  const [{ data }, { data: conn }] = await Promise.all([
-    admin.from("integration_secrets").select("refresh_token_encrypted").eq("connection_id", connectionId).maybeSingle(),
-    admin.from("integration_connections").select("oauth_app_owner").eq("id", connectionId).maybeSingle(),
-  ]);
-  if (!data?.refresh_token_encrypted) throw new GoogleAuthError("No Google refresh token stored. Reconnect Business Profile.");
-  const owner = (conn as { oauth_app_owner?: string | null } | null)?.oauth_app_owner ?? null;
-  const app = await appForConnection(admin, owner).catch(() => null);
-  if (!app) {
-    throw new GoogleAuthError(owner
-      ? "The Google OAuth app this connection was made with was removed. Save it again or reconnect Business Profile."
-      : "Google Business Profile OAuth isn't configured. Reconnect Business Profile.");
+  if (hit && hit.expires > Date.now() + 60_000) {
+    const app = await gbpAppForClient(hit.client); // the organization's settings still decide (and may have changed)
+    if (app.clientId === hit.oauthClientId) return { token: hit.token, apiKey: app.apiKey };
   }
+  const grant = await grantOf(admin, connectionId);
+  if (!grant) throw new GoogleAuthError("This Business Profile connection no longer exists. Connect Business Profile again.");
+  const app = await gbpAppForClient(grant.client);
+  if (grant.oauthClientId && grant.oauthClientId !== app.clientId) {
+    throw new GoogleAuthError("Business Profile was connected with a different Google OAuth client than the one this organization uses now. Reconnect Business Profile.");
+  }
+  const { data } = await admin.from("integration_secrets").select("refresh_token_encrypted").eq("connection_id", connectionId).maybeSingle();
+  if (!data?.refresh_token_encrypted) throw new GoogleAuthError("No Google refresh token stored. Reconnect Business Profile.");
   const t = await refreshAccessToken(app, decryptSecret(data.refresh_token_encrypted));
-  const envProject = app.owner === null;
-  cache.set(connectionId, { token: t.access_token, expires: Date.now() + t.expires_in * 1000, envProject });
-  return { token: t.access_token, envProject };
+  cache.set(connectionId, { token: t.access_token, expires: Date.now() + t.expires_in * 1000, client: grant.client, oauthClientId: app.clientId });
+  // a grant made before the OAuth client was recorded: this client just refreshed it, so it is the grant's client
+  if (grant.tracked && !grant.oauthClientId) {
+    await admin.from("integration_connections").update({ oauth_client_id: app.clientId }).eq("id", connectionId).is("oauth_client_id", null).then(() => undefined, () => undefined);
+  }
+  return { token: t.access_token, apiKey: app.apiKey };
 }
 
 /** Saves a new grant. Google only returns a refresh token on consent, so keep the old one otherwise. */
-export async function storeGrant(admin: SupabaseClient, connectionId: string, tokens: TokenSet, envProject: boolean) {
-  cache.set(connectionId, { token: tokens.access_token, expires: Date.now() + tokens.expires_in * 1000, envProject });
+export async function storeGrant(admin: SupabaseClient, conn: { id: string; clientId: string }, tokens: TokenSet, app: OAuthApp) {
+  const connectionId = conn.id;
+  cache.set(connectionId, { token: tokens.access_token, expires: Date.now() + tokens.expires_in * 1000, client: conn.clientId, oauthClientId: app.clientId });
   if (!tokens.refresh_token) return;
   const { error } = await admin.from("integration_secrets").upsert(
     { connection_id: connectionId, refresh_token_encrypted: encryptSecret(tokens.refresh_token), updated_at: new Date().toISOString() },

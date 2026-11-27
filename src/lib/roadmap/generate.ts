@@ -2,7 +2,7 @@ import "server-only";
 import { betaZodOutputFormat } from "@anthropic-ai/sdk/helpers/beta/zod";
 import type { SupabaseClient } from "@supabase/supabase-js";
 import { z } from "zod";
-import { AI_MODEL, aiErrorMessage, anthropic, costUsd } from "@/lib/ai/claude";
+import { AI_MODEL, aiErrorMessage, anthropicFor, costUsd } from "@/lib/ai/claude";
 import { todayIn } from "@/lib/analytics/range";
 import { brief, briefText } from "@/lib/ai/intelligence";
 import { clientSettings } from "@/lib/aiqw/run";
@@ -54,7 +54,9 @@ export type GenerateResult = { ok: true; month: string; added: number; kept: num
 
 export async function generateMonth(admin: SupabaseClient, clientId: string, timezone: string, month: string, actor: Actor, opts: { focus?: string | null } = {}): Promise<GenerateResult> {
   if (!/^\d{4}-\d{2}-01$/.test(month)) return { ok: false, error: "Invalid month." };
-  if (!process.env.ANTHROPIC_API_KEY) return { ok: false, error: "AI isn't configured (ANTHROPIC_API_KEY)." };
+  // the client's organization's own Anthropic key (a missing one ends here with what to set up)
+  const ai = await anthropicFor(clientId).catch(aiErrorMessage);
+  if (typeof ai === "string") return { ok: false, error: ai };
 
   // one generation per client and month at a time
   const lockKey = `roadmap_lock:${month}`;
@@ -85,7 +87,7 @@ export async function generateMonth(admin: SupabaseClient, clientId: string, tim
     ].filter(Boolean).join("\n\n");
     const task = `Write this month's roadmap: a summary, 3-5 objectives with measurable metrics, 3-5 priorities, 3-5 expected outcomes, and 10-20 tasks spread over the categories the evidence supports (high-impact work first, a realistic amount for one month). Each task: category, title, description, why (with numbers), evidence ids, step-by-step instructions, affected URLs and keywords from the evidence, a short checklist where useful, priority, impact, effort and a due date this month.`;
 
-    const res = await anthropic().beta.messages.parse({
+    const res = await ai.beta.messages.parse({
       model: AI_MODEL, max_tokens: 20000, betas: ["server-side-fallback-2026-07-01"], fallbacks: "default",
       system: SYSTEM, output_config: { effort: "medium", format: betaZodOutputFormat(schema) },
       messages: [{ role: "user", content: `${briefText(b)}\n\n${context}\n\nTASK:\n${task}` }],

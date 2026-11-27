@@ -3,7 +3,7 @@
 import { randomUUID } from "node:crypto";
 import { revalidatePath } from "@/lib/revalidate";
 import { z } from "zod";
-import { aiErrorMessage } from "@/lib/ai/claude";
+import { aiErrorMessage, aiUnavailable, anthropicFor } from "@/lib/ai/claude";
 import { extractReport } from "@/lib/ai/extract-report";
 import { budgetMessage, claudeBudget } from "@/lib/ai/usage";
 import { getSession } from "@/lib/analytics/client-context";
@@ -26,6 +26,9 @@ export async function createImportUpload(fileName: string, size: number): Promis
   if (!/\.pdf$/i.test(fileName)) return { ok: false, error: "Only PDF files can be imported." };
   const { client, allowed } = await requireAdmin();
   if (!allowed) return { ok: false, error: "Only owners and admins can import reports." };
+  // reading the PDF needs the organization's Anthropic key: say so before anything is uploaded
+  const aiOff = await aiUnavailable(client.id);
+  if (aiOff) return { ok: false, error: aiOff };
   // reading the PDF with AI counts toward the monthly Claude budget: stop before the upload when it's used up
   const budget = await claudeBudget(createAdminClient(), client.id);
   if (budget.left <= 0) return { ok: false, error: budgetMessage(budget.budget) };
@@ -46,6 +49,11 @@ export async function processImport(path: string, fileName: string): Promise<Res
     await admin.storage.from(BUCKET).remove([path]);
     return { ok: false, error: budgetMessage(budget.budget) };
   }
+  const ai = await anthropicFor(client.id).catch(aiErrorMessage);
+  if (typeof ai === "string") {
+    await admin.storage.from(BUCKET).remove([path]);
+    return { ok: false, error: ai };
+  }
   const { data: blob, error: dlErr } = await admin.storage.from(BUCKET).download(path);
   if (dlErr || !blob) return { ok: false, error: "The uploaded file wasn't found." };
   const buf = Buffer.from(await blob.arrayBuffer());
@@ -60,7 +68,7 @@ export async function processImport(path: string, fileName: string): Promise<Res
 
   const { data: run } = await admin.from("ai_analysis_runs").insert({ client_id: client.id, kind: "import_extraction", status: "running", requested_by: user.id }).select("id").single();
   try {
-    const { out, usage } = await extractReport(buf);
+    const { out, usage } = await extractReport(ai, buf);
     const dateOk = (s: string | null) => (s && /^\d{4}-\d{2}-\d{2}$/.test(s) ? s : null);
     const rows = out.metrics.map((m) => ({
       import_id: rep.id, client_id: client.id, page_number: m.page_number, source_name: m.source_name, original_label: m.original_label.slice(0, 300),

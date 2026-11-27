@@ -106,7 +106,7 @@ const bizKeyword = (who: { cid?: string | null; placeId?: string | null; name: s
 export async function fetchProfile(ctx: Ctx, who: { cid?: string | null; placeId?: string | null; name: string }, key = "self", near?: { lat: number | null; lng: number | null }): Promise<Profile | null> {
   await assertBudget(ctx.admin, ctx.clientId, PROFILE_EST, ctx.source);
   const where = !who.cid && !who.placeId && near?.lat != null && near.lng != null ? { location_coordinate: `${near.lat},${near.lng},20000` } : { location_code: 2840 };
-  const { result, cost } = await dfsPost("/business_data/google/my_business_info/live", { keyword: bizKeyword(who), ...where, language_code: "en" });
+  const { result, cost } = await dfsPost(ctx.clientId, "/business_data/google/my_business_info/live", { keyword: bizKeyword(who), ...where, language_code: "en" });
   await recordSpend(ctx.admin, ctx.clientId, "gbp_profile", cost, ctx.source);
   const p = shapeProfile(result);
   await save(ctx.admin, ctx.clientId, "gbp_profile", key, p, cost, { name: who.name, cid: who.cid ?? null });
@@ -139,7 +139,7 @@ export function shapeReviews(r: Json | null, key: string, name: string): Reviews
 /** Starts a review collection (newest first). The result is collected by pollReviews. */
 export async function startReviews(ctx: Ctx, who: { cid?: string | null; placeId?: string | null; name: string }, key = "self", depth = REVIEW_DEPTH) {
   await assertBudget(ctx.admin, ctx.clientId, REVIEWS_EST * (depth / 100), ctx.source);
-  const { id, cost } = await dfsTaskPost("/business_data/google/reviews/task_post", {
+  const { id, cost } = await dfsTaskPost(ctx.clientId, "/business_data/google/reviews/task_post", {
     keyword: bizKeyword(who), location_code: 2840, language_code: "en", depth, sort_by: "newest",
   });
   await recordSpend(ctx.admin, ctx.clientId, "gbp_reviews", cost, ctx.source);
@@ -155,7 +155,7 @@ export async function pollReviews(admin: SupabaseClient, clientId: string): Prom
   for (const row of data ?? []) {
     const t = row.data as ReviewTask;
     if (t.status !== "pending") continue;
-    const { status, result } = await dfsGet(`/business_data/google/reviews/task_get/${t.id}`);
+    const { status, result } = await dfsGet(clientId, `/business_data/google/reviews/task_get/${t.id}`);
     if (status === 20000 && result) {
       await save(admin, clientId, "reviews", t.key, shapeReviews(result, t.key, t.name), 0, { name: t.name });
       await save(admin, clientId, "reviews_task", t.key, { ...t, status: "done" }, 0);
@@ -194,7 +194,7 @@ export async function runGrid(ctx: Ctx, me: Identity, keyword: string, size: 3 |
   // a few at a time keeps well inside DataForSEO's concurrency limit
   for (let i = 0; i < pts.length; i += 5) {
     const batch = await Promise.all(pts.slice(i, i + 5).map(async (p) => {
-      const r = await dfsPost("/serp/google/maps/live/advanced", { keyword, location_coordinate: `${p.lat},${p.lng},15z`, language_code: "en", depth: 20 });
+      const r = await dfsPost(ctx.clientId, "/serp/google/maps/live/advanced", { keyword, location_coordinate: `${p.lat},${p.lng},15z`, language_code: "en", depth: 20 });
       return { p, r };
     }));
     for (const { p, r } of batch) {

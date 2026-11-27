@@ -55,7 +55,7 @@ export default async function LocalSeoPage() {
     { term: "Map grid", text: "Where the business shows on Google Maps when people search from points around it." },
     { term: "Map coverage", text: "For each scanned keyword, how many grid points put the business in the top 3, 4-10, 11-20 or nowhere in the top 20." },
   ]} />;
-  if (!configured) return <>{header}<EmptyState title="DataForSEO isn't configured" body="Add DATAFORSEO_LOGIN and DATAFORSEO_PASSWORD to the environment, then redeploy." action={{ href: "/integrations", label: "Open Integrations" }} /></>;
+  if (!configured) return <>{header}<EmptyState title="DataForSEO isn't set up" body="An owner of this organization adds the DataForSEO API login and password in Settings → Integrations." action={{ href: "/integrations", label: "Open Integrations" }} /></>;
 
   const local = await loadLocal(await createClient(), createAdminClient(), client.id);
   const postRows = await loadPosts(await createClient(), client.id);

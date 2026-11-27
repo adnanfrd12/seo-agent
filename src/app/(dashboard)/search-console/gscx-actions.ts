@@ -4,7 +4,8 @@ import { revalidatePath } from "@/lib/revalidate";
 import { getSession } from "@/lib/analytics/client-context";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { syncGscx } from "@/lib/gscx/sync";
-import { aiErrorMessage } from "@/lib/ai/claude";
+import { aiErrorMessage, aiUnavailable } from "@/lib/ai/claude";
+import { ConfigError } from "@/lib/org/config";
 import { budgetMessage, claudeBudget, recordClaudeUse } from "@/lib/ai/usage";
 import { diagnosePage, INDEX_AI_ENDPOINT, saveDiagnosis, type IndexDiagnosis } from "@/lib/gscx/indexing-ai";
 
@@ -56,7 +57,8 @@ export async function diagnoseIndexPage(url: string, again = false): Promise<Dia
     const { data } = await admin.from("dfs_cache").select("data").eq("client_id", c.id).eq("endpoint", INDEX_AI_ENDPOINT).eq("params_hash", url).maybeSingle();
     if (data?.data) return { ok: true, message: "Already diagnosed.", diagnosis: data.data as IndexDiagnosis };
   }
-  if (!process.env.ANTHROPIC_API_KEY) return { ok: false, message: "Claude isn't set up (ANTHROPIC_API_KEY is missing).", stop: true };
+  const aiOff = await aiUnavailable(c.id);
+  if (aiOff) return { ok: false, message: aiOff, stop: true };
   const b = await claudeBudget(admin, c.id);
   if (b.left <= 0) return { ok: false, message: budgetMessage(b.budget), stop: true };
   try {
@@ -67,7 +69,7 @@ export async function diagnoseIndexPage(url: string, again = false): Promise<Dia
     return { ok: true, message: `Diagnosed ($${d.cost.toFixed(3)}).`, diagnosis: d };
   } catch (e) {
     const m = aiErrorMessage(e);
-    // out of credit / bad key / budget: stop a batch instead of failing page after page
-    return { ok: false, message: m, stop: /out of credit|credit balance|API key was rejected/i.test(m) };
+    // out of credit / bad or missing key / budget: stop a batch instead of failing page after page
+    return { ok: false, message: m, stop: e instanceof ConfigError || /out of credit|credit balance|API key was rejected/i.test(m) };
   }
 }

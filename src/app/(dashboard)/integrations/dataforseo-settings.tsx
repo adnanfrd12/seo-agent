@@ -7,8 +7,8 @@ import { saveDfsSettings } from "../research-actions";
 
 const field = "w-28 rounded-lg border border-border bg-surface px-3 py-1.5 text-sm outline-none focus-visible:ring-2 focus-visible:ring-accent";
 
-/** Daily spend limit and the automatic-refresh switch (agency-wide, saved in the database). */
-export function DataForSeoSettings({ dailyBudget, autoRefresh, defaultBudget }: { dailyBudget: number; autoRefresh: boolean; defaultBudget: number }) {
+/** The organization's daily spend limit and automatic-refresh switch (for all its clients, saved in the database). */
+export function DataForSeoSettings({ orgId, dailyBudget, autoRefresh, defaultBudget }: { orgId: string; dailyBudget: number; autoRefresh: boolean; defaultBudget: number }) {
   const router = useRouter();
   const [pending, start] = useTransition();
   const [limit, setLimit] = useState(String(dailyBudget));
@@ -19,7 +19,7 @@ export function DataForSeoSettings({ dailyBudget, autoRefresh, defaultBudget }: 
   const changed = value !== dailyBudget || auto !== autoRefresh;
 
   const save = () => start(async () => {
-    const r = await saveDfsSettings({ dailyBudget: value, autoRefresh: auto });
+    const r = await saveDfsSettings({ dailyBudget: value, autoRefresh: auto }, orgId);
     setMsg(r.ok ? { ok: true, text: r.message } : { ok: false, text: r.error });
     if (r.ok) router.refresh();
   });
@@ -45,8 +45,8 @@ export function DataForSeoSettings({ dailyBudget, autoRefresh, defaultBudget }: 
         {value !== defaultBudget && <button type="button" className="pb-1.5 text-xs text-foreground underline decoration-border-strong underline-offset-2 hover:decoration-foreground" onClick={() => setLimit(String(defaultBudget))}>Reset to ${defaultBudget.toFixed(2)}</button>}
       </div>
       {!valid && <p role="alert" className="mt-1 text-xs text-negative">Enter an amount between $0.10 and $100.</p>}
-      <p className="mt-2 text-xs text-muted" title="No call is made once today's total reaches this limit (it resets at midnight UTC). Scheduled refreshes use at most 60% of it, and one client at most 40%. Applies to every client, since they share one DataForSEO account.">
-        Calls stop at this limit until midnight UTC. Shared by all clients.
+      <p className="mt-2 text-xs text-muted" title="No call is made once today's total reaches this limit (it resets at midnight UTC). Scheduled refreshes use at most 60% of it, and one client at most 40%. Applies to every client of this organization, since they share its DataForSEO account.">
+        Calls stop at this limit until midnight UTC. Shared by all clients of this organization.
       </p>
       {msg && <p role={msg.ok ? "status" : "alert"} className={`mt-1 text-sm ${msg.ok ? "text-positive" : "text-negative"}`}>{msg.text}</p>}
     </div>

@@ -1,6 +1,7 @@
 import "server-only";
+import type Anthropic from "@anthropic-ai/sdk";
 import { betaZodOutputFormat } from "@anthropic-ai/sdk/helpers/beta/zod";
-import { AI_MODEL, anthropic, costUsd } from "./claude";
+import { AI_MODEL, costUsd } from "./claude";
 import { extractionSchema, type ExtractionOutput } from "./schemas";
 
 const SYSTEM = `You extract reported figures from SEO/marketing report PDFs for human review.
@@ -11,9 +12,9 @@ const SYSTEM = `You extract reported figures from SEO/marketing report PDFs for 
 - If the document says its figures are placeholders, samples or illustrative, say so in notes.
 - Dates: only if the document states the reporting period.`;
 
-/** Claude reads the PDF directly (text and image-only pages). Output is schema-validated. */
-export async function extractReport(pdf: Buffer): Promise<{ out: ExtractionOutput; usage: { input_tokens: number; output_tokens: number; cost_usd: number } }> {
-  const response = await anthropic().beta.messages.parse({
+/** Claude (the client's organization's, see anthropicFor) reads the PDF directly (text and image-only pages). Output is schema-validated. */
+export async function extractReport(ai: Anthropic, pdf: Buffer): Promise<{ out: ExtractionOutput; usage: { input_tokens: number; output_tokens: number; cost_usd: number } }> {
+  const response = await ai.beta.messages.parse({
     model: AI_MODEL,
     max_tokens: 16000,
     betas: ["server-side-fallback-2026-07-01"],

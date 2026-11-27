@@ -1,5 +1,5 @@
-import { tiktokRoute } from "@/lib/compliance/webhooks";
+import { orgSecrets, tiktokRoute } from "@/lib/compliance/webhooks";
 
-// TikTok webhook (TikTok-Signature, TIKTOK_CLIENT_SECRET): authorization.removed deletes the account's data.
+// TikTok webhook (TikTok-Signature, verified with each organization's TIKTOK_CLIENT_SECRET): authorization.removed deletes the account's data.
 export const dynamic = "force-dynamic";
-export const POST = tiktokRoute({ secret: () => process.env.TIKTOK_CLIENT_SECRET?.trim() });
+export const POST = tiktokRoute({ secrets: orgSecrets(["TIKTOK_CLIENT_SECRET"]) });

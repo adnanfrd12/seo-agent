@@ -64,7 +64,7 @@ export async function refreshPostKeywords(
   }
 
   // paid: the post's own address
-  if (opts.paid !== "none" && target && dfsConfigured()) {
+  if (opts.paid !== "none" && target && (await dfsConfigured(clientId))) {
     const newSince = new Date(Date.now() - NEW_DAYS * 86_400_000).toISOString().slice(0, 10);
     const staleBefore = Date.now() - FRESH_DAYS * 86_400_000;
     const due = posts.filter((p) => {
@@ -76,7 +76,7 @@ export async function refreshPostKeywords(
       if (Date.now() > deadline - 10_000) { run.stopped = "time"; break; }
       try {
         await assertBudget(admin, clientId, POST_KW_EST, opts.source);
-        const { result, cost } = await dfsPost("/dataforseo_labs/google/ranked_keywords/live", { target: p.url, location_code: target.location_code, language_code: target.language_code, limit: 100 });
+        const { result, cost } = await dfsPost(clientId, "/dataforseo_labs/google/ranked_keywords/live", { target: p.url, location_code: target.location_code, language_code: target.language_code, limit: 100 });
         await recordSpend(admin, clientId, "blog_keywords", cost, opts.source);
         run.cost += cost;
         run.paid++;

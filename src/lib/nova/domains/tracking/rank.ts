@@ -2,7 +2,7 @@ import "server-only";
 import type { SupabaseClient } from "@supabase/supabase-js";
 import { z } from "zod";
 import { addRankKeywords, checkRanksNow, removeRankKeyword, setRankSchedule, toggleRankPin } from "@/app/(dashboard)/rank-tracking/actions";
-import { dfsConfigured } from "@/lib/dataforseo/client";
+import { DFS_NOT_CONFIGURED, dfsConfigured } from "@/lib/dataforseo/client";
 import {
   loadRanks, loadRankSettings, MAX_RANK_KEYWORDS, movers, nextRankCheck, RANK_DEPTH, RANK_SCHEDULES, rankDueCutoff, rankEstimate, rankMonthlyCost, type RankRow, type RankSchedule,
 } from "@/lib/dataforseo/rank";
@@ -63,7 +63,7 @@ export const tools: NovaTool[] = [
     async run(ctx, a) {
       const [ranks, settings, target] = await Promise.all([loadRanks(ctx.admin, ctx.client.id), loadRankSettings(ctx.admin, ctx.client.id), readTarget(ctx.admin, ctx.client.id)]);
       if (!ranks.ok) throw new ToolError(MIGRATION);
-      const off = await scheduleOff(ctx.admin, target);
+      const off = await scheduleOff(ctx.admin, ctx.client.id, target);
       const site = (target?.domain ?? "").replace(/^www\./, "").toLowerCase();
       const all = ranks.rows, now = Date.now();
       const pinned = new Set(settings.pinned.filter((id) => all.some((r) => r.id === id)));
@@ -124,7 +124,7 @@ export const tools: NovaTool[] = [
     }),
     async prepare(ctx, a) {
       const [rows, settings, off] = await Promise.all([
-        keywordRows(ctx.admin, ctx.client.id), loadRankSettings(ctx.admin, ctx.client.id), readTarget(ctx.admin, ctx.client.id).then((t) => scheduleOff(ctx.admin, t)),
+        keywordRows(ctx.admin, ctx.client.id), loadRankSettings(ctx.admin, ctx.client.id), readTarget(ctx.admin, ctx.client.id).then((t) => scheduleOff(ctx.admin, ctx.client.id, t)),
       ]);
       const removing = resolve(rows, a.remove), pinning = resolve(rows, a.pin), unpinning = resolve(rows, a.unpin);
       const overlap = (x: KwRow[], y: KwRow[]) => x.filter((r) => y.includes(r)).map(label);
@@ -225,7 +225,7 @@ export const tools: NovaTool[] = [
     description: "Look up today's Google positions for the tracked keywords now (paid DataForSEO, about $0.0155 per keyword). Only keywords due on the schedule, unless recheck_all.",
     schema: z.object({ recheck_all: z.boolean().default(false).describe("also re-check keywords checked recently") }),
     async prepare(ctx, a) {
-      if (!dfsConfigured()) return { error: "DataForSEO isn't configured on the server, so rankings can't be checked." };
+      if (!(await dfsConfigured(ctx.client.id))) return { error: `${DFS_NOT_CONFIGURED} Until then rankings can't be checked.` };
       const target = await readTarget(ctx.admin, ctx.client.id);
       if (!target) return { error: NO_TARGET };
       // the same selection runRankChecks() makes

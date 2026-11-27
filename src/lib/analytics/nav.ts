@@ -130,7 +130,13 @@ export const NAV: NavGroup[] = [
     title: "Administration",
     items: [
       { href: "/integrations", label: "Integrations", icon: Plug },
-      { href: "/settings", label: "Settings", icon: Settings },
+      {
+        href: "/settings", label: "Settings", icon: Settings,
+        children: [
+          { href: "/settings", label: "My account" },
+          { href: "/settings/organization", label: "Organization" },
+        ],
+      },
     ],
   },
 ];

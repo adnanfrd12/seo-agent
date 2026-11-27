@@ -1,6 +1,6 @@
 import "server-only";
 import type { SupabaseClient } from "@supabase/supabase-js";
-import { getSettings, PER_CLIENT_SHARE, spendOrZero } from "@/lib/dataforseo/budget";
+import { clientSpendOrZero, getSettings, orgSpendOrZero, PER_CLIENT_SHARE } from "@/lib/dataforseo/budget";
 import { hostOf } from "@/lib/dataforseo/research";
 
 /** Helpers shared by the content-ops tools (blog, social, data syncs, imports, client settings). */
@@ -22,7 +22,8 @@ export async function websiteOf(admin: SupabaseClient, clientId: string): Promis
 
 /** What this client may still spend on DataForSEO today with a button click (the same caps assertBudget() checks). */
 export async function dfsLeftToday(admin: SupabaseClient, clientId: string): Promise<{ left: number; cap: number }> {
-  const [{ dailyBudget: cap }, total, mine] = await Promise.all([getSettings(admin), spendOrZero(admin), spendOrZero(admin, clientId)]);
+  // the caps of the client's organization (its own DataForSEO account and daily limit)
+  const [{ dailyBudget: cap }, total, mine] = await Promise.all([getSettings(admin, { clientId }), orgSpendOrZero(admin, { clientId }), clientSpendOrZero(admin, clientId)]);
   return { cap, left: Math.max(0, Math.min(cap - total, cap * PER_CLIENT_SHARE - mine)) };
 }
 

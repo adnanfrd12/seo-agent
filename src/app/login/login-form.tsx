@@ -19,7 +19,7 @@ function writeRemembered(email: string | null) {
 const noopSubscribe = () => () => {};
 
 const field =
-  "w-full rounded-lg border border-[#E2DAD2] bg-white py-3 pl-11 pr-3 text-[15px] text-[#16161a] outline-none transition placeholder:text-[#9a9aa5] hover:border-[#D9D2CB] focus-visible:border-[#F26A1B] focus-visible:ring-4 focus-visible:ring-[#F26A1B]/15";
+  "w-full rounded-lg border border-[#E2DAD2] bg-white py-3 pl-11 pr-3 text-[15px] text-[#16161a] outline-none transition placeholder:text-[#9a9aa5] hover:border-[#D9D2CB] focus-visible:border-[var(--login-ring,#F26A1B)] focus-visible:ring-4 focus-visible:ring-[var(--login-ring,#F26A1B)]/15";
 
 type Notice = { kind: "error" | "info"; text: string } | null;
 
@@ -114,7 +114,7 @@ export function LoginForm({ next, initialError }: { next: string; initialError: 
               className={`${field} pr-11`} />
             <button type="button" onClick={() => setShow((v) => !v)} aria-label={show ? "Hide password" : "Show password"}
               aria-pressed={show} aria-controls="password"
-              className="absolute right-2 top-1/2 -translate-y-1/2 rounded-lg p-1.5 text-[#9a9aa5] outline-none hover:text-[#16161a] focus-visible:ring-2 focus-visible:ring-[#F26A1B]">
+              className="absolute right-2 top-1/2 -translate-y-1/2 rounded-lg p-1.5 text-[#9a9aa5] outline-none hover:text-[#16161a] focus-visible:ring-2 focus-visible:ring-[var(--login-ring,#F26A1B)]">
               {show ? <EyeOff className="size-[18px]" /> : <Eye className="size-[18px]" />}
             </button>
           </div>
@@ -123,11 +123,11 @@ export function LoginForm({ next, initialError }: { next: string; initialError: 
         <div className="flex items-center justify-between gap-3 text-sm">
           <label className="flex cursor-pointer items-center gap-2 text-[#3a3a42]" title="Remembers your email address on this device">
             <input type="checkbox" checked={remember} onChange={(e) => setRememberInput(e.target.checked)}
-              className="size-4 cursor-pointer rounded accent-[#F26A1B]" />
+              className="size-4 cursor-pointer rounded accent-[var(--login-ring,#F26A1B)]" />
             Remember me
           </label>
           <button type="button" onClick={onForgot} disabled={busy !== null}
-            className="font-semibold text-[#EA5A22] outline-none hover:underline focus-visible:underline disabled:opacity-60">
+            className="font-semibold text-[var(--login-link,#EA5A22)] outline-none hover:underline focus-visible:underline disabled:opacity-60">
             {busy === "reset" ? "Sending link…" : "Forgot password?"}
           </button>
         </div>
@@ -144,7 +144,7 @@ export function LoginForm({ next, initialError }: { next: string; initialError: 
         </div>
 
         <button type="submit" disabled={busy !== null || !ready}
-          className="flex w-full items-center justify-center gap-2 rounded-lg bg-[#17120E] py-3.5 text-[15px] font-semibold text-white hover:bg-[#2A221B] outline-none transition focus-visible:ring-4 focus-visible:ring-[#F26A1B]/30 disabled:opacity-60">
+          className="flex w-full items-center justify-center gap-2 rounded-lg bg-[var(--login-button,#17120E)] py-3.5 text-[15px] font-semibold text-[var(--login-button-fg,#fff)] hover:bg-[var(--login-button-hover,#2A221B)] outline-none transition focus-visible:ring-4 focus-visible:ring-[var(--login-ring,#F26A1B)]/30 disabled:opacity-60">
           {busy === "password" ? "Signing in…" : !ready ? "Loading…" : <>Sign in <ArrowRight className="size-[18px]" aria-hidden /></>}
         </button>
       </form>

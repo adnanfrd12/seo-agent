@@ -58,9 +58,10 @@ export async function saveDetail(admin: SupabaseClient, clientId: string, d: Aud
 }
 
 /* ------------------------------------------------------------------ DataForSEO reads (free) */
-type Spent = { cost: number };
+/** what the reads cost, and the client whose organization's DataForSEO account made the crawl (and reads it) */
+type Spent = { cost: number; clientId: string };
 async function call(path: string, body: Json, spent: Spent) {
-  const r = await dfsPost(path, body);
+  const r = await dfsPost(spent.clientId, path, body);
   spent.cost += r.cost;
   return r.result ?? {};
 }
@@ -200,7 +201,7 @@ async function duplicateContentGroups(id: string, pages: Json[], spent: Spent): 
 export const detailLabel = (key: string) => (METRIC_KEYS as Record<string, string>)[key] ?? issueInfo(key)?.label ?? (key === "orphans" ? "Orphaned pages" : key);
 
 async function build(db: SupabaseClient, clientId: string, key: string, id: string): Promise<AuditDetail> {
-  const spent: Spent = { cost: 0 };
+  const spent: Spent = { cost: 0, clientId };
   const base = { key, label: detailLabel(key), taskId: id, fetchedAt: new Date().toISOString() };
   const done = (d: Omit<AuditDetail, "key" | "label" | "taskId" | "fetchedAt" | "cost">): AuditDetail => ({ ...base, ...d, cost: Number(spent.cost.toFixed(5)) });
   const m = key as MetricKey;

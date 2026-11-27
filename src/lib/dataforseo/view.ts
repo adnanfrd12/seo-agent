@@ -1,6 +1,6 @@
 import "server-only";
 import { getSession } from "@/lib/analytics/client-context";
-import { getSettings, spendOrZero } from "./budget";
+import { getSettings, orgSpendOrZero } from "./budget";
 import { dfsBalance, dfsConfigured } from "./client";
 import { loadCache, resolveTarget } from "./research";
 import { memo } from "@/lib/memo";
@@ -14,19 +14,20 @@ type Row = Record<string, unknown>;
  * saved target get one derived for free from the client's Bing / Search Console / Business Profile site.
  */
 export async function researchPage() {
-  const { client, user } = await getSession();
+  const { client, user, organization } = await getSession();
   if (!client) return null;
   const canEdit = ["owner", "admin"].includes(client.role);
-  const configured = dfsConfigured();
+  const configured = await dfsConfigured(client.id);
   const supabase = await createClient();
   const admin = createAdminClient();
   const owner = configured && canEdit;
   // the target must exist before the cache is read only the first time; afterwards everything loads in parallel
   const [, spent, settings, balance] = await Promise.all([
     owner ? resolveTarget(admin, client.id) : null,
-    owner ? spendOrZero(admin) : 0,
-    owner ? getSettings(admin) : null,
-    owner ? dfsBalance() : null,
+    owner ? orgSpendOrZero(admin, { orgId: client.organizationId }) : 0,
+    owner ? getSettings(admin, { orgId: client.organizationId }) : null,
+    // the organization's DataForSEO account balance is for its owners and admins
+    owner && organization?.id === client.organizationId && ["owner", "admin"].includes(organization.role) ? dfsBalance(client.id) : null,
   ]);
   // stored research changes only when a refresh runs (actions clear this), so repeat views reuse it briefly
   const cache = await memo(`research|${user.id}|${client.id}`, 120_000, () => loadCache(supabase, client.id));

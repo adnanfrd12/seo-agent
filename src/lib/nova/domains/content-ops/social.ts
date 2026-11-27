@@ -3,6 +3,7 @@ import { z } from "zod";
 import { detectSocialProfiles, refreshSocialNow, saveSocialSettings } from "@/app/(dashboard)/social/actions";
 import { shiftDays, todayIn } from "@/lib/analytics/range";
 import { dfsConfigured } from "@/lib/dataforseo/client";
+import { configForClient } from "@/lib/org/config";
 import { clientSocial, connectedAccounts, loadSocial, SOCIAL_EST, type SocialRow } from "@/lib/social/fetch";
 import { postEngagement, type SocialPost } from "@/lib/social/metrics";
 import { combine, figures, previousOf, type Period, type PlatformFigures } from "@/lib/social/overview";
@@ -109,18 +110,20 @@ export const socialTools: NovaTool[] = [
       const read = new Map<string, string[]>(), unread = new Map<string, string[]>();
       const add = (m: Map<string, string[]>, k: string, p: Platform) => m.set(k, [...(m.get(k) ?? []), label(p)]);
       let worst = 0;
+      // the organization's credentials decide the paths too (its tokens, DataForSEO account and treg.to key)
+      const [cfg, dfsOn, tregOn] = await Promise.all([configForClient(ctx.client.id).catch(() => null), dfsConfigured(ctx.client.id), tregConfigured(ctx.client.id)]);
       // the path refreshPlatform() takes for each platform
       for (const p of PLATFORMS) {
         const url = social.profiles[p];
-        const token = Boolean(social.tokens[p] || (p === "instagram" && social.tokens.facebook) || process.env[PLATFORM_INFO[p].env]?.trim());
+        const token = Boolean(social.tokens[p] || (p === "instagram" && social.tokens.facebook) || cfg?.get(PLATFORM_INFO[p].env));
         if (active.has(p) || rows[p]?.mode === "connected") add(read, "connected accounts (free)", p);
         else if (!url && p !== "instagram") add(unread, "no profile link and no connected account", p);
         else if (p === "youtube") {
           if (token) add(read, "YouTube Data API (free)", p);
-          else if (dfsConfigured()) { add(read, `public YouTube search through DataForSEO (up to about ${usd(SOCIAL_EST)})`, p); worst += SOCIAL_EST; }
-          else add(unread, "no YouTube API key and DataForSEO isn't configured", p);
+          else if (dfsOn) { add(read, `public YouTube search through DataForSEO (up to about ${usd(SOCIAL_EST)})`, p); worst += SOCIAL_EST; }
+          else add(unread, "no YouTube API key and DataForSEO isn't set up for this organization", p);
         } else if (token) add(read, "the platform's API with the saved token (free)", p);
-        else if (url && tregConfigured() && tregSupports(p)) { add(read, `public numbers through treg.to (about ${usd(TREG_EST)} each)`, p); worst += TREG_EST; }
+        else if (url && tregOn && tregSupports(p)) { add(read, `public numbers through treg.to (about ${usd(TREG_EST)} each)`, p); worst += TREG_EST; }
         else add(unread, "not connected (connect on the Social page)", p);
       }
       const n = [...read.values()].reduce((s, ps) => s + ps.length, 0);

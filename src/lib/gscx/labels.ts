@@ -2,7 +2,7 @@ import "server-only";
 import type { SupabaseClient } from "@supabase/supabase-js";
 import { z } from "zod";
 import { betaZodOutputFormat } from "@anthropic-ai/sdk/helpers/beta/zod";
-import { AI_MODEL, anthropic } from "@/lib/ai/claude";
+import { AI_MODEL, anthropicFor } from "@/lib/ai/claude";
 
 /**
  * Topic labels for queries (LLM), cached per client by normalised query so each query is labelled once.
@@ -20,13 +20,15 @@ export async function loadLabels(admin: SupabaseClient, clientId: string): Promi
 /** Labels any queries not labelled yet (batches of 100, at most `max` per run). */
 export async function labelQueries(admin: SupabaseClient, clientId: string, queries: string[], business: string, max = 300): Promise<Record<string, string>> {
   const known = await loadLabels(admin, clientId);
-  if (!process.env.ANTHROPIC_API_KEY) return known;
+  // labels use the client's organization's own Anthropic key; without one the queries simply stay unlabelled
+  const ai = await anthropicFor(clientId).catch(() => null);
+  if (!ai) return known;
   const todo = [...new Set(queries.map(norm))].filter((q) => !(q in known)).slice(0, max);
   const existing = [...new Set(Object.values(known))].slice(0, 40);
   for (let i = 0; i < todo.length; i += 100) {
     const batch = todo.slice(i, i + 100);
     try {
-      const res = await anthropic().beta.messages.parse({
+      const res = await ai.beta.messages.parse({
         model: AI_MODEL, max_tokens: 6000, betas: ["server-side-fallback-2026-07-01"], fallbacks: "default",
         system: `You group Google search queries for ${business} into short topics (2-4 words, Title Case, e.g. "Sign Costs", "Neon Sign Care", "Business Hours"). Reuse an existing topic when it fits: ${existing.join(", ") || "none yet"}. Return every query exactly as given.`,
         output_config: { effort: "low", format: betaZodOutputFormat(schema) },

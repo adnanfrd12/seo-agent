@@ -3,6 +3,7 @@ import type Anthropic from "@anthropic-ai/sdk";
 import type { SupabaseClient } from "@supabase/supabase-js";
 import { z } from "zod";
 import { EDITORS, json, ToolError, type ExecCtx, type ExecResult, type NovaCtx, type NovaTool, type Role, type ToolOutcome, type WriteTool } from "./kit";
+import { NOT_IN_PLAN, toolAllowed } from "./pages";
 import { tools as aiWork } from "./domains/ai-work";
 import { tools as contentOps } from "./domains/content-ops";
 import { tools as data } from "./domains/data";
@@ -33,13 +34,15 @@ const rolesOf = (t: WriteTool) => t.roles ?? EDITORS;
 export const canRun = (t: NovaTool, role: string) => t.kind === "read" || rolesOf(t).includes(role as Role);
 
 let defsCache: Anthropic.Tool[] | null = null;
-export function toolDefinitions(): Anthropic.Tool[] {
-  return (defsCache ??= ALL.map((t) => {
+/** The tools offered to Claude: all of them, minus those outside the organization's pages (`enabled`, null = all). */
+export function toolDefinitions(enabled?: readonly string[] | null): Anthropic.Tool[] {
+  const all = (defsCache ??= ALL.map((t) => {
     const { $schema: _drop, ...schema } = z.toJSONSchema(t.schema, { io: "input" }) as Record<string, unknown>;
     void _drop;
     const description = t.kind === "write" ? `${t.description} (Prepares the change; it happens only after the user confirms in the chat.)` : t.description;
     return { name: t.name, description, input_schema: { ...schema, type: "object" } as Anthropic.Tool.InputSchema };
   }));
+  return enabled ? all.filter((d) => toolAllowed(d.name, enabled)) : all;
 }
 
 const messageOf = (e: unknown) => (e instanceof ToolError ? e.message : null);
@@ -47,6 +50,7 @@ const messageOf = (e: unknown) => (e instanceof ToolError ? e.message : null);
 export async function runTool(ctx: NovaCtx, name: string, raw: unknown): Promise<ToolOutcome> {
   const t = BY_NAME.get(name);
   if (!t) return { content: json({ error: `Unknown tool ${name}` }), isError: true };
+  if (!toolAllowed(name, ctx.enabledPages)) return { content: json({ error: NOT_IN_PLAN }), isError: true };
   const p = (t.schema as z.ZodType).safeParse(raw ?? {});
   if (!p.success) return { content: json({ error: "Invalid input", issues: p.error.issues.map((i) => `${i.path.join(".")}: ${i.message}`).slice(0, 8) }), isError: true };
 
@@ -86,10 +90,11 @@ export async function runTool(ctx: NovaCtx, name: string, raw: unknown): Promise
   }
 }
 
-/** Checks a confirmed pending action against the user's role (null = allowed). */
-export function confirmBlocked(tool: string, role: string): string | null {
+/** Checks a confirmed pending action against the user's role and the organization's pages (null = allowed). */
+export function confirmBlocked(tool: string, role: string, enabled?: readonly string[] | null): string | null {
   const t = BY_NAME.get(tool);
   if (!t || t.kind !== "write") return "Unknown action.";
+  if (!toolAllowed(tool, enabled)) return "This part of the dashboard isn't available to your organization.";
   return canRun(t, role) ? null : `Your role (${role}) can't make this change.`;
 }
 

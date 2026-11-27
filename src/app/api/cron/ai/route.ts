@@ -1,5 +1,6 @@
 import { timingSafeEqual } from "node:crypto";
 import { NextResponse, type NextRequest } from "next/server";
+import { aiUnavailable } from "@/lib/ai/claude";
 import { runAnalysis, type RunKind } from "@/lib/ai/run";
 import { serverEnv } from "@/lib/env";
 import { activeClientIds } from "@/lib/activity";
@@ -27,19 +28,21 @@ function authorized(request: NextRequest): boolean {
  */
 async function handle(request: NextRequest) {
   if (!authorized(request)) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-  if (!serverEnv().ANTHROPIC_API_KEY) return NextResponse.json({ skipped: "ANTHROPIC_API_KEY not set" });
   const admin = createAdminClient();
   const deadline = Date.now() + 270_000;
   try {
     const summary = await loggedRun(admin, "ai", async () => {
-      const { data: clients } = await admin.from("clients").select("id, timezone");
+      const { data: clients } = await admin.from("clients").select("id, timezone").is("archived_at", null); // archived = paused
       const { data: tracked } = await admin.from("integration_resources").select("client_id").eq("is_selected", true).in("provider", ["ga4", "gsc", "gbp", "bing"]);
       const withData = new Set((tracked ?? []).map((r) => r.client_id));
       const active = await activeClientIds(admin);
       const results: { client: string; kind: RunKind | "roadmap"; outcome: string }[] = [];
+      let aiNotSetUp = 0;
 
       for (const c of clients ?? []) {
         if (!withData.has(c.id)) continue;
+        // everything here runs on the client's organization's own Anthropic key: organizations without one are skipped
+        if (await aiUnavailable(c.id)) { aiNotSetUp++; continue; }
         const today = todayIn(c.timezone);
         if (Number(today.slice(8, 10)) >= 4) {
           const range = monthRange(previousMonth(today));
@@ -72,7 +75,7 @@ async function handle(request: NextRequest) {
           }
         }
       }
-      return { generated: results.length, results };
+      return { generated: results.length, results, aiNotSetUp };
     });
     return NextResponse.json(summary);
   } catch {

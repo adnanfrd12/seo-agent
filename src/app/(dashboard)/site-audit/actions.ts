@@ -4,7 +4,7 @@ import { revalidatePath } from "@/lib/revalidate";
 import { getSession } from "@/lib/analytics/client-context";
 import { auditEstimate, pollAudit, RENDER_MODES, renderModeOf, startAudit, type AuditState } from "@/lib/dataforseo/audit";
 import { BudgetError } from "@/lib/dataforseo/budget";
-import { DfsError, dfsConfigured } from "@/lib/dataforseo/client";
+import { DFS_NOT_CONFIGURED, DfsError, dfsConfigured } from "@/lib/dataforseo/client";
 import { lighthouseUrls, refreshCrux, runLighthouse } from "@/lib/dataforseo/lighthouse";
 import { resolveTarget } from "@/lib/dataforseo/research";
 import { createAdminClient } from "@/lib/supabase/admin";
@@ -16,7 +16,7 @@ export async function runSiteAudit(maxPages: number, renderMode: string = "html"
   const { client } = await getSession();
   if (!client) return { ok: false, error: "No client selected." };
   if (!["owner", "admin"].includes(client.role)) return { ok: false, error: "Only owners and admins can start an audit." };
-  if (!dfsConfigured()) return { ok: false, error: "DataForSEO isn't configured on the server." };
+  if (!(await dfsConfigured(client.id))) return { ok: false, error: DFS_NOT_CONFIGURED };
   if (!Number.isFinite(maxPages)) return { ok: false, error: "Choose how many pages to crawl." };
   try {
     const db = createAdminClient();
@@ -37,7 +37,7 @@ export async function runSiteAudit(maxPages: number, renderMode: string = "html"
 /** Free progress check used by the page while a crawl is running; any member may call it. */
 export async function checkSiteAudit(): Promise<AuditState> {
   const { client } = await getSession();
-  if (!client || !dfsConfigured()) return { state: "none" };
+  if (!client || !(await dfsConfigured(client.id))) return { state: "none" };
   try {
     const state = await pollAudit(createAdminClient(), client.id);
     if (state.state === "done") revalidatePath("/site-audit");
@@ -50,7 +50,7 @@ export async function runLighthouseNow(pages: number): Promise<Result> {
   const { client } = await getSession();
   if (!client) return { ok: false, error: "No client selected." };
   if (!["owner", "admin"].includes(client.role)) return { ok: false, error: "Only owners and admins can run Lighthouse." };
-  if (!dfsConfigured()) return { ok: false, error: "DataForSEO isn't configured on the server." };
+  if (!(await dfsConfigured(client.id))) return { ok: false, error: DFS_NOT_CONFIGURED };
   const n = Math.min(3, Math.max(1, Math.round(pages)));
   try {
     const db = createAdminClient();

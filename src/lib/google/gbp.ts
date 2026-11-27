@@ -1,4 +1,5 @@
 import "server-only";
+import { createHash } from "node:crypto";
 
 /**
  * Google Business Profile REST APIs (OAuth bearer token with the business.manage scope; an API key alone cannot
@@ -60,21 +61,23 @@ export function classify(status: number, body: GoogleErrorBody): GbpApiError {
 }
 
 /**
- * A token, or a token plus whether to name the environment's Cloud project with GOOGLE_API_KEY. The key belongs
- * to the GOOGLE_GBP_* project, so it is sent only with grants made through that app (never with an owner's own app,
- * whose requests must be counted against the owner's project).
+ * A token, or a token plus the API key of the organization whose OAuth client made the grant (GOOGLE_API_KEY,
+ * same Cloud project), so requests are counted against that organization's project. Never another organization's key.
  */
-export type GbpAuth = string | { token: string; envProject: boolean };
+export type GbpAuth = string | { token: string; apiKey?: string | null };
 const tokenOf = (a: GbpAuth) => (typeof a === "string" ? a : a.token);
-const envProject = (a: GbpAuth) => (typeof a === "string" ? true : a.envProject);
+const keyOf = (a: GbpAuth) => (typeof a === "string" ? null : a.apiKey || null);
 
-let keyRejected = false;
+/** keys Google refused this instance (by hash): requests go on without them */
+const rejectedKeys = new Set<string>();
+const keyId = (key: string) => createHash("sha256").update(key).digest("hex");
 
 async function call<T>(auth: GbpAuth, url: string, init: { method?: "GET" | "POST" | "PUT" | "DELETE"; body?: unknown } = {}): Promise<T> {
   for (let attempt = 0; ; attempt++) {
-    const useKey = Boolean(process.env.GOOGLE_API_KEY) && envProject(auth) && !keyRejected;
+    const key = keyOf(auth);
+    const useKey = Boolean(key) && !rejectedKeys.has(keyId(key!));
     const headers: Record<string, string> = { authorization: `Bearer ${tokenOf(auth)}` };
-    if (useKey) headers["x-goog-api-key"] = process.env.GOOGLE_API_KEY!;
+    if (useKey) headers["x-goog-api-key"] = key!;
     if (init.body !== undefined) headers["content-type"] = "application/json";
     const res = await fetch(url, {
       method: init.method ?? "GET", headers, cache: "no-store",
@@ -86,7 +89,7 @@ async function call<T>(auth: GbpAuth, url: string, init: { method?: "GET" | "POS
     }
     const body = (await res.json().catch(() => ({}))) as GoogleErrorBody;
     if (useKey && res.status !== 429 && /API_KEY|api key|API key/i.test(JSON.stringify(body))) {
-      keyRejected = true;
+      rejectedKeys.add(keyId(key!));
       continue;
     }
     const err = classify(res.status, body);

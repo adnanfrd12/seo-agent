@@ -1,7 +1,9 @@
 import "server-only";
+import type Anthropic from "@anthropic-ai/sdk";
 import { betaZodOutputFormat } from "@anthropic-ai/sdk/helpers/beta/zod";
 import { z } from "zod";
 import { anthropic } from "@/lib/ai/claude";
+import type { OrgConfig } from "@/lib/org/config";
 import { FANOUT_TYPES, QUERIES_PER, type FanoutMode, type FanoutQuery } from "./shared";
 
 /**
@@ -13,7 +15,8 @@ import { FANOUT_TYPES, QUERIES_PER, type FanoutMode, type FanoutQuery } from "./
  * AI Mode / AI Overviews, returning each synthetic query with its type, the user intent and why it would be run.
  * Here the LLM is Claude Sonnet 5.5 with structured outputs.
  */
-export interface MethodContext { site: string; business: string }
+/** `cfg`: the client's organization's configuration; a method takes its credentials (e.g. the Anthropic key) from it. */
+export interface MethodContext { site: string; business: string; cfg: OrgConfig }
 export interface KeywordFanout { queries: FanoutQuery[]; cost: number; model: string }
 export interface PageInput { url: string; title: string | null; headings: string[]; text: string }
 export interface PageFanout { topic: string; mainQuery: string; queries: FanoutQuery[]; cost: number; model: string }
@@ -67,8 +70,8 @@ function cost(u: { input_tokens: number; output_tokens: number; cache_read_input
 const clean = (q: z.infer<z.ZodObject<typeof item>>): FanoutQuery => ({ query: q.query.trim().replace(/\s+/g, " ").slice(0, 200), type: q.type, intent: q.user_intent.trim().slice(0, 200), reasoning: q.reasoning.trim().slice(0, 400) });
 const dedupe = <T extends { query: string }>(qs: T[]) => { const seen = new Set<string>(); return qs.filter((q) => { const k = q.query.toLowerCase(); return q.query && !seen.has(k) && (seen.add(k), true); }); };
 
-async function ask<S extends z.ZodType>(schema: S, user: string) {
-  const res = await anthropic().beta.messages.parse({
+async function ask<S extends z.ZodType>(ai: Anthropic, schema: S, user: string) {
+  const res = await ai.beta.messages.parse({
     model: FANOUT_MODEL, max_tokens: 8000, betas: ["server-side-fallback-2026-07-01"], fallbacks: "default",
     output_config: { effort: "low", format: betaZodOutputFormat(schema) },
     system: SYSTEM,
@@ -85,12 +88,12 @@ export const qforiaClaude: FanoutMethod = {
   label: "Qforia method (Claude simulation)",
   model: FANOUT_MODEL,
   async keyword(keyword, mode, ctx) {
-    const { out, cost: c } = await ask(keywordSchema, `Original query: ${keyword}\nAudience context (only for personalised queries): searchers who might find ${ctx.business} (${ctx.site}).\nReturn ${count(mode)}.`);
+    const { out, cost: c } = await ask(anthropic(ctx.cfg), keywordSchema, `Original query: ${keyword}\nAudience context (only for personalised queries): searchers who might find ${ctx.business} (${ctx.site}).\nReturn ${count(mode)}.`);
     return { queries: dedupe(out.queries.map(clean)).slice(0, QUERIES_PER[mode] + 8), cost: c, model: FANOUT_MODEL };
   },
   async page(page, mode, ctx) {
     const body = page.text.length > PAGE_CHARS ? `${page.text.slice(0, PAGE_CHARS)}\n[page text cut here]` : page.text;
-    const { out, cost: c } = await ask(pageSchema, `A page on ${ctx.site} (${ctx.business}).
+    const { out, cost: c } = await ask(anthropic(ctx.cfg), pageSchema, `A page on ${ctx.site} (${ctx.business}).
 URL: ${page.url}
 Title: ${page.title ?? "(none)"}
 Headings: ${page.headings.slice(0, 40).join(" | ") || "(none)"}

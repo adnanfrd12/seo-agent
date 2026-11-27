@@ -8,13 +8,13 @@ import { loadAudit } from "@/lib/dataforseo/audit";
 import { loadLighthouse } from "@/lib/dataforseo/lighthouse";
 import { gridRivals, loadLocal, reviewStats } from "@/lib/dataforseo/local";
 import { loadReportData } from "@/lib/report/data";
-import { aiErrorMessage, anthropic } from "./claude";
+import { aiErrorMessage, anthropicFor } from "./claude";
 import { buildEvidence, evidenceText, type EvidenceItem } from "./evidence";
 import { budgetMessage, claudeBudget } from "./usage";
 import { loadAi } from "./visibility";
 
 /**
- * Four guided analyses over the client's stored data, written by Claude Sonnet 5.5 on the owner's
+ * Four guided analyses over the client's stored data, written by Claude Sonnet 5.5 on the organization's
  * Anthropic key. Each one is generated on request (never when a page is opened), validated against a
  * schema, checked against the evidence ids it may cite, and stored so everyone reads the same answer.
  */
@@ -126,7 +126,8 @@ export async function generateCoach<M extends CoachMode>(admin: SupabaseClient, 
   const budget = await claudeBudget(admin, clientId);
   if (budget.left <= 0) return { ok: false, error: budgetMessage(budget.budget) };
   try {
-    const res = await anthropic().beta.messages.parse({
+    const ai = await anthropicFor(clientId);
+    const res = await ai.beta.messages.parse({
       model: COACH_MODEL, max_tokens: 8000, betas: ["server-side-fallback-2026-07-01"], fallbacks: "default",
       system: SYSTEM, output_config: { effort: "medium", format: betaZodOutputFormat(schemas[mode]) },
       messages: [{ role: "user", content: `${ev.text}\n\nTASK:\n${TASK[mode]}` }],

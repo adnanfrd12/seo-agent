@@ -2,13 +2,14 @@ import "server-only";
 import { createHash } from "node:crypto";
 import type { SupabaseClient } from "@supabase/supabase-js";
 import { z } from "zod";
-import { getSettings, PER_CLIENT_SHARE, spend } from "@/lib/dataforseo/budget";
+import { clientSpend, getSettings, orgSpend, PER_CLIENT_SHARE } from "@/lib/dataforseo/budget";
 import { MARKETS, marketByCode } from "@/lib/dataforseo/locations";
 import { hostOf, obj, str, type Spec, type Target } from "@/lib/dataforseo/research";
+import { clientOrgId } from "@/lib/org/config";
 
 /** Shared helpers for the SEO research / audit / local / toolkit tools. Everything here only reads. */
 
-export const NOT_CONFIGURED = "DataForSEO isn't configured on the server (DATAFORSEO_LOGIN / DATAFORSEO_PASSWORD), so paid lookups can't run.";
+export const NOT_CONFIGURED = "DataForSEO isn't set up for this organization (an owner adds the DataForSEO API login and password in Settings → Integrations), so paid lookups can't run.";
 export const NO_SITE = "The client's website isn't set yet: set it in the research settings (Backlinks or Organic Keywords page) or connect Search Console first.";
 
 /* ------------------------------------------------------------------ formatting */
@@ -106,18 +107,18 @@ export function domainOf(input: string | undefined | null): string | null {
   return h && /^(?!-)([a-z0-9-]+\.)+[a-z]{2,}$/.test(h) ? h : null;
 }
 
-/* ------------------------------------------------------------------ DataForSEO spending (mirrors budget.ts) */
+/* ------------------------------------------------------------------ DataForSEO spending of the client's organization (mirrors budget.ts) */
 export interface Budget { cap: number; clientCap: number; all: number | null; mine: number | null; left: number; autoRefresh: boolean }
 
 export async function budgetNow(admin: SupabaseClient, clientId: string): Promise<Budget> {
-  const [settings, all, mine] = await Promise.all([getSettings(admin), spend(admin).catch(() => null), spend(admin, clientId).catch(() => null)]);
+  const [settings, all, mine] = await Promise.all([getSettings(admin, { clientId }), orgSpend(admin, { clientId }).catch(() => null), clientSpend(admin, clientId).catch(() => null)]);
   const cap = settings.dailyBudget, clientCap = cap * PER_CLIENT_SHARE;
   const left = all == null || mine == null ? 0 : Math.max(0, Math.min(cap - all, clientCap - mine));
   return { cap, clientCap, all, mine, left, autoRefresh: settings.autoRefresh };
 }
 export const spendLine = (b: Budget) => (b.all == null || b.mine == null
   ? "DataForSEO spend tracking isn't available right now."
-  : `DataForSEO today: ${usd(b.all)} of the ${usd(b.cap)} daily limit spent (all clients); this client ${usd(b.mine)} of its ${usd(b.clientCap)} share, so ${money(b.left)} is left for it until midnight UTC.`);
+  : `DataForSEO today: ${usd(b.all)} of the ${usd(b.cap)} daily limit spent (all clients of the organization); this client ${usd(b.mine)} of its ${usd(b.clientCap)} share, so ${money(b.left)} is left for it until midnight UTC.`);
 
 /**
  * The same caps assertBudget applies to a button click: the run needs room for at least its first paid call (`first`);
@@ -127,7 +128,7 @@ export async function budgetCheck(admin: SupabaseClient, clientId: string, total
   const b = await budgetNow(admin, clientId);
   if (b.all == null || b.mine == null) return { error: "DataForSEO spend tracking isn't available, so no paid lookups can run right now." };
   if (first > b.left + 1e-9) {
-    return { error: `Today's DataForSEO limit doesn't leave room for this (needs about ${money(first)}; ${money(b.left)} left for this client: ${usd(b.all)} of ${usd(b.cap)} spent today across all clients, one client may use ${usd(b.clientCap)}). It resets at midnight UTC, or an owner/admin can raise the daily limit.` };
+    return { error: `Today's DataForSEO limit doesn't leave room for this (needs about ${money(first)}; ${money(b.left)} left for this client: ${usd(b.all)} of ${usd(b.cap)} spent today across the organization's clients, one client may use ${usd(b.clientCap)}). It resets at midnight UTC, or an owner/admin can raise the daily limit.` };
   }
   const lines = [spendLine(b)];
   if (total > b.left + 1e-9) lines.push(`Only ${money(b.left)} is left today, so the run may stop part-way; everything fetched before that is kept.`);
@@ -162,14 +163,14 @@ export const normSeed = (s: string) => s.trim().toLowerCase().replace(/\s+/g, " 
 export const KW_EST: Record<"ideas" | "suggestions" | "related", number> = { ideas: 0.03, suggestions: 0.03, related: 0.02 };
 
 /**
- * The newest stored search for these settings. The keyword cache is shared by all clients (keyword data isn't
- * client-specific: the dashboard returns another client's stored search for free too), so it is matched on the exact
- * request (seed, market) and never listed.
+ * The newest stored search for these settings. The keyword cache is shared by the clients of an organization (keyword
+ * data isn't client-specific: the dashboard returns another client's stored search for free too, but never another
+ * organization's), so it is matched on the exact request (seed, market) and never listed.
  */
-export async function storedSearch(admin: SupabaseClient, kind: string, term: string, location_code: number, language_code: string, withData: boolean) {
+export async function storedSearch(admin: SupabaseClient, kind: string, term: string, location_code: number, language_code: string, withData: boolean, clientId: string) {
   const params = kind === "ideas" ? { keywords: [term], location_code, language_code } : { keyword: term, location_code, language_code };
   const { data } = await admin.from("dfs_keyword_cache").select(withData ? "data, fetched_at, row_count" : "fetched_at, row_count")
-    .eq("endpoint", `keywords_${kind}`).contains("params", params).order("fetched_at", { ascending: false }).limit(1).maybeSingle();
+    .eq("organization_id", await clientOrgId(clientId)).eq("endpoint", `keywords_${kind}`).contains("params", params).order("fetched_at", { ascending: false }).limit(1).maybeSingle();
   return data as unknown as { data?: { rows: Record<string, unknown>[]; total: number }; fetched_at: string; row_count: number | null } | null;
 }
 

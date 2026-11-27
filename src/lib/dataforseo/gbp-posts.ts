@@ -46,7 +46,7 @@ async function save(admin: SupabaseClient, clientId: string, row: PostsRow, cost
 /** Starts one collection of the newest posts. Earlier posts stay visible until the new ones arrive. */
 export async function startPosts(ctx: Ctx, who: Who, key: string, own: boolean): Promise<PostsRow> {
   await assertBudget(ctx.admin, ctx.clientId, POSTS_EST, ctx.source);
-  const { id, cost } = await dfsTaskPost("/business_data/google/my_business_updates/task_post", {
+  const { id, cost } = await dfsTaskPost(ctx.clientId, "/business_data/google/my_business_updates/task_post", {
     keyword: bizKeyword(who), location_code: 2840, language_code: "en", depth: POSTS_DEPTH,
   });
   await recordSpend(ctx.admin, ctx.clientId, POSTS_ENDPOINT, cost, ctx.source);
@@ -138,7 +138,7 @@ export async function pollPosts(admin: SupabaseClient, clientId: string): Promis
   for (const r of data ?? []) {
     const t = r.data as PostsRow;
     if (t.status !== "pending" || !t.taskId) continue;
-    const { status, result } = await dfsGet(`/business_data/google/my_business_updates/task_get/${t.taskId}`);
+    const { status, result } = await dfsGet(clientId, `/business_data/google/my_business_updates/task_get/${t.taskId}`);
     if (status === 20000) {
       const prof = profs?.find((p) => p.params_hash === t.key)?.data as Profile | null | undefined;
       const bizDomain = t.own ? (me?.domain ?? prof?.domain ?? null) : (prof?.domain ?? null);

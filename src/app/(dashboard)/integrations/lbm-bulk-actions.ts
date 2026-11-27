@@ -4,9 +4,10 @@ import { after } from "next/server";
 import { revalidatePath } from "@/lib/revalidate";
 import { z } from "zod";
 import { getSession } from "@/lib/analytics/client-context";
-import { BingError, userSites } from "@/lib/bing/api";
+import { BingError, bingOrgKey, userSites } from "@/lib/bing/api";
 import { decryptSecret, encryptSecret } from "@/lib/crypto";
-import { LbmError, listLocations } from "@/lib/lbm/api";
+import { LbmError, lbmOrgToken, listLocations } from "@/lib/lbm/api";
+import { can } from "@/lib/org/permissions";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { createClient } from "@/lib/supabase/server";
 import { processQueue } from "@/lib/sync/worker";
@@ -46,28 +47,39 @@ const domain = (u: string | null | undefined) => {
   try { return new URL(/^https?:/.test(u) ? u : `https://${u}`).hostname.replace(/^www\./, "").toLowerCase(); } catch { return null; }
 };
 
+/**
+ * Bulk setup creates clients in the active client's organization, so it is for that organization's owners and
+ * admins. Tokens: the active client's stored ones, else the organization's (Settings → Integrations).
+ */
 async function context() {
-  const { user, client } = await getSession();
+  const { user, client, organization } = await getSession();
   if (!client || !user) throw new Error("No client");
-  if (!["owner", "admin"].includes(client.role)) return { allowed: false as const };
+  const orgId = client.organizationId;
+  if (organization?.id !== orgId || !can.manageClients(organization.role)) return { allowed: false as const };
   const admin = createAdminClient();
-  // the active client's stored keys, falling back to the server-wide ones
   const stored = async (provider: string) => {
     const { data: conn } = await admin.from("integration_connections").select("id").eq("client_id", client.id).eq("provider", provider).eq("status", "connected").maybeSingle();
     if (!conn) return null;
     const { data } = await admin.from("integration_secrets").select("refresh_token_encrypted").eq("connection_id", conn.id).maybeSingle();
-    return data?.refresh_token_encrypted ? decryptSecret(data.refresh_token_encrypted) : null;
+    try { return data?.refresh_token_encrypted ? decryptSecret(data.refresh_token_encrypted) : null; } catch { return null; }
   };
-  const lbmToken = (await stored("lbm")) ?? process.env.LOCAL_BRAND_MANAGER_API_TOKEN?.trim() ?? null;
-  const bingKey = (await stored("bing")) ?? process.env.BING_WEBMASTER_API_KEY?.trim() ?? null;
-  return { allowed: true as const, user, client, admin, lbmToken, bingKey };
+  const lbmToken = (await stored("lbm")) ?? (await lbmOrgToken(client.id));
+  const bingKey = (await stored("bing")) ?? (await bingOrgKey(client.id));
+  return { allowed: true as const, user, client, orgId, admin, lbmToken, bingKey };
+}
+
+/** Local Brand Manager locations already used by a client of this organization (location id → client name). */
+async function usedInOrg(admin: ReturnType<typeof createAdminClient>, orgId: string) {
+  const { data } = await admin.from("integration_resources").select("metadata, clients!inner(name, organization_id)")
+    .eq("provider", "gbp").eq("is_selected", true).filter("metadata->>source", "eq", "lbm").eq("clients.organization_id", orgId);
+  return new Map((data ?? []).map((r) => [String((r.metadata as { lbm_id?: string })?.lbm_id), (r.clients as unknown as { name: string } | null)?.name ?? "another client"]));
 }
 
 /** Every LBM location, which dashboard client already uses it, and the Bing site matching its website. */
 export async function lbmBulkPreview(): Promise<{ ok: true; locations: BulkLocation[]; bingAvailable: boolean } | { ok: false; error: string }> {
   const ctx = await context();
-  if (!ctx.allowed) return { ok: false, error: "Only owners and admins can run the bulk setup." };
-  if (!ctx.lbmToken) return { ok: false, error: "Connect Local Brand Manager (or set LOCAL_BRAND_MANAGER_API_TOKEN) first." };
+  if (!ctx.allowed) return { ok: false, error: "Only organization owners and admins can run the bulk setup." };
+  if (!ctx.lbmToken) return { ok: false, error: "Connect Local Brand Manager first (or an owner adds the organization's token in Settings → Integrations)." };
   let locations;
   try { locations = await listLocations(ctx.lbmToken); } catch (e) {
     return { ok: false, error: e instanceof LbmError ? e.message : "Couldn't load Local Brand Manager locations." };
@@ -77,9 +89,8 @@ export async function lbmBulkPreview(): Promise<{ ok: true; locations: BulkLocat
     try { bing = ((await userSites(ctx.bingKey)) ?? []).filter((s) => s.IsVerified).map((s) => ({ url: s.Url, domain: domain(s.Url) })); }
     catch (e) { if (!(e instanceof BingError)) throw e; }
   }
-  const { data: used } = await ctx.admin.from("integration_resources").select("metadata, clients(name)")
-    .eq("provider", "gbp").eq("is_selected", true).filter("metadata->>source", "eq", "lbm");
-  const usedBy = new Map((used ?? []).map((r) => [String((r.metadata as { lbm_id?: string })?.lbm_id), (r.clients as unknown as { name: string } | null)?.name ?? "another client"]));
+  // only this organization's clients: another organization's clients and names are never looked at
+  const usedBy = await usedInOrg(ctx.admin, ctx.orgId);
 
   return {
     ok: true,
@@ -112,15 +123,14 @@ export async function lbmBulkCreate(picks: z.input<typeof pickSchema>, copyTeam:
   const parsed = pickSchema.safeParse(picks);
   if (!parsed.success) return { ok: false, error: "Invalid selection (max 100 locations per run)." };
   const ctx = await context();
-  if (!ctx.allowed) return { ok: false, error: "Only owners and admins can run the bulk setup." };
+  if (!ctx.allowed) return { ok: false, error: "Only organization owners and admins can run the bulk setup." };
   if (!ctx.lbmToken) return { ok: false, error: "No Local Brand Manager token available." };
   const { admin, user } = ctx;
   const lbmSecret = encryptSecret(ctx.lbmToken);
   const bingSecret = ctx.bingKey ? encryptSecret(ctx.bingKey) : null;
   const supabase = await createClient();
 
-  const { data: used } = await admin.from("integration_resources").select("metadata").eq("provider", "gbp").eq("is_selected", true).filter("metadata->>source", "eq", "lbm");
-  const taken = new Set((used ?? []).map((r) => String((r.metadata as { lbm_id?: string })?.lbm_id)));
+  const taken = new Set((await usedInOrg(admin, ctx.orgId)).keys());
   const { data: team } = copyTeam
     ? await admin.from("client_members").select("user_id, role").eq("client_id", ctx.client.id).neq("user_id", user.id)
     : { data: [] };
@@ -131,7 +141,8 @@ export async function lbmBulkCreate(picks: z.input<typeof pickSchema>, copyTeam:
   for (const p of parsed.data) {
     if (taken.has(p.id)) { skipped.push(p.name); continue; }
     try {
-      const { data: clientId, error } = await supabase.rpc("create_client", { p_name: p.name, p_timezone: p.timezone });
+      // in the active client's organization (create_client checks the caller is its owner or admin)
+      const { data: clientId, error } = await supabase.rpc("create_client", { p_name: p.name, p_timezone: p.timezone, p_organization: ctx.orgId });
       if (error || !clientId) throw new Error("create_client failed");
       const cid = String(clientId);
       if (team?.length) await admin.from("client_members").upsert(team.map((m) => ({ client_id: cid, user_id: m.user_id, role: m.role })), { onConflict: "client_id,user_id" });

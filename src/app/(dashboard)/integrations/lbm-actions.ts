@@ -5,7 +5,7 @@ import { revalidatePath } from "@/lib/revalidate";
 import { z } from "zod";
 import { getSession } from "@/lib/analytics/client-context";
 import { decryptSecret, encryptSecret } from "@/lib/crypto";
-import { cleanToken, LbmError, listLocations } from "@/lib/lbm/api";
+import { cleanToken, LbmError, lbmOrgToken, listLocations } from "@/lib/lbm/api";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { createClient } from "@/lib/supabase/server";
 import { processQueue } from "@/lib/sync/worker";
@@ -25,20 +25,22 @@ async function connection(clientId: string) {
   return { admin, conn: data };
 }
 
-async function storedToken(connectionId: string) {
+/** The connection's own token, else its organization's (Settings → Integrations). */
+async function tokenFor(connectionId: string, clientId: string) {
   const { data } = await createAdminClient().from("integration_secrets").select("refresh_token_encrypted").eq("connection_id", connectionId).maybeSingle();
-  return data?.refresh_token_encrypted ? decryptSecret(data.refresh_token_encrypted) : null;
+  try { if (data?.refresh_token_encrypted) return decryptSecret(data.refresh_token_encrypted); } catch { /* unreadable: the organization's token */ }
+  return lbmOrgToken(clientId);
 }
 
 const refresh = () => { revalidatePath("/integrations"); revalidatePath("/business-profile"); revalidatePath("/overview"); };
 
-/** Validates the token with a real API call, then stores it encrypted. Empty input uses LOCAL_BRAND_MANAGER_API_TOKEN. */
+/** Validates the token with a real API call, then stores it encrypted. Empty input uses the organization's token (Settings → Integrations). */
 export async function connectLbm(input: string): Promise<Result> {
   const { client, allowed } = await adminClient();
   if (!allowed) return { ok: false, error: "Only owners and admins can connect integrations." };
-  const raw = input.trim() || process.env.LOCAL_BRAND_MANAGER_API_TOKEN || "";
+  const raw = input.trim() || (await lbmOrgToken(client.id)) || "";
   const parsed = z.string().min(10).max(500).safeParse(cleanToken(raw));
-  if (!parsed.success) return { ok: false, error: "Paste the API token from app.localbrandmanager.com/api_tokens (or set LOCAL_BRAND_MANAGER_API_TOKEN)." };
+  if (!parsed.success) return { ok: false, error: "Paste the API token from app.localbrandmanager.com/api_tokens (or an owner adds the organization's token in Settings → Integrations)." };
   try {
     await listLocations(parsed.data);
   } catch (e) {
@@ -62,7 +64,7 @@ export async function lbmLocations(): Promise<{ ok: true; locations: LbmLocation
   const { client, allowed } = await adminClient();
   if (!allowed) return { ok: false, error: "Only owners and admins can manage integrations." };
   const { conn } = await connection(client.id);
-  const token = conn && (await storedToken(conn.id));
+  const token = conn && (await tokenFor(conn.id, client.id));
   if (!token) return { ok: false, error: "Connect Local Brand Manager first." };
   try {
     const list = await listLocations(token);

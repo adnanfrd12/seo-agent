@@ -3,6 +3,7 @@ import type { SupabaseClient } from "@supabase/supabase-js";
 import { todayIn } from "@/lib/analytics/range";
 import { readSettings } from "@/lib/aiqw/settings";
 import { claudeMonthSpend } from "@/lib/aiqw/store";
+import { pagedRows } from "@/lib/db/paged";
 
 /**
  * Claude spend for one client, from every place the dashboard records it: Nova messages, roadmap generations,
@@ -16,7 +17,8 @@ const num = (v: unknown) => { const n = Number(v); return Number.isFinite(n) ? n
 const dayIn = (iso: string, tz: string) => new Intl.DateTimeFormat("en-CA", { timeZone: tz, year: "numeric", month: "2-digit", day: "2-digit" }).format(new Date(iso));
 
 export type UsageFeature = "blog_geo" | "toolkit_content" | "toolkit_brief" | "toolkit_comparison" | "gsc_indexing" | "site_audit_ai" | "alt_text" | "security_ai" | "fanout" | "gbp_ai";
-const FEATURE_LABEL: Record<string, string> = {
+/** Names of the ai_usage_events features (also used by the organization spend tab, lib/org/spend.ts). */
+export const FEATURE_LABEL: Record<string, string> = {
   blog_geo: "Blog post reading", toolkit_content: "SEO Toolkit", toolkit_brief: "SEO Toolkit", toolkit_comparison: "SEO Toolkit",
   gsc_indexing: "Indexing diagnosis", site_audit_ai: "Site audit fixes", alt_text: "Image alt text", security_ai: "Security audit", fanout: "Fan-out queries", gbp_ai: "Business Profile insights",
 };
@@ -41,13 +43,14 @@ export async function recordClaudeUse(admin: SupabaseClient, clientId: string, f
 
 export async function claudeUsage(admin: SupabaseClient, clientId: string, timezone: string) {
   const [nova, roadmap, aiqw, runs, coach, logged] = await Promise.all([
-    admin.from("nova_messages").select("created_at, cost_usd").eq("client_id", clientId).eq("role", "assistant").gt("cost_usd", 0).limit(5000),
+    // paged: the database API returns at most 1,000 rows per request whatever .limit() asks for
+    pagedRows<{ created_at: string; cost_usd: unknown }>((from, to) => admin.from("nova_messages").select("created_at, cost_usd").eq("client_id", clientId).eq("role", "assistant").gt("cost_usd", 0).order("id").range(from, to)),
     admin.from("roadmap_changes").select("created_at, after").eq("client_id", clientId).eq("action", "month.generate").limit(1000),
     admin.from("dfs_cache").select("data, cost, fetched_at").eq("client_id", clientId).eq("endpoint", "aiqw").like("params_hash", "run:%").limit(1000),
-    admin.from("ai_analysis_runs").select("created_at, kind, model, cost_usd").eq("client_id", clientId).not("cost_usd", "is", null).limit(2000),
+    pagedRows<{ created_at: string; kind: string; model: string | null; cost_usd: unknown }>((from, to) => admin.from("ai_analysis_runs").select("created_at, kind, model, cost_usd").eq("client_id", clientId).not("cost_usd", "is", null).order("id").range(from, to)),
     admin.from("dfs_cache").select("endpoint, data, cost, fetched_at").eq("client_id", clientId).like("endpoint", "coach_%").limit(20),
     // before migration 20261125000026 is applied this returns an error and simply adds nothing
-    admin.from("ai_usage_events").select("created_at, feature, model, calls, cost_usd").eq("client_id", clientId).limit(5000),
+    pagedRows<{ created_at: string; feature: string; model: string | null; calls: number; cost_usd: unknown }>((from, to) => admin.from("ai_usage_events").select("created_at, feature, model, calls, cost_usd").eq("client_id", clientId).order("id").range(from, to)),
   ]);
   const events: UsageEvent[] = [
     ...(nova.data ?? []).map((r) => ({ at: r.created_at, feature: "Nova chat", model: null, cost: num(r.cost_usd) })),

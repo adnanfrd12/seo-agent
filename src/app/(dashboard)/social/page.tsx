@@ -47,7 +47,7 @@ export default async function SocialPage({ searchParams }: { searchParams: Promi
     socialConnections(client.id).catch((): SocialConnection[] => []), // Composio unreachable: buttons still shown
     composioReadyMap(),
   ]);
-  const tokens = tokenState(social.tokens);
+  const tokens = await tokenState(client.id, social.tokens);
   const active = new Set(conns.filter((c) => c.status === "ACTIVE").map((c) => c.platform));
 
   // connected accounts refresh themselves: a stale one is read in the background after this page is sent
@@ -190,7 +190,7 @@ export default async function SocialPage({ searchParams }: { searchParams: Promi
 /* ------------------------------------------------------------------ one platform */
 function PlatformSection({ p, f, row, url, connected, ready, canEdit, token, cur, prev, clientId, growth, since }: {
   p: Platform; f: PlatformFigures | undefined; row: SocialRow | undefined; url: string | undefined; connected: boolean; ready: boolean; canEdit: boolean;
-  token: "client" | "env" | null; cur: Period; prev: Period; clientId: string; growth: DailyGrowth | null; since: string | null;
+  token: "client" | "org" | null; cur: Period; prev: Period; clientId: string; growth: DailyGrowth | null; since: string | null;
 }) {
   const info = PLATFORM_INFO[p];
   const hasData = Boolean(row && (row.status === "ok" || row.history.length > 0));

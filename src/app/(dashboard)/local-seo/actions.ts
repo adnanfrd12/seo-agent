@@ -3,7 +3,7 @@
 import { revalidatePath } from "@/lib/revalidate";
 import { getSession } from "@/lib/analytics/client-context";
 import { BudgetError } from "@/lib/dataforseo/budget";
-import { DfsError, dfsConfigured } from "@/lib/dataforseo/client";
+import { DFS_NOT_CONFIGURED, DfsError, dfsConfigured } from "@/lib/dataforseo/client";
 import { fetchProfile, gridRivals, localIdentity, pollReviews, runGrid, startReviews, type Grid, type Profile } from "@/lib/dataforseo/local";
 import { createAdminClient } from "@/lib/supabase/admin";
 
@@ -14,7 +14,7 @@ async function guard() {
   const { client } = await getSession();
   if (!client) return { error: "No client selected." } as const;
   if (!["owner", "admin"].includes(client.role)) return { error: "Only owners and admins can run paid checks." } as const;
-  if (!dfsConfigured()) return { error: "DataForSEO isn't configured on the server." } as const;
+  if (!(await dfsConfigured(client.id))) return { error: DFS_NOT_CONFIGURED } as const;
   return { client, db: createAdminClient() } as const;
 }
 const fail = (e: unknown): Result => ({ ok: false, error: e instanceof BudgetError || e instanceof DfsError ? e.message : e instanceof Error ? e.message : "Something went wrong; try again." });
@@ -37,7 +37,7 @@ export async function refreshLocal(): Promise<Result> {
 /** Free: collects finished review tasks. Any member may call it (the page polls while a task is running). */
 export async function checkReviews(): Promise<{ pending: number; done: number }> {
   const { client } = await getSession();
-  if (!client || !dfsConfigured()) return { pending: 0, done: 0 };
+  if (!client || !(await dfsConfigured(client.id))) return { pending: 0, done: 0 };
   try {
     const r = await pollReviews(createAdminClient(), client.id);
     if (r.done) revalidatePath(PATH);

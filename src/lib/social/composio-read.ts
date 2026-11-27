@@ -1,5 +1,6 @@
 import "server-only";
 import { executeTool, ProviderRateLimitError, proxyGet } from "@/lib/composio/client";
+import { ConfigError } from "@/lib/org/config";
 import { entityId } from "./composio";
 import { handleOf, type Platform } from "./platforms";
 import type { MetricKey, SocialDemo, SocialPost, SocialSeries } from "./metrics";
@@ -46,6 +47,8 @@ const add = (s: SocialSeries, k: MetricKey, date: string | null, v: number | nul
   if (hit) hit.value = v; else arr.push({ date, value: v });
 };
 const sortSeries = (s: SocialSeries) => { for (const k of Object.keys(s) as MetricKey[]) s[k]!.sort((a, b) => a.date.localeCompare(b.date)); return s; };
+/** errors no optional read may swallow: a rate limit (retried later) or the organization's Composio settings */
+const stops = (e: unknown) => e instanceof ProviderRateLimitError || e instanceof ConfigError;
 
 /** Graph-style insights ({ data: [{ name, values: [{ value, end_time }], total_value }] }). */
 function graphMetrics(data: unknown): { name: string; values: { date: string | null; value: number | null }[]; total: number | null; breakdown: Record<string, unknown>[] }[] {
@@ -64,14 +67,16 @@ function ytRows(data: unknown): Record<string, unknown>[] {
   return Array.isArray(rows) ? rows.filter(Array.isArray).map((r) => Object.fromEntries(heads.map((h, i) => [h, (r as unknown[])[i]]))) : [];
 }
 
+/** Every call runs in the Composio project of the client's organization (the entity client:<id> decides it). */
 export async function readComposio(clientId: string, p: Platform, connectedAccountId: string, ctx: { url: string | null; linkedinOrgId: string | null; knownPosts: SocialPost[] }): Promise<ComposioRead> {
   const notes: string[] = [];
-  const run = async (slug: string, args: Record<string, unknown>) => unwrap(await executeTool({ slug, arguments: args, userId: entityId(clientId), connectedAccountId, timeoutMs: 60_000 }));
-  /** an optional read: a refusal becomes a note, a rate limit stops the whole refresh (kept for the next run) */
+  const userId = entityId(clientId);
+  const run = async (slug: string, args: Record<string, unknown>) => unwrap(await executeTool({ slug, arguments: args, userId, connectedAccountId, timeoutMs: 60_000 }));
+  /** an optional read: a refusal becomes a note, a rate limit or settings problem stops the whole refresh (kept for the next run) */
   const soft = async (slug: string, args: Record<string, unknown>, what: string) => {
     try { return await run(slug, args); }
     catch (e) {
-      if (e instanceof ProviderRateLimitError) throw e;
+      if (stops(e)) throw e;
       notes.push(`${what} isn't available for this account (${(e instanceof Error ? e.message : "refused").replace(/^[A-Z_]+:\s*/, "").slice(0, 120)}).`);
       return null;
     }
@@ -86,7 +91,7 @@ export async function readComposio(clientId: string, p: Platform, connectedAccou
     const page = pages.find((x) => h && [x.username, x.id, String(x.link ?? "").split("/").filter(Boolean).pop()].some((v) => String(v ?? "").toLowerCase() === h)) ?? pages[0];
     const pageId = String(page.id);
     out.ids.page_id = pageId;
-    try { const meUser = await run("FACEBOOK_GET_CURRENT_USER", { fields: "id" }); const uid = pickStr(meUser, ["id"]); if (uid) out.ids.user_id = uid; } catch (e) { if (e instanceof ProviderRateLimitError) throw e; }
+    try { const meUser = await run("FACEBOOK_GET_CURRENT_USER", { fields: "id" }); const uid = pickStr(meUser, ["id"]); if (uid) out.ids.user_id = uid; } catch (e) { if (stops(e)) throw e; }
     out.name = pickStr(page, ["name"]); out.followers = n(page.followers_count) ?? n(page.fan_count);
     out.handle = pickStr(page, ["username"]); out.avatar = pickStr(page.picture, ["url"]); out.link = pickStr(page, ["link"]);
     const daily = await soft("FACEBOOK_GET_PAGE_INSIGHTS", { page_id: pageId, period: "day", since: String(now - 90 * DAY_S), until: String(now),
@@ -187,11 +192,11 @@ export async function readComposio(clientId: string, p: Platform, connectedAccou
     const rest = async (url: string, what: string) => {
       try {
         for (;;) {
-          try { return await proxyGet({ connectedAccountId, url, headers: { "LinkedIn-Version": versions[0], "X-Restli-Protocol-Version": "2.0.0" } }); }
+          try { return await proxyGet({ userId, connectedAccountId, url, headers: { "LinkedIn-Version": versions[0], "X-Restli-Protocol-Version": "2.0.0" } }); }
           catch (e) { if (versions.length > 1 && e instanceof Error && /NONEXISTENT_VERSION|426/.test(e.message)) { versions.shift(); continue; } throw e; }
         }
       } catch (e) {
-        if (e instanceof ProviderRateLimitError) throw e;
+        if (stops(e)) throw e;
         notes.push(`${what} isn't available for this account (${(e instanceof Error ? e.message : "refused").slice(0, 120)}).`);
         return null;
       }
@@ -217,7 +222,7 @@ export async function readComposio(clientId: string, p: Platform, connectedAccou
     let info: unknown = pages.find((x) => x.id === org)?.info ?? null;
     if (!info || !pickStr(info, ["localizedName", "vanityName"])) {
       try { info = await run("LINKEDIN_GET_COMPANY_INFO", { role: "ADMINISTRATOR", state: "APPROVED", count: 10 }); }
-      catch (e) { if (e instanceof ProviderRateLimitError || !org) throw e; }
+      catch (e) { if (stops(e) || !org) throw e; }
     }
     const infoOrg = info ? (pick(info, ["id"]) != null ? String(pick(info, ["id"])) : JSON.stringify(info).match(/urn:li:organization:(\d+)/)?.[1] ?? null) : null;
     if (!org) {
@@ -229,7 +234,7 @@ export async function readComposio(clientId: string, p: Platform, connectedAccou
       const logo = JSON.stringify(info).match(/urn:li:(?:image|digitalmediaAsset):[A-Za-z0-9_-]+/)?.[0];
       if (logo) {
         try { out.avatar = pickStr(await run("LINKEDIN_GET_IMAGE", { image_urn: logo.replace(":digitalmediaAsset:", ":image:") }), ["downloadUrl", "download_url", "url"]); }
-        catch (e) { if (e instanceof ProviderRateLimitError) throw e; /* logo is optional */ }
+        catch (e) { if (stops(e)) throw e; /* logo is optional */ }
       }
     }
     const urn = `urn:li:organization:${org}`;

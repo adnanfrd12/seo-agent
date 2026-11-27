@@ -13,6 +13,7 @@ import { Unavailable } from "@/components/report/report-ui";
 import { getSession } from "@/lib/analytics/client-context";
 import { resolveRange } from "@/lib/analytics/range";
 import { first, type SearchParams } from "@/lib/analytics/url";
+import { aiUnavailable } from "@/lib/ai/claude";
 import type { EvidenceItem } from "@/lib/ai/evidence";
 import { createClient } from "@/lib/supabase/server";
 import { cn } from "@/lib/utils";
@@ -42,7 +43,8 @@ export default async function InsightsPage({ searchParams }: { searchParams: Pro
   const range = resolveRange({ range: first(sp.range) ?? (first(sp.start) ? undefined : "month"), start: first(sp.start), end: first(sp.end) },
     client.timezone, client.defaultRangeDays);
   const canEdit = ["owner", "admin"].includes(client.role);
-  const configured = Boolean(process.env.ANTHROPIC_API_KEY);
+  const aiOff = await aiUnavailable(client.id);
+  const configured = !aiOff;
 
   const supabase = await createClient();
   const [{ data: runs, error: runsErr }, { data: insights }] = await Promise.all([
@@ -95,8 +97,8 @@ export default async function InsightsPage({ searchParams }: { searchParams: Pro
 
       {migrationMissing ? (
         <Unavailable title="Database update needed" body="Apply migration 20261021000011 in Supabase to enable AI insights." />
-      ) : !configured ? (
-        <Unavailable title="AI isn't configured" body="Add ANTHROPIC_API_KEY to the environment (and Vercel), then redeploy." />
+      ) : aiOff ? (
+        <Unavailable title="AI isn't configured" body={aiOff} />
       ) : (
         <div className="mb-8 space-y-2">
           <AutoAnalysis kind="insights" start={range.start} end={range.end} autoStart={autoStart} running={running} />

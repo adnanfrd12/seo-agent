@@ -3,7 +3,7 @@
 import { revalidatePath } from "@/lib/revalidate";
 import { getSession } from "@/lib/analytics/client-context";
 import { BudgetError } from "@/lib/dataforseo/budget";
-import { DfsError, dfsConfigured } from "@/lib/dataforseo/client";
+import { DFS_NOT_CONFIGURED, DfsError, dfsConfigured } from "@/lib/dataforseo/client";
 import { pollReviews } from "@/lib/dataforseo/local";
 import { platformOf, pollPlatforms, refreshAll, refreshListings, saveProfiles, type PlatformKey } from "@/lib/reviews/platforms";
 import { createAdminClient } from "@/lib/supabase/admin";
@@ -33,7 +33,7 @@ export async function saveReviewProfiles(input: Record<string, string>): Promise
 export async function refreshPlatformReviews(): Promise<Result> {
   const a = await owner();
   if (!a.client) return { ok: false, error: a.error };
-  if (!dfsConfigured()) return { ok: false, error: "DataForSEO isn't configured on the server." };
+  if (!(await dfsConfigured(a.client.id))) return { ok: false, error: DFS_NOT_CONFIGURED };
   try {
     const r = await refreshAll({ admin: createAdminClient(), clientId: a.client.id, source: "manual" });
     revalidatePath(PATH);
@@ -52,7 +52,7 @@ export async function refreshPlatformReviews(): Promise<Result> {
 export async function findReviewListings(): Promise<Result> {
   const a = await owner();
   if (!a.client) return { ok: false, error: a.error };
-  if (!dfsConfigured()) return { ok: false, error: "DataForSEO isn't configured on the server." };
+  if (!(await dfsConfigured(a.client.id))) return { ok: false, error: DFS_NOT_CONFIGURED };
   try {
     const r = await refreshListings({ admin: createAdminClient(), clientId: a.client.id, source: "manual" }, { maxAgeMs: 0, discover: "force" });
     revalidatePath(PATH);
@@ -72,7 +72,7 @@ export async function findReviewListings(): Promise<Result> {
 /** Free: collects finished review tasks (Google and the other platforms). */
 export async function checkPlatformReviews(): Promise<{ pending: number; done: number }> {
   const { client } = await getSession();
-  if (!client || !dfsConfigured()) return { pending: 0, done: 0 };
+  if (!client || !(await dfsConfigured(client.id))) return { pending: 0, done: 0 };
   try {
     const db = createAdminClient();
     const [g, p] = await Promise.all([pollReviews(db, client.id), pollPlatforms(db, client.id)]);

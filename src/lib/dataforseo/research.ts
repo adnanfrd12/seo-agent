@@ -1,6 +1,7 @@
 import "server-only";
 import { createHash } from "node:crypto";
 import type { SupabaseClient } from "@supabase/supabase-js";
+import { clientOrgId } from "@/lib/org/config";
 import { assertBudget, BudgetError, recordSpend, type SpendSource } from "./budget";
 import { dfsPost, DfsError } from "./client";
 
@@ -220,7 +221,7 @@ export async function ensure(ctx: Ctx, spec: Spec, target: Target, opts: { force
   if (row && !opts.force && ageDays(row.fetched_at) < spec.ttlDays) return { data: row.data, fetchedAt: row.fetched_at, fromCache: true, cost: 0 };
 
   await assertBudget(ctx.admin, ctx.clientId, spec.est, ctx.source);
-  const { result, cost } = await dfsPost(spec.path, body);
+  const { result, cost } = await dfsPost(ctx.clientId, spec.path, body);
   await recordSpend(ctx.admin, ctx.clientId, spec.key, cost, ctx.source);
   const data = spec.shape(result, opts.extra) ?? null;
   const rows = Array.isArray(data) ? data.length : Array.isArray((data as { rows?: unknown[] } | null)?.rows) ? (data as { rows: unknown[] }).rows.length : 0;
@@ -356,7 +357,7 @@ export async function trackLinkChanges(ctx: Ctx, target: Target, force = false):
   await assertBudget(ctx.admin, ctx.clientId, LINK_CHANGES_EST, ctx.source);
   let cost = 0;
   const fetchList = async (flag: "is_new" | "is_lost") => {
-    const r = await dfsPost("/backlinks/backlinks/live", { target: target.domain, mode: "as_is", limit: 200, filters: [flag, "=", true], order_by: ["rank,desc"] });
+    const r = await dfsPost(ctx.clientId, "/backlinks/backlinks/live", { target: target.domain, mode: "as_is", limit: 200, filters: [flag, "=", true], order_by: ["rank,desc"] });
     cost += r.cost;
     await recordSpend(ctx.admin, ctx.clientId, `link_changes_${flag}`, r.cost, ctx.source);
     return arr(r.result?.items).map(backlinkRow);
@@ -388,7 +389,7 @@ export async function trackLinkChanges(ctx: Ctx, target: Target, force = false):
   return { fromCache: false, cost, added: added.length };
 }
 
-/* ------------------------------------------------------------------ keyword research (shared cache) */
+/* ------------------------------------------------------------------ keyword research (cached per organization) */
 export type KwKind = "ideas" | "suggestions" | "related";
 const KW_PATH: Record<KwKind, string> = {
   ideas: "/dataforseo_labs/google/keyword_ideas/live",
@@ -407,20 +408,25 @@ export async function keywordResearch(
     : kind === "suggestions"
       ? { keyword: term, location_code, language_code, limit: 200, order_by: ["keyword_info.search_volume,desc"] }
       : { keyword: term, location_code, language_code, limit: 200, depth: 2 };
-  const params_hash = hash({ kind, body });
-  const { data: row } = await ctx.admin.from("dfs_keyword_cache").select("data, fetched_at").eq("params_hash", params_hash).maybeSingle();
+  // keyword data isn't client-specific, so every client of the organization reuses it; it was paid with the
+  // organization's own DataForSEO account, so it is never shared with another organization
+  const orgId = await clientOrgId(ctx.clientId);
+  const params_hash = hash({ kind, body, org: orgId });
+  // matched on the request itself, so answers stored before the cache was per organization are found too
+  const { data: row } = await ctx.admin.from("dfs_keyword_cache").select("data, fetched_at").eq("organization_id", orgId).eq("endpoint", `keywords_${kind}`)
+    .contains("params", body).order("fetched_at", { ascending: false }).limit(1).maybeSingle();
   if (row && !force && ageDays(row.fetched_at) < KW_TTL_DAYS) {
     const d = row.data as { rows: Row[]; total: number };
     return { rows: d.rows, total: d.total, fetchedAt: row.fetched_at, fromCache: true, cost: 0 };
   }
   await assertBudget(ctx.admin, ctx.clientId, KW_EST[kind], ctx.source);
-  const { result, cost } = await dfsPost(KW_PATH[kind], body);
+  const { result, cost } = await dfsPost(ctx.clientId, KW_PATH[kind], body);
   await recordSpend(ctx.admin, ctx.clientId, `keywords_${kind}`, cost, ctx.source);
   const items = arr(result?.items);
   const rows = (kind === "related" ? items.map((i) => obj(i.keyword_data)) : items).map(keywordRow).filter((r) => r.keyword);
   const data = { rows, total: num(result?.total_count) ?? rows.length };
   const fetched_at = new Date().toISOString();
-  await ctx.admin.from("dfs_keyword_cache").upsert({ params_hash, endpoint: `keywords_${kind}`, params: body, data, row_count: rows.length, cost, fetched_at }, { onConflict: "params_hash" });
+  await ctx.admin.from("dfs_keyword_cache").upsert({ params_hash, organization_id: orgId, endpoint: `keywords_${kind}`, params: body, data, row_count: rows.length, cost, fetched_at }, { onConflict: "params_hash" });
   return { ...data, fetchedAt: fetched_at, fromCache: false, cost };
 }
 

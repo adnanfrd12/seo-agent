@@ -2,7 +2,7 @@ import { timingSafeEqual } from "node:crypto";
 import { NextResponse, type NextRequest } from "next/server";
 import { activeClientIds } from "@/lib/activity";
 import { generateAlerts } from "@/lib/alerts";
-import { AUTO_SHARE, BudgetError, getSettings, spend } from "@/lib/dataforseo/budget";
+import { AUTO_SHARE, BudgetError, runBudgets } from "@/lib/dataforseo/budget";
 import { dfsConfigured } from "@/lib/dataforseo/client";
 import { DEFAULT_AUDIT_PAGES, auditEstimate, loadAuditRender, pollAudit, startAudit, type AuditTask } from "@/lib/dataforseo/audit";
 import { CRUX_EVERY_DAYS, lighthouseUrls, refreshCrux } from "@/lib/dataforseo/lighthouse";
@@ -41,11 +41,14 @@ const LOCAL_SHARE = 0.6;
 const LOCAL_EVERY_DAYS = 7;
 
 /**
- * Daily. Order of work, all inside the automatic budget (60% of the daily cap set on the Integrations page):
+ * Daily. Order of work, all inside the automatic budget (60% of the daily cap each organization sets on its
+ * Integrations page; every organization pays its own DataForSEO account):
  *   1. competitor analysis for ACTIVE clients (opened in the last 14 days), oldest analysis first
  *   2. the cheap weekly core refresh (backlink summary, rank overview, ranked keywords) for stale clients
  *   3. alert detection for every client (stored data only, no paid calls)
- * Each paid call is skipped while its stored answer is fresh, so re-running this never spends twice.
+ * Each paid call is skipped while its stored answer is fresh, so re-running this never spends twice. A client whose
+ * organization hasn't set up DataForSEO (or turned automatic refresh off) is skipped, and the summary says why; one
+ * organization reaching its limit never stops the others.
  */
 async function handle(request: NextRequest) {
   if (!authorized(request)) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
@@ -54,15 +57,17 @@ async function handle(request: NextRequest) {
   try {
     const summary = await loggedRun(admin, "research", async () => {
       const out: Record<string, unknown> = {};
-      const { data: clients } = await admin.from("clients").select("id, timezone");
+      const { data: clients } = await admin.from("clients").select("id, timezone").is("archived_at", null); // archived = paused
       const ids = (clients ?? []).map((c) => c.id as string);
 
-      // 0. collect finished site-audit crawls (free status checks; runs even when automatic refresh is off)
-      if (dfsConfigured()) {
+      // 0. collect finished site-audit crawls (free status checks with the client's organization's DataForSEO account;
+      // runs even when automatic refresh is off)
+      {
         const { data: pending } = await admin.from("dfs_cache").select("client_id, data").eq("endpoint", "audit_task");
         let collected = 0;
         for (const p of pending ?? []) {
           if ((p.data as AuditTask).status !== "crawling" || Date.now() > deadline) continue;
+          if (!(await dfsConfigured(p.client_id as string))) continue;
           try { if ((await pollAudit(admin, p.client_id as string)).state === "done") collected++; } catch { /* retried tomorrow or when the page is opened */ }
         }
         out.auditsCollected = collected;
@@ -72,163 +77,173 @@ async function handle(request: NextRequest) {
         let reviewsCollected = 0;
         for (const id of waiting) {
           if (Date.now() > deadline) break;
+          if (!(await dfsConfigured(id))) continue;
           try { reviewsCollected += (await pollReviews(admin, id)).done; } catch { /* retried next run or when the page is opened */ }
         }
         out.reviewsCollected = reviewsCollected;
       }
 
-      if (dfsConfigured()) {
-        const settings = await getSettings(admin);
-        if (!settings.autoRefresh) {
-          out.skipped = "Automatic refresh is turned off on the Integrations page";
-        } else {
-          const cap = settings.dailyBudget;
-          const spentNow = async () => { try { return await spend(admin); } catch { return Infinity; } };
-          if ((await spentNow()) === Infinity) {
-            out.skipped = "spend tracking unavailable (apply the latest migrations)";
-          } else {
-            // 1. competitor analysis for active clients
-            const active = await activeClientIds(admin);
-            const { data: last } = await admin.from("competitor_snapshots").select("client_id, snapshot_date").eq("is_self", true).order("snapshot_date", { ascending: false }).limit(5000);
-            const lastDay = new Map<string, string>();
-            for (const r of last ?? []) if (!lastDay.has(r.client_id)) lastDay.set(r.client_id, r.snapshot_date);
-            const today = new Date().toISOString().slice(0, 10);
-            const queue = ids.filter((id) => active.has(id) && lastDay.get(id) !== today).sort((a, b) => (lastDay.get(a) ?? "").localeCompare(lastDay.get(b) ?? ""));
-            const comp: { client: string; fetched: number; cost: number; note?: string }[] = [];
-            let compStopped: string | null = null;
-            for (const id of queue) {
-              if (Date.now() > deadline) { compStopped = "time"; break; }
-              if ((await spentNow()) >= cap * COMPETITOR_SHARE) { compStopped = "competitor budget"; break; }
-              const target = await resolveTarget(admin, id);
-              if (!target || !target.auto_refresh) continue;
-              const rep = await runCompetitorAnalysis({ admin, clientId: id, source: "auto" }, target);
-              comp.push({ client: id, fetched: rep.fetched, cost: Number(rep.cost.toFixed(4)), note: rep.errors[0] });
-              if (rep.stoppedByBudget) { compStopped = "budget"; break; }
-            }
-            out.competitors = { analysed: comp.length, waiting: Math.max(0, queue.length - comp.length), stopped: compStopped, activeClients: active.size };
-
-            // 1b. new / lost backlink check for active clients that already have a link profile
-            const { data: hasProfile } = await admin.from("dfs_cache").select("client_id").eq("endpoint", "summary");
-            const profiled = new Set((hasProfile ?? []).map((r) => r.client_id as string));
-            let links = 0, linkChanges = 0;
-            let linksStopped: string | null = null;
-            for (const id of ids.filter((x) => active.has(x) && profiled.has(x))) {
-              if (Date.now() > deadline) { linksStopped = "time"; break; }
-              if ((await spentNow()) >= cap * LINK_SHARE) { linksStopped = "budget"; break; }
-              const target = await resolveTarget(admin, id);
-              if (!target || !target.auto_refresh) continue;
-              try {
-                const r = await trackLinkChanges({ admin, clientId: id, source: "auto" }, target);
-                if (!r.fromCache) { links++; linkChanges += r.added; }
-              } catch (e) { if (e instanceof BudgetError) { linksStopped = "budget"; break; } }
-            }
-            out.linkChanges = { checked: links, changesFound: linkChanges, stopped: linksStopped };
-
-            // 1b2. weekly: backlinks pointing at pages that no longer exist (about 3 cents; skipped while the stored list is under 7 days old)
-            let brokenChecked = 0;
-            let brokenStopped: string | null = null;
-            for (const id of ids.filter((x) => active.has(x) && profiled.has(x))) {
-              if (Date.now() > deadline) { brokenStopped = "time"; break; }
-              if ((await spentNow()) + SPECS.broken_backlinks.est > cap * BROKEN_LINK_SHARE) { brokenStopped = "budget"; break; }
-              const target = await resolveTarget(admin, id);
-              if (!target || !target.auto_refresh) continue;
-              try {
-                const r = await ensure({ admin, clientId: id, source: "auto" }, SPECS.broken_backlinks, target);
-                if (!r.fromCache) brokenChecked++;
-              } catch (e) { if (e instanceof BudgetError) { brokenStopped = "budget"; break; } }
-            }
-            out.brokenBacklinks = { checked: brokenChecked, stopped: brokenStopped };
-
-            // 1c. weekly site audit for active clients (about 2 cents each); the result is collected by the next poll
-            const { data: audits } = await admin.from("dfs_cache").select("client_id, data, fetched_at").eq("endpoint", "audit_task");
-            const lastAudit = new Map((audits ?? []).map((r) => [r.client_id as string, r.data as AuditTask]));
-            let started = 0;
-            let auditStopped: string | null = null;
-            for (const id of ids.filter((x) => active.has(x))) {
-              const t = lastAudit.get(id);
-              if (t && (t.status === "crawling" || Date.now() - Date.parse(t.startedAt) < AUDIT_EVERY_DAYS * 86_400_000)) continue;
-              if (Date.now() > deadline) { auditStopped = "time"; break; }
-              // the crawl mode (HTML only / JavaScript / browser) an owner chose last on the Site Audit page
-              const render = await loadAuditRender(admin, id);
-              if ((await spentNow()) + auditEstimate(DEFAULT_AUDIT_PAGES, render) > cap * AUDIT_SHARE) { auditStopped = "budget"; break; }
-              const target = await resolveTarget(admin, id);
-              if (!target || !target.auto_refresh) continue;
-              try { await startAudit({ admin, clientId: id, source: "auto" }, target, DEFAULT_AUDIT_PAGES, render); started++; } catch (e) { if (e instanceof BudgetError) { auditStopped = "budget"; break; } }
-            }
-            out.audits = { started, stopped: auditStopped };
-
-            // 1c2. weekly free technical checks (robots.txt, sitemaps, ~25 pages of HTML) for active clients; skipped while fresh
-            const { data: techRows } = await admin.from("dfs_cache").select("client_id, fetched_at").eq("endpoint", TECH_ENDPOINT);
-            const lastTech = new Map((techRows ?? []).map((r) => [r.client_id as string, Date.parse(r.fetched_at as string)]));
-            let tech = 0;
-            for (const id of ids.filter((x) => active.has(x))) {
-              if (Date.now() - (lastTech.get(id) ?? 0) < TECH_EVERY_DAYS * 86_400_000) continue;
-              if (Date.now() > deadline - 60_000) break;
-              const target = await resolveTarget(admin, id);
-              if (!target || !target.auto_refresh) continue;
-              try { await runTechnicalChecks(admin, id, target.domain); tech++; } catch { /* retried tomorrow */ }
-              break; // one client per run: a slow site can take 1-2 minutes and the steps below need the time
-            }
-            out.technicalChecks = { refreshed: tech };
-
-            // 1d. weekly rank checks for the keywords each active client tracks (a few cents per client)
-            let ranked = 0, rankedCost = 0;
-            let rankStopped: string | null = null;
-            for (const id of ids.filter((x) => active.has(x))) {
-              if (Date.now() > deadline) { rankStopped = "time"; break; }
-              if ((await spentNow()) >= cap * RANK_SHARE) { rankStopped = "budget"; break; }
-              const target = await resolveTarget(admin, id);
-              if (!target || !target.auto_refresh) continue;
-              try {
-                const r = await runRankChecks({ admin, clientId: id, source: "auto" }, target, { deadline: deadline - 40_000 });
-                ranked += r.checked; rankedCost += r.cost;
-                if (r.stopped === "budget") { rankStopped = "budget"; break; }
-              } catch { /* tables not created yet, or one client failing, never stops the rest */ }
-            }
-            out.rankChecks = { keywordsChecked: ranked, cost: Number(rankedCost.toFixed(4)), stopped: rankStopped };
-
-            // 1e. weekly Business Profile + newest reviews for active clients with a profile (about 1.5 cents each)
-            const { data: profiles } = await admin.from("dfs_cache").select("client_id, fetched_at").eq("endpoint", "gbp_profile").eq("params_hash", "self");
-            const lastProfile = new Map((profiles ?? []).map((r) => [r.client_id as string, Date.parse(r.fetched_at as string)]));
-            let localDone = 0;
-            let localStopped: string | null = null;
-            for (const id of ids.filter((x) => active.has(x))) {
-              if (lastProfile.has(id) && Date.now() - lastProfile.get(id)! < LOCAL_EVERY_DAYS * 86_400_000) continue;
-              if (Date.now() > deadline) { localStopped = "time"; break; }
-              if ((await spentNow()) + PROFILE_EST + REVIEWS_EST > cap * LOCAL_SHARE) { localStopped = "budget"; break; }
-              const me = await localIdentity(admin, id);
-              if (!me) continue;
-              const ctx = { admin, clientId: id, source: "auto" as const };
-              try {
-                const prof = await fetchProfile(ctx, me);
-                await startReviews(ctx, { ...me, cid: me.cid ?? prof?.cid ?? null });
-                localDone++;
-              } catch (e) { if (e instanceof BudgetError) { localStopped = "budget"; break; } }
-            }
-            out.local = { refreshed: localDone, stopped: localStopped };
-
-            // 2. weekly core refresh, stalest first
-            const { data: cached } = await admin.from("dfs_cache").select("client_id, fetched_at").eq("endpoint", "summary");
-            const lastCore = new Map((cached ?? []).map((r) => [r.client_id as string, Date.parse(r.fetched_at as string)]));
-            const stale = ids.filter((id) => !lastCore.has(id) || Date.now() - lastCore.get(id)! > STALE_DAYS * 86_400_000).sort((a, b) => (lastCore.get(a) ?? 0) - (lastCore.get(b) ?? 0));
-            let core = 0;
-            let coreStopped: string | null = null;
-            for (const id of stale) {
-              if (Date.now() > deadline - 40_000) { coreStopped = "time"; break; } // one client can take ~30 s; leave room for alerts
-              if ((await spentNow()) >= cap * AUTO_SHARE) { coreStopped = "budget"; break; }
-              const target = await resolveTarget(admin, id); // derives the domain from Bing / Search Console / Business Profile
-              if (!target || !target.auto_refresh) continue;
-              const rep = await refreshCore({ admin, clientId: id, source: "auto" }, target);
-              core++;
-              if (rep.stoppedByBudget) { coreStopped = "budget"; break; }
-            }
-            out.core = { refreshed: core, waiting: Math.max(0, stale.length - core), stopped: coreStopped };
-            out.spentToday = Number((await spentNow()).toFixed(3));
-          }
+      // Every paid step below checks the client's organization: its daily limit, automatic-refresh switch and today's
+      // spend. `under(id, share, est)` is null when the organization is skipped (reason in the summary), false when that
+      // share of its limit is used: the step then moves on to other organizations' clients.
+      const budgets = runBudgets(admin);
+      {
+        // 1. competitor analysis for active clients
+        const active = await activeClientIds(admin);
+        const { data: last } = await admin.from("competitor_snapshots").select("client_id, snapshot_date").eq("is_self", true).order("snapshot_date", { ascending: false }).limit(5000);
+        const lastDay = new Map<string, string>();
+        for (const r of last ?? []) if (!lastDay.has(r.client_id)) lastDay.set(r.client_id, r.snapshot_date);
+        const today = new Date().toISOString().slice(0, 10);
+        const queue = ids.filter((id) => active.has(id) && lastDay.get(id) !== today).sort((a, b) => (lastDay.get(a) ?? "").localeCompare(lastDay.get(b) ?? ""));
+        const comp: { client: string; fetched: number; cost: number; note?: string }[] = [];
+        let compStopped: string | null = null;
+        for (const id of queue) {
+          if (Date.now() > deadline) { compStopped = "time"; break; }
+          const room = await budgets.under(id, COMPETITOR_SHARE);
+          if (room === null) continue;
+          if (!room) { compStopped = "competitor budget"; continue; }
+          const target = await resolveTarget(admin, id);
+          if (!target || !target.auto_refresh) continue;
+          const rep = await runCompetitorAnalysis({ admin, clientId: id, source: "auto" }, target);
+          comp.push({ client: id, fetched: rep.fetched, cost: Number(rep.cost.toFixed(4)), note: rep.errors[0] });
+          if (rep.stoppedByBudget) compStopped = "budget";
         }
-      } else {
-        out.skipped = "DataForSEO not configured";
+        out.competitors = { analysed: comp.length, waiting: Math.max(0, queue.length - comp.length), stopped: compStopped, activeClients: active.size };
+
+        // 1b. new / lost backlink check for active clients that already have a link profile
+        const { data: hasProfile } = await admin.from("dfs_cache").select("client_id").eq("endpoint", "summary");
+        const profiled = new Set((hasProfile ?? []).map((r) => r.client_id as string));
+        let links = 0, linkChanges = 0;
+        let linksStopped: string | null = null;
+        for (const id of ids.filter((x) => active.has(x) && profiled.has(x))) {
+          if (Date.now() > deadline) { linksStopped = "time"; break; }
+          const room = await budgets.under(id, LINK_SHARE);
+          if (room === null) continue;
+          if (!room) { linksStopped = "budget"; continue; }
+          const target = await resolveTarget(admin, id);
+          if (!target || !target.auto_refresh) continue;
+          try {
+            const r = await trackLinkChanges({ admin, clientId: id, source: "auto" }, target);
+            if (!r.fromCache) { links++; linkChanges += r.added; }
+          } catch (e) { if (e instanceof BudgetError) linksStopped = "budget"; }
+        }
+        out.linkChanges = { checked: links, changesFound: linkChanges, stopped: linksStopped };
+
+        // 1b2. weekly: backlinks pointing at pages that no longer exist (about 3 cents; skipped while the stored list is under 7 days old)
+        let brokenChecked = 0;
+        let brokenStopped: string | null = null;
+        for (const id of ids.filter((x) => active.has(x) && profiled.has(x))) {
+          if (Date.now() > deadline) { brokenStopped = "time"; break; }
+          const room = await budgets.under(id, BROKEN_LINK_SHARE, SPECS.broken_backlinks.est);
+          if (room === null) continue;
+          if (!room) { brokenStopped = "budget"; continue; }
+          const target = await resolveTarget(admin, id);
+          if (!target || !target.auto_refresh) continue;
+          try {
+            const r = await ensure({ admin, clientId: id, source: "auto" }, SPECS.broken_backlinks, target);
+            if (!r.fromCache) brokenChecked++;
+          } catch (e) { if (e instanceof BudgetError) brokenStopped = "budget"; }
+        }
+        out.brokenBacklinks = { checked: brokenChecked, stopped: brokenStopped };
+
+        // 1c. weekly site audit for active clients (about 2 cents each); the result is collected by the next poll
+        const { data: audits } = await admin.from("dfs_cache").select("client_id, data, fetched_at").eq("endpoint", "audit_task");
+        const lastAudit = new Map((audits ?? []).map((r) => [r.client_id as string, r.data as AuditTask]));
+        let started = 0;
+        let auditStopped: string | null = null;
+        for (const id of ids.filter((x) => active.has(x))) {
+          const t = lastAudit.get(id);
+          if (t && (t.status === "crawling" || Date.now() - Date.parse(t.startedAt) < AUDIT_EVERY_DAYS * 86_400_000)) continue;
+          if (Date.now() > deadline) { auditStopped = "time"; break; }
+          if (!(await budgets.of(id))) continue;
+          // the crawl mode (HTML only / JavaScript / browser) an owner chose last on the Site Audit page
+          const render = await loadAuditRender(admin, id);
+          if (!(await budgets.under(id, AUDIT_SHARE, auditEstimate(DEFAULT_AUDIT_PAGES, render)))) { auditStopped = "budget"; continue; }
+          const target = await resolveTarget(admin, id);
+          if (!target || !target.auto_refresh) continue;
+          try { await startAudit({ admin, clientId: id, source: "auto" }, target, DEFAULT_AUDIT_PAGES, render); started++; } catch (e) { if (e instanceof BudgetError) auditStopped = "budget"; }
+        }
+        out.audits = { started, stopped: auditStopped };
+
+        // 1c2. weekly free technical checks (robots.txt, sitemaps, ~25 pages of HTML) for active clients; skipped while fresh
+        const { data: techRows } = await admin.from("dfs_cache").select("client_id, fetched_at").eq("endpoint", TECH_ENDPOINT);
+        const lastTech = new Map((techRows ?? []).map((r) => [r.client_id as string, Date.parse(r.fetched_at as string)]));
+        let tech = 0;
+        for (const id of ids.filter((x) => active.has(x))) {
+          if (Date.now() - (lastTech.get(id) ?? 0) < TECH_EVERY_DAYS * 86_400_000) continue;
+          if (Date.now() > deadline - 60_000) break;
+          if (!(await budgets.of(id))) continue; // runs with the organization's automatic refresh, like the steps around it
+          const target = await resolveTarget(admin, id);
+          if (!target || !target.auto_refresh) continue;
+          try { await runTechnicalChecks(admin, id, target.domain); tech++; } catch { /* retried tomorrow */ }
+          break; // one client per run: a slow site can take 1-2 minutes and the steps below need the time
+        }
+        out.technicalChecks = { refreshed: tech };
+
+        // 1d. weekly rank checks for the keywords each active client tracks (a few cents per client)
+        let ranked = 0, rankedCost = 0;
+        let rankStopped: string | null = null;
+        for (const id of ids.filter((x) => active.has(x))) {
+          if (Date.now() > deadline) { rankStopped = "time"; break; }
+          const room = await budgets.under(id, RANK_SHARE);
+          if (room === null) continue;
+          if (!room) { rankStopped = "budget"; continue; }
+          const target = await resolveTarget(admin, id);
+          if (!target || !target.auto_refresh) continue;
+          try {
+            const r = await runRankChecks({ admin, clientId: id, source: "auto" }, target, { deadline: deadline - 40_000 });
+            ranked += r.checked; rankedCost += r.cost;
+            if (r.stopped === "budget") rankStopped = "budget";
+          } catch { /* tables not created yet, or one client failing, never stops the rest */ }
+        }
+        out.rankChecks = { keywordsChecked: ranked, cost: Number(rankedCost.toFixed(4)), stopped: rankStopped };
+
+        // 1e. weekly Business Profile + newest reviews for active clients with a profile (about 1.5 cents each)
+        const { data: profiles } = await admin.from("dfs_cache").select("client_id, fetched_at").eq("endpoint", "gbp_profile").eq("params_hash", "self");
+        const lastProfile = new Map((profiles ?? []).map((r) => [r.client_id as string, Date.parse(r.fetched_at as string)]));
+        let localDone = 0;
+        let localStopped: string | null = null;
+        for (const id of ids.filter((x) => active.has(x))) {
+          if (lastProfile.has(id) && Date.now() - lastProfile.get(id)! < LOCAL_EVERY_DAYS * 86_400_000) continue;
+          if (Date.now() > deadline) { localStopped = "time"; break; }
+          const room = await budgets.under(id, LOCAL_SHARE, PROFILE_EST + REVIEWS_EST);
+          if (room === null) continue;
+          if (!room) { localStopped = "budget"; continue; }
+          const me = await localIdentity(admin, id);
+          if (!me) continue;
+          const ctx = { admin, clientId: id, source: "auto" as const };
+          try {
+            const prof = await fetchProfile(ctx, me);
+            await startReviews(ctx, { ...me, cid: me.cid ?? prof?.cid ?? null });
+            localDone++;
+          } catch (e) { if (e instanceof BudgetError) localStopped = "budget"; }
+        }
+        out.local = { refreshed: localDone, stopped: localStopped };
+
+        // 2. weekly core refresh, stalest first
+        const { data: cached } = await admin.from("dfs_cache").select("client_id, fetched_at").eq("endpoint", "summary");
+        const lastCore = new Map((cached ?? []).map((r) => [r.client_id as string, Date.parse(r.fetched_at as string)]));
+        const stale = ids.filter((id) => !lastCore.has(id) || Date.now() - lastCore.get(id)! > STALE_DAYS * 86_400_000).sort((a, b) => (lastCore.get(a) ?? 0) - (lastCore.get(b) ?? 0));
+        let core = 0, coreSkipped = 0;
+        let coreStopped: string | null = null;
+        for (const id of stale) {
+          if (Date.now() > deadline - 40_000) { coreStopped = "time"; break; } // one client can take ~30 s; leave room for alerts
+          const room = await budgets.under(id, AUTO_SHARE);
+          if (room === null) { coreSkipped++; continue; }
+          if (!room) { coreStopped = "budget"; continue; }
+          const target = await resolveTarget(admin, id); // derives the domain from Bing / Search Console / Business Profile
+          if (!target || !target.auto_refresh) continue;
+          const rep = await refreshCore({ admin, clientId: id, source: "auto" }, target);
+          core++;
+          if (rep.stoppedByBudget) coreStopped = "budget";
+        }
+        out.core = { refreshed: core, waiting: Math.max(0, stale.length - core - coreSkipped), stopped: coreStopped };
+        out.spentToday = await budgets.spent();
       }
+      // organizations whose clients the paid steps left out, and why (ids and counts only)
+      const skippedOrgs = budgets.skipped();
+      if (skippedOrgs.length) out.dataforseoSkipped = skippedOrgs;
+      if (!(await budgets.active()) && skippedOrgs.length) out.skipped = `No paid research ran: ${[...new Set(skippedOrgs.map((o) => o.reason))].join("; ")}`;
 
       // 2b. AI visibility now runs in the "extras" job (several assistants per question)
 

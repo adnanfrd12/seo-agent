@@ -1,6 +1,6 @@
 import "server-only";
 import type { SupabaseClient } from "@supabase/supabase-js";
-import { getSettings, PER_CLIENT_SHARE, spendOrZero } from "@/lib/dataforseo/budget";
+import { clientSpendOrZero, getSettings, orgSpendOrZero, PER_CLIENT_SHARE } from "@/lib/dataforseo/budget";
 import { dfsConfigured } from "@/lib/dataforseo/client";
 import { pollReviews, REVIEWS_EST } from "@/lib/dataforseo/local";
 import { CRAWL_EST, CRAWLED, DISCOVERY_EST, DISCOVERY_EVERY_DAYS } from "@/lib/reviews/listings";
@@ -43,7 +43,7 @@ function status(v: PlatformView) {
 export async function reviewsView(admin: SupabaseClient, clientId: string) {
   let loaded = await loadPlatformReviews(admin, admin, clientId);
   let collected = 0;
-  if (dfsConfigured() && loaded.views.some((v) => v.status === "pending")) {
+  if (loaded.views.some((v) => v.status === "pending") && (await dfsConfigured(clientId))) {
     const [a, b] = await Promise.all([pollReviews(admin, clientId).catch(() => ({ done: 0 })), pollPlatforms(admin, clientId).catch(() => ({ done: 0 }))]);
     collected = a.done + b.done;
     if (collected) loaded = await loadPlatformReviews(admin, admin, clientId);
@@ -83,7 +83,8 @@ export async function reviewCosts(admin: SupabaseClient, clientId: string, views
   const searchDue = !discoveryAt || Date.now() - Date.parse(discoveryAt) > DISCOVERY_EVERY_DAYS * 86_400_000;
   const refresh = (google ? REVIEWS_EST : 0) + apis.length * PLATFORM_EST + (searchDue ? DISCOVERY_EST + CRAWLED.length * CRAWL_EST : pages.length * CRAWL_EST);
   const find = DISCOVERY_EST + CRAWLED.length * CRAWL_EST;
-  const [cap, spentAll, spentClient] = await Promise.all([getSettings(admin).then((s) => s.dailyBudget), spendOrZero(admin), spendOrZero(admin, clientId)]);
+  // the caps of the client's organization (its own DataForSEO account and daily limit)
+  const [cap, spentAll, spentClient] = await Promise.all([getSettings(admin, { clientId }).then((s) => s.dailyBudget), orgSpendOrZero(admin, { clientId }), clientSpendOrZero(admin, clientId)]);
   return { refresh, find, searchDue, google, apis, pages, running, cap, spentAll, spentClient, clientCap: cap * PER_CLIENT_SHARE };
 }
 

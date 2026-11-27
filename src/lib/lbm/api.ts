@@ -1,4 +1,5 @@
 import "server-only";
+import { configForClient } from "@/lib/org/config";
 
 /**
  * Local Brand Manager REST API (https://developers.localbrandmanager.com, OpenAPI at /openapi.json).
@@ -10,6 +11,8 @@ import "server-only";
  *   GET /gmb/reviews?by_location_id=                 paginated (page, per <= 100)
  *   GET /geogrids?by_location_id=                    paginated (page, per_page <= 100, Has-More header)
  *   GET /reports                                     agency report links
+ * The token is a client connection's own (stored encrypted when it was connected) or its organization's
+ * (LOCAL_BRAND_MANAGER_API_TOKEN in Settings → Integrations); never another organization's.
  */
 const BASE = "https://api.localbrandmanager.com";
 
@@ -17,8 +20,14 @@ export class LbmError extends Error {
   constructor(message: string, public kind: "auth" | "not_found" | "rate_limit" | "other", public status = 0) { super(message); }
 }
 
-/** Env/stored tokens are trimmed: a stray space makes LBM answer 401. */
+/** Stored tokens are trimmed: a stray space makes LBM answer 401. */
 export const cleanToken = (t: string) => t.replace(/^Token\s+/i, "").trim();
+
+/** The Local Brand Manager token of the client's organization (Settings → Integrations), or null when it has none. */
+export async function lbmOrgToken(clientId: string): Promise<string | null> {
+  const t = (await configForClient(clientId).catch(() => null))?.get("LOCAL_BRAND_MANAGER_API_TOKEN");
+  return t ? cleanToken(t) : null;
+}
 
 async function call<T>(token: string, path: string): Promise<{ body: T; headers: Headers }> {
   for (let attempt = 0; ; attempt++) {

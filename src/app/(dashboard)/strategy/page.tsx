@@ -11,6 +11,7 @@ import { Unavailable } from "@/components/report/report-ui";
 import { getSession } from "@/lib/analytics/client-context";
 import { resolveRange } from "@/lib/analytics/range";
 import { first, type SearchParams } from "@/lib/analytics/url";
+import { aiUnavailable } from "@/lib/ai/claude";
 import { createClient } from "@/lib/supabase/server";
 import { cn } from "@/lib/utils";
 
@@ -48,8 +49,8 @@ export default async function StrategyPage({ searchParams }: { searchParams: Pro
   const sources = [...new Set((((planRun?.evidence ?? {}) as { items?: { source: string }[] }).items ?? []).map((i) => i.source))];
   const { data: runningRow } = await supabase.from("ai_analysis_runs").select("id").eq("client_id", client.id).eq("kind", "strategy").eq("status", "running").limit(1);
   const running = (runningRow ?? []).length > 0;
-  const configured = Boolean(process.env.ANTHROPIC_API_KEY);
-  const autoStart = configured && canEdit && !error && !plan && !running;
+  const aiOff = await aiUnavailable(client.id);
+  const autoStart = !aiOff && canEdit && !error && !plan && !running;
   const done = all.filter((t) => t.status === "completed").length;
   const cats = new Map<string, number>();
   for (const t of all) cats.set(t.category, (cats.get(t.category) ?? 0) + 1);
@@ -74,8 +75,8 @@ export default async function StrategyPage({ searchParams }: { searchParams: Pro
       {plan && <Highlights items={hl} />}
       {error ? (
         <Unavailable title="Database update needed" body="Apply migration 20261021000011 in Supabase to enable the strategy planner." />
-      ) : !process.env.ANTHROPIC_API_KEY ? (
-        <Unavailable title="AI isn't configured" body="Add ANTHROPIC_API_KEY to the environment (and Vercel), then redeploy." />
+      ) : aiOff ? (
+        <Unavailable title="AI isn't configured" body={aiOff} />
       ) : (
         <div className="mb-8 space-y-2">
           <AutoAnalysis kind="strategy" start={range.start} end={range.end} autoStart={autoStart} running={running} />

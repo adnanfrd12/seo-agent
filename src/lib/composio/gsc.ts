@@ -1,10 +1,8 @@
 import "server-only";
 import { executeTool } from "./client";
-import { serverEnv } from "@/lib/env";
 import { gscAnalyticsSchema, gscSitesSchema, type GscRow } from "@/lib/validation/gsc";
 import type { AdapterContext, DateRange, DiscoveredResource, ProviderAdapter } from "@/lib/analytics/types";
 
-const VERSION = () => serverEnv().COMPOSIO_TOOLKIT_VERSION_GOOGLE_SEARCH_CONSOLE || undefined;
 // Composio docs disagree on the max (5,000 vs 25,000); stay at the lower bound.
 const ROW_LIMIT = 5_000;
 const MAX_PAGES = 200; // hard stop: 1M rows per request series
@@ -16,13 +14,9 @@ function unwrap(data: unknown): unknown {
   return data;
 }
 
+/** ctx.userId (client:<id>) picks the client organization's Composio project and toolkit version. */
 async function run(ctx: AdapterContext, slug: string, args: Record<string, unknown>) {
-  return unwrap(
-    await executeTool({
-      slug, arguments: args, userId: ctx.userId,
-      connectedAccountId: ctx.connectedAccountId, toolkitVersionEnv: VERSION(),
-    }),
-  );
+  return unwrap(await executeTool({ slug, arguments: args, userId: ctx.userId, connectedAccountId: ctx.connectedAccountId }));
 }
 
 export const gscAdapter: ProviderAdapter<DiscoveredResource> = {

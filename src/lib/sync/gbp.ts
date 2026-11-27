@@ -7,6 +7,7 @@ import {
 import { dailyUpsertGroups } from "@/lib/google/gbp-parse";
 import { GoogleAuthError } from "@/lib/google/oauth";
 import { formatAddress, gbpAuth } from "@/lib/integrations/gbp-service";
+import { ConfigError } from "@/lib/org/config";
 import type { SyncResult } from "./types";
 
 /** First day of every month overlapping [start, end] (YYYY-MM-01). */
@@ -48,6 +49,8 @@ export async function syncGbp(
   try {
     auth = await gbpAuth(admin, t.connectionId);
   } catch (e) {
+    // the organization's Google OAuth client is missing or refused: not the grant's fault (the worker says what to fix)
+    if (e instanceof ConfigError) throw e;
     return { written, failures: { auth: e instanceof Error ? e.message : "token refresh failed" }, authError: e };
   }
   const { account, location } = splitLocationName(t.location);

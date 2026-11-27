@@ -2,7 +2,7 @@ import "server-only";
 import type { SupabaseClient } from "@supabase/supabase-js";
 import { betaZodOutputFormat } from "@anthropic-ai/sdk/helpers/beta/zod";
 import { z } from "zod";
-import { anthropic } from "@/lib/ai/claude";
+import { anthropicFor } from "@/lib/ai/claude";
 import type { AuditResult } from "@/lib/dataforseo/audit";
 import { fetchHtml, outline } from "@/lib/toolkit/store";
 import { addDays, G, groupM, type Period } from "./g";
@@ -204,8 +204,10 @@ Rules:
 
 /** One Claude diagnosis of one not-indexed page (Sonnet 5.5, structured output). */
 export async function diagnosePage(admin: SupabaseClient, clientId: string, url: string): Promise<IndexDiagnosis> {
+  // the client's organization's own Anthropic key, checked before the page is fetched
+  const ai = await anthropicFor(clientId);
   const ctx = await indexContext(admin, clientId, url);
-  const res = await anthropic().beta.messages.parse({
+  const res = await ai.beta.messages.parse({
     model: INDEX_AI_MODEL, max_tokens: 3000, thinking: { type: "between_tools" }, // Sonnet 5.5: "between_tools" is how thinking is turned off
     output_config: { effort: "medium", format: betaZodOutputFormat(schema) },
     system: SYSTEM,

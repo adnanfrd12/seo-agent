@@ -1,13 +1,12 @@
 "use client";
 
 import { useState, useTransition } from "react";
+import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { Eye, EyeOff, Loader2, Trash2, UserPlus } from "lucide-react";
+import { Eye, EyeOff, Loader2, UserPlus } from "lucide-react";
 import { Avatar } from "@/components/layout/avatar";
 import { createClient } from "@/lib/supabase/client";
-import {
-  addTeamMember, removeMember, updateClientSettings, updateMemberRole, updateProfile, type ActionResult,
-} from "./actions";
+import { updateClientSettings, updateProfile, type ActionResult } from "./actions";
 import { AvatarEditor } from "./avatar-editor";
 
 const input =
@@ -177,97 +176,31 @@ export function ClientForm({ name, timezone, defaultRangeDays, canEdit, timezone
 }
 
 /* --------------------------------------------------------------------- team */
-export interface Member {
-  user_id: string; email: string; full_name: string | null; avatar_url: string | null; role: string; created_at: string;
-}
+export interface TeamRow { userId: string; email: string; fullName: string | null; avatarUrl: string | null; label: string; inactive: boolean }
 
-export function TeamManager({ members, meId, myRole }: { members: Member[]; meId: string; myRole: string }) {
-  const router = useRouter();
-  const canManage = myRole === "owner" || myRole === "admin";
-  const [result, setResult] = useState<ActionResult | null>(null);
-  const [pending, start] = useTransition();
-  const [form, setForm] = useState({ email: "", fullName: "", role: "viewer", password: "" });
-  const roles = myRole === "owner" ? ["owner", "admin", "viewer"] : ["admin", "viewer"];
-
-  const run = (fn: () => Promise<ActionResult>, after?: () => void) =>
-    start(async () => {
-      const r = await fn();
-      setResult(r);
-      if (r.ok) { after?.(); router.refresh(); }
-    });
-
+/** Who can open the client (read-only). Access is managed in Settings → Organization → Clients and Team members. */
+export function ClientTeam({ rows, meId, manageHref }: { rows: TeamRow[]; meId: string; manageHref: string | null }) {
   return (
-    <div className="space-y-6">
+    <div className="space-y-4">
       <ul className="divide-y divide-border rounded-lg border border-border">
-        {members.map((m) => {
-          const isMe = m.user_id === meId;
-          const lockOwner = m.role === "owner" && myRole !== "owner";
-          return (
-            <li key={m.user_id} className="flex flex-wrap items-center gap-3 p-3">
-              <Avatar src={m.avatar_url} name={m.full_name} email={m.email} size={36} />
-              <div className="min-w-0 flex-1">
-                <p className="truncate text-sm font-medium">{m.full_name || m.email}{isMe && <span className="ml-1.5 text-xs text-muted">(you)</span>}</p>
-                <p className="truncate text-xs text-muted">{m.email}</p>
-              </div>
-              {canManage && !isMe && !lockOwner ? (
-                <>
-                  <select
-                    aria-label={`Role for ${m.email}`} value={m.role} disabled={pending}
-                    onChange={(e) => run(() => updateMemberRole({ userId: m.user_id, role: e.target.value }))}
-                    className="rounded-lg border border-border bg-surface px-2 py-1.5 text-sm capitalize"
-                  >
-                    {Array.from(new Set([m.role, ...roles])).map((r) => <option key={r} value={r}>{r}</option>)}
-                  </select>
-                  <button
-                    aria-label={`Remove ${m.email}`} disabled={pending}
-                    onClick={() => { if (confirm(`Remove ${m.email}'s access to this client?`)) run(() => removeMember({ userId: m.user_id })); }}
-                    className="rounded-lg p-2 text-muted hover:bg-surface-muted hover:text-negative"
-                  >
-                    <Trash2 className="size-4" />
-                  </button>
-                </>
-              ) : (
-                <span className="rounded-full bg-surface-muted px-2.5 py-1 text-xs font-medium capitalize">{m.role}</span>
-              )}
-            </li>
-          );
-        })}
+        {rows.map((m) => (
+          <li key={m.userId} className="flex flex-wrap items-center gap-3 p-3">
+            <Avatar src={m.avatarUrl} name={m.fullName} email={m.email} size={36} className={m.inactive ? "opacity-50" : undefined} />
+            <div className="min-w-0 flex-1">
+              <p className="truncate text-sm font-medium">{m.fullName || m.email}{m.userId === meId && <span className="ml-1.5 text-xs text-muted">(you)</span>}</p>
+              <p className="truncate text-xs text-muted">{m.email}</p>
+            </div>
+            <span className="rounded-full bg-surface-muted px-2.5 py-1 text-xs font-medium">{m.inactive ? "Deactivated" : m.label}</span>
+          </li>
+        ))}
       </ul>
-
-      {canManage ? (
-        <form
-          className="grid gap-4 rounded-lg border border-dashed border-border p-4 sm:grid-cols-2"
-          onSubmit={(e) => {
-            e.preventDefault();
-            run(() => addTeamMember({ ...form, role: form.role as "owner" | "admin" | "viewer", password: form.password || undefined }),
-              () => setForm({ email: "", fullName: "", role: "viewer", password: "" }));
-          }}
-        >
-          <p className="flex items-center gap-2 text-sm font-semibold sm:col-span-2"><UserPlus className="size-4" aria-hidden /> Add a user</p>
-          <label className="text-sm font-medium">Email
-            <input type="email" required value={form.email} onChange={(e) => setForm({ ...form, email: e.target.value })} className={input} autoComplete="off" />
-          </label>
-          <label className="text-sm font-medium">Full name <span className="font-normal text-muted">(optional)</span>
-            <input value={form.fullName} maxLength={120} onChange={(e) => setForm({ ...form, fullName: e.target.value })} className={input} autoComplete="off" />
-          </label>
-          <label className="text-sm font-medium">Role
-            <select value={form.role} onChange={(e) => setForm({ ...form, role: e.target.value })} className={`${input} capitalize`}>
-              {roles.map((r) => <option key={r} value={r}>{r}</option>)}
-            </select>
-            <span className="mt-1 block text-xs font-normal text-muted">Viewers can see reports. Admins can also manage integrations and users.</span>
-          </label>
-          <label className="text-sm font-medium">Temporary password
-            <input type="text" value={form.password} minLength={8} maxLength={72} onChange={(e) => setForm({ ...form, password: e.target.value })} className={input} autoComplete="new-password" />
-            <span className="mt-1 block text-xs font-normal text-muted">Only for new accounts; they can change it after signing in.</span>
-          </label>
-          <div className="flex flex-wrap items-center gap-3 sm:col-span-2">
-            <button className={primary} disabled={pending}>{pending && <Loader2 className="size-4 animate-spin" />} Add user</button>
-          </div>
-        </form>
+      {manageHref ? (
+        <Link href={manageHref} className="inline-flex items-center gap-1.5 text-sm font-medium text-accent hover:underline">
+          <UserPlus className="size-4" aria-hidden /> Invite people or change who can open this client
+        </Link>
       ) : (
-        <p className="text-sm text-muted">Only owners and admins can add or remove users.</p>
+        <p className="text-sm text-muted">Organization owners and admins manage who can open each client.</p>
       )}
-      <Status result={result} />
     </div>
   );
 }

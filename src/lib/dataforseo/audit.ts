@@ -181,7 +181,7 @@ export async function startAudit(ctx: Ctx, target: Target, maxPages: number, ren
     throw new DfsError("An audit is already running for this site. Its results appear here when it finishes.", "bad_request");
   }
   await assertBudget(ctx.admin, ctx.clientId, auditEstimate(pages, render), ctx.source);
-  const { id, cost } = await dfsTaskPost("/on_page/task_post", {
+  const { id, cost } = await dfsTaskPost(ctx.clientId, "/on_page/task_post", {
     target: target.domain, max_crawl_pages: pages, crawl_delay: 1000, respect_sitemap: true, enable_www_redirect_check: true, tag: ctx.clientId.slice(0, 8),
     ...(render === "js" ? { enable_javascript: true } : render === "browser" ? { enable_javascript: true, load_resources: true, enable_browser_rendering: true } : {}),
   });
@@ -209,7 +209,7 @@ export async function pollAudit(admin: SupabaseClient, clientId: string): Promis
   if (task.status === "done") return { state: "done" };
   const recheck = task.status === "failed" && task.error === TIMED_OUT && !task.recheckedAt && Date.now() - Date.parse(task.startedAt) < RECHECK_DAYS * 86_400_000;
   if (task.status === "failed" && !recheck) return { state: "failed", error: task.error ?? "The crawl failed." };
-  const { status, result } = await dfsGet(`/on_page/summary/${task.id}`);
+  const { status, result } = await dfsGet(clientId, `/on_page/summary/${task.id}`);
   if (status === 40401 || status === 40400) {
     const error = "DataForSEO no longer has this crawl. Start a new audit.";
     await save(admin, clientId, "audit_task", { ...task, status: "failed", error, ...(recheck ? { recheckedAt: new Date().toISOString() } : {}) });
@@ -229,7 +229,7 @@ export async function pollAudit(admin: SupabaseClient, clientId: string): Promis
     await save(admin, clientId, "audit_task", { ...task, crawled, queued: num(cs.pages_in_queue) ?? 0, checkedAt: new Date().toISOString() });
     return { state: "crawling", crawled, max: task.maxPages };
   }
-  const { result: pageRes } = await dfsPost("/on_page/pages", { id: task.id, limit: 1000 }); // retrieval of a finished crawl is free
+  const { result: pageRes } = await dfsPost(clientId, "/on_page/pages", { id: task.id, limit: 1000 }); // retrieval of a finished crawl is free
   const prev = (await read<AuditResult>(admin, clientId, "audit"))?.data ?? null;
   const out = analyse(task, result, arr(pageRes?.items), prev);
   await save(admin, clientId, "audit", out);

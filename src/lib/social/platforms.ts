@@ -9,7 +9,7 @@ export type Platform = (typeof PLATFORMS)[number];
 export interface PlatformInfo {
   label: string;
   host: RegExp;
-  /** env var read when the client has no token of its own */
+  /** the organization credential (Settings → Integrations) used when the client has no token of its own */
   env: string;
   /** what the owner must provide before real numbers can be read */
   needs: string;
@@ -22,7 +22,7 @@ export interface PlatformInfo {
 export const PLATFORM_INFO: Record<Platform, PlatformInfo> = {
   youtube: {
     label: "YouTube", host: /(^|\.)youtube\.com$|(^|\.)youtu\.be$/, env: "YOUTUBE_API_KEY", free: true,
-    needs: "Nothing: read from public YouTube search results through DataForSEO. Optional: a Google Cloud API key with \"YouTube Data API v3\" enabled (YOUTUBE_API_KEY, free 10,000 units/day) for exact channel totals and every upload.",
+    needs: "Nothing: read from public YouTube search results through DataForSEO. Optional: a Google Cloud API key with \"YouTube Data API v3\" enabled (the YouTube Data API key in Settings → Integrations, free 10,000 units/day) for exact channel totals and every upload.",
     tokenLabel: "YouTube Data API v3 key (optional)",
   },
   facebook: {
@@ -37,7 +37,7 @@ export const PLATFORM_INFO: Record<Platform, PlatformInfo> = {
   },
   tiktok: {
     label: "TikTok", host: /(^|\.)tiktok\.com$/, env: "TIKTOK_REFRESH_TOKEN", free: false,
-    needs: "A TikTok for Developers app with Login Kit + Display API (scopes user.info.basic, user.info.stats, video.list), TIKTOK_CLIENT_KEY / TIKTOK_CLIENT_SECRET, and a refresh token from the account owner's OAuth login.",
+    needs: "A TikTok for Developers app with Login Kit + Display API (scopes user.info.basic, user.info.stats, video.list), its client key and secret (Settings → Integrations → TikTok app), and a refresh token from the account owner's OAuth login.",
     tokenLabel: "TikTok OAuth refresh token",
   },
   x: {

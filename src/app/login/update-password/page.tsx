@@ -1,5 +1,6 @@
 import type { Metadata } from "next";
-import { BRAND_NAME, BrandMark } from "@/components/brand/brand-mark";
+import { BRAND_NAME } from "@/components/brand/brand-mark";
+import { LoginBrandCardMark, LoginBrandProvider } from "../login-brand";
 import styles from "../login.module.css";
 import { UpdatePasswordForm } from "./update-password-form";
 
@@ -14,10 +15,8 @@ export default function UpdatePasswordPage() {
         <div className="absolute -right-40 bottom-0 size-[28rem] rounded-full bg-[#FFE3D1]/70 blur-3xl" />
       </div>
       <div className={`${styles.enter} relative w-full max-w-[440px] rounded-[28px] border border-[#F0EBE6] bg-white p-6 shadow-[0_30px_80px_-30px_rgba(120,60,20,0.25)] sm:p-9`}>
-        <div className="flex items-center justify-center gap-2.5">
-          <BrandMark className="h-8" />
-          <span className="text-[22px] font-bold tracking-tight">{BRAND_NAME}</span>
-        </div>
+        {/* the organization whose branded sign-in page this device last showed, else SEO Insights */}
+        <LoginBrandProvider title="Set a new password"><LoginBrandCardMark /></LoginBrandProvider>
         <h1 className="mt-7 text-center text-[26px] font-bold tracking-tight">Set a new password</h1>
         <p className="mt-2 text-center text-[15px] text-[#6b6b76]">Choose a new password for your account.</p>
         <UpdatePasswordForm />

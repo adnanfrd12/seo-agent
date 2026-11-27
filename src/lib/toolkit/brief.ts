@@ -2,7 +2,7 @@ import "server-only";
 import type { SupabaseClient } from "@supabase/supabase-js";
 import { betaZodOutputFormat } from "@anthropic-ai/sdk/helpers/beta/zod";
 import { z } from "zod";
-import { anthropic } from "@/lib/ai/claude";
+import { anthropicFor } from "@/lib/ai/claude";
 import { demand, fetchHtml, fetchSerp, outline, siteKeywords, storedSerps, type Serp } from "./store";
 
 /**
@@ -33,6 +33,8 @@ export async function defaultBriefKeyword(admin: SupabaseClient, clientId: strin
 }
 
 export async function runBrief(admin: SupabaseClient, clientId: string, keyword: string, target: { domain: string; location_code: number; language_code: string }): Promise<BriefRun> {
+  // the organization's own Anthropic key, checked before the (paid) search
+  const claude = await anthropicFor(clientId);
   const cached = (await storedSerps(admin, clientId)).get(keyword.toLowerCase());
   const { serp, cost: serpCost } = cached ? { serp: cached, cost: 0 } : await fetchSerp(admin, clientId, keyword, target.location_code, target.language_code);
   const kw = keyword.toLowerCase();
@@ -50,7 +52,7 @@ export async function runBrief(admin: SupabaseClient, clientId: string, keyword:
   const site = await siteKeywords(admin, clientId);
   const ourPages = [...new Set(site.map((k) => k.url).filter(Boolean))].slice(0, 30);
   const context = pages.map(({ comp, ol }) => `#${comp.position} ${comp.url} (${comp.words} words)\nTitle: ${comp.title}\nOutline: ${(ol?.headings ?? []).slice(0, 25).map((h) => `H${h.level} ${h.text}`).join(" | ")}`).join("\n\n");
-  const res = await anthropic().beta.messages.parse({
+  const res = await claude.beta.messages.parse({
     model: BRIEF_MODEL, max_tokens: 4000, thinking: { type: "between_tools" }, // Sonnet 5.5: "between_tools" is how thinking is turned off
     output_config: { effort: "medium", format: betaZodOutputFormat(schema) },
     system: "You are a senior SEO content strategist writing a content brief for a writer at a local sign and LED lighting business. Base the brief on what currently ranks: match the dominant intent and page type, cover the topics every top result covers, and add what they miss. Section word counts must add up to target_words. internal_links must be URLs from the provided site list. Never recommend FAQ or HowTo rich results; FAQ sections for readers are fine.",

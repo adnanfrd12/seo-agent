@@ -35,7 +35,9 @@ export async function startQuickWins(input: { scope: Scope; depth: "standard" | 
   if (!scope.success) return { ok: false, error: "Unknown scope." };
   const sources = [...new Set(input.sources)].filter((s): s is Source => (SOURCES as string[]).includes(s));
   if (!sources.length) return { ok: false, error: "Pick at least one data source." };
-  if (!process.env.ANTHROPIC_API_KEY?.trim()) return { ok: false, error: "ANTHROPIC_API_KEY isn't set on the server." };
+  const { aiUnavailable } = await import("@/lib/ai/claude");
+  const aiOff = await aiUnavailable(a.client.id);
+  if (aiOff) return { ok: false, error: aiOff };
   const { newRun, executeRun } = await import("@/lib/aiqw/run");
   const { activeRun, listRuns, saveRun } = await import("@/lib/aiqw/store");
   const admin = createAdminClient();
@@ -126,17 +128,18 @@ export async function testConnections(): Promise<Result<{ tests: ConnTest[] }>> 
   const tests: ConnTest[] = SOURCES.map((s) => ({ name: SOURCE_LABEL[s], ok: st[s].ok, detail: st[s].note }));
   // DataForSEO: the account answers (balance call, free)
   try {
-    const { dfsBalance, dfsConfigured } = await import("@/lib/dataforseo/client");
-    if (!dfsConfigured()) tests.push({ name: "DataForSEO API", ok: false, detail: "DATAFORSEO_LOGIN / DATAFORSEO_PASSWORD not set" });
-    else { const b = await dfsBalance(); tests.push({ name: "DataForSEO API", ok: b != null, detail: b != null ? `Login works · balance $${b.toFixed(2)}` : "No answer" }); }
+    const { DFS_NOT_CONFIGURED, dfsBalance, dfsConfigured } = await import("@/lib/dataforseo/client");
+    if (!(await dfsConfigured(a.client.id))) tests.push({ name: "DataForSEO API", ok: false, detail: DFS_NOT_CONFIGURED });
+    else { const b = await dfsBalance(a.client.id); tests.push({ name: "DataForSEO API", ok: b != null, detail: b != null ? `Login works · balance $${b.toFixed(2)}` : "No answer" }); }
   } catch (e) { tests.push({ name: "DataForSEO API", ok: false, detail: e instanceof Error ? e.message.slice(0, 120) : "failed" }); }
   // Claude
   try {
     const { clientSettings } = await import("@/lib/aiqw/run");
     const { pingClaude } = await import("@/lib/aiqw/claude");
-    const { settings } = await clientSettings(admin, a.client.id);
+    const { anthropicFor } = await import("@/lib/ai/claude");
+    const [{ settings }, ai] = await Promise.all([clientSettings(admin, a.client.id), anthropicFor(a.client.id)]);
     const t0 = Date.now();
-    const text = await pingClaude(settings);
+    const text = await pingClaude(ai, settings);
     tests.push({ name: `Claude API (${settings.model})`, ok: /\bok\b/i.test(text), detail: `Answered "${text.slice(0, 20)}" in ${((Date.now() - t0) / 1000).toFixed(1)} s` });
   } catch (e) {
     const { aiErrorMessage } = await import("@/lib/ai/claude");

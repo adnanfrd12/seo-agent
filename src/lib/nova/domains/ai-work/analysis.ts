@@ -3,7 +3,7 @@ import type { SupabaseClient } from "@supabase/supabase-js";
 import { z } from "zod";
 import { generateAnalysis, setInsightStatus, setTaskStatus } from "@/app/(dashboard)/ai-actions";
 import { runCoach } from "@/app/(dashboard)/coach/actions";
-import { AI_MODEL } from "@/lib/ai/claude";
+import { AI_MODEL, aiUnavailable } from "@/lib/ai/claude";
 import { COACH_MODEL, COACH_MODES, loadCoach, type CoachMode, type CoachOutput, type CoachResult } from "@/lib/ai/coach";
 import type { EvidenceItem } from "@/lib/ai/evidence";
 import { resolveRange } from "@/lib/analytics/range";
@@ -254,7 +254,8 @@ export const tools: NovaTool[] = [
       end: z.string().regex(DAY_RE, "use YYYY-MM-DD").optional(),
     }),
     async prepare(ctx, a) {
-      if (!process.env.ANTHROPIC_API_KEY?.trim()) return { error: "AI isn't configured on the server (ANTHROPIC_API_KEY)." };
+      const aiOff = await aiUnavailable(ctx.client.id);
+      if (aiOff) return { error: aiOff };
       const p = periodOf(a, ctx.client.timezone);
       const kinds: Kind[] = a.kind === "both" ? ["insights", "strategy"] : [a.kind];
       const lines: string[] = [];
@@ -296,7 +297,8 @@ export const tools: NovaTool[] = [
     description: "Write SEO Coach answers from the site's stored data with Claude Sonnet 5.5 (about $0.15 each, up to a minute; several run at once): coach, priorities, topics, competitors. Replaces the stored answer.",
     schema: z.object({ modes: z.array(z.enum(COACH_MODES)).min(1).max(4) }),
     async prepare(ctx, a) {
-      if (!process.env.ANTHROPIC_API_KEY?.trim()) return { error: "AI isn't configured on the server (ANTHROPIC_API_KEY)." };
+      const aiOff = await aiUnavailable(ctx.client.id);
+      if (aiOff) return { error: aiOff };
       const modes = [...new Set(a.modes)];
       const stored = await loadCoach(ctx.admin, ctx.client.id);
       const each = median(Object.values(stored).filter((r): r is CoachResult => Boolean(r)).map((r) => r.cost)) ?? 0.15;

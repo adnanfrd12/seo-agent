@@ -12,7 +12,7 @@ import { AUDITS, auditHref, auditLabel, isStale, loadBundle, refreshBundle, sxCo
 export async function sxPage(): Promise<{ clientName: string; configured: boolean; bundle: SxBundle | null } | null> {
   const { client } = await getSession();
   if (!client) return null;
-  if (!sxConfigured()) return { clientName: client.name, configured: false, bundle: null };
+  if (!(await sxConfigured(client.id))) return { clientName: client.name, configured: false, bundle: null };
   const admin = createAdminClient();
   const { bundle, fetchedAt } = await loadBundle(admin, client.id);
   if (!bundle) return { clientName: client.name, configured: true, bundle: await refreshBundle(admin, client.id) };

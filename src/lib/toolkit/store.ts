@@ -101,7 +101,7 @@ export interface Serp { keyword: string; checkedAt: string; organic: SerpResult[
 
 export async function fetchSerp(admin: SupabaseClient, clientId: string, keyword: string, locationCode: number, languageCode: string, source: SpendSource = "manual"): Promise<{ serp: Serp; cost: number }> {
   await assertBudget(admin, clientId, SERP_EST, source);
-  const { result, cost } = await dfsPost("/serp/google/organic/live/advanced", { keyword, location_code: locationCode, language_code: languageCode, device: "desktop", depth: 10 }, { timeoutMs: 90_000, attempts: 1 });
+  const { result, cost } = await dfsPost(clientId, "/serp/google/organic/live/advanced", { keyword, location_code: locationCode, language_code: languageCode, device: "desktop", depth: 10 }, { timeoutMs: 90_000, attempts: 1 });
   await recordSpend(admin, clientId, "toolkit_serp", cost, source);
   const items = arr(result?.items);
   const organic = items.filter((i) => i.type === "organic").map((i) => ({

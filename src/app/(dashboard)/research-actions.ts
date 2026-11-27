@@ -3,13 +3,15 @@
 import { revalidatePath } from "@/lib/revalidate";
 import { z } from "zod";
 import { getSession } from "@/lib/analytics/client-context";
-import { BudgetError, DEFAULT_DAILY_BUDGET } from "@/lib/dataforseo/budget";
-import { DfsError, dfsConfigured } from "@/lib/dataforseo/client";
+import { BudgetError, DEFAULT_DAILY_BUDGET, saveSettings } from "@/lib/dataforseo/budget";
+import { DFS_NOT_CONFIGURED, DfsError, dfsConfigured } from "@/lib/dataforseo/client";
 import { marketByCode } from "@/lib/dataforseo/locations";
 import { COMP_SPECS, runCompetitorAnalysis } from "@/lib/dataforseo/competitors";
 import {
   ensure, estimate, hostOf, keywordResearch, refreshCore, refreshDeep, resolveTarget, SPECS, TIER1, TIER2, trackLinkChanges, type KwKind, type RunReport,
 } from "@/lib/dataforseo/research";
+import { audit } from "@/lib/org/credentials";
+import { can, PermissionError, requireOrg } from "@/lib/org/permissions";
 import { createAdminClient } from "@/lib/supabase/admin";
 
 type Result = { ok: true; message: string; cost: number } | { ok: false; error: string };
@@ -25,11 +27,11 @@ async function admin() {
   const { client } = await getSession();
   if (!client) throw new Error("No client");
   if (!["owner", "admin"].includes(client.role)) return { allowed: false as const };
-  if (!dfsConfigured()) return { allowed: false as const, notConfigured: true };
+  if (!(await dfsConfigured(client.id))) return { allowed: false as const, notConfigured: true };
   return { allowed: true as const, client, db: createAdminClient() };
 }
 const denied = (a: { notConfigured?: boolean }): Result => ({
-  ok: false, error: a.notConfigured ? "DataForSEO isn't configured on the server." : "Only owners and admins can run paid lookups.",
+  ok: false, error: a.notConfigured ? DFS_NOT_CONFIGURED : "Only owners and admins can run paid lookups.",
 });
 const refresh = () => ["/backlinks", "/organic-keywords", "/keyword-research", "/competitors", "/integrations", "/overview"].forEach((p) => revalidatePath(p));
 
@@ -205,15 +207,21 @@ export async function markAlertsSeen(): Promise<Result> {
   return { ok: true, message: "Marked as read.", cost: 0 };
 }
 
-/** Agency-wide spending settings: the daily limit and the automatic weekly refresh switch. */
-export async function saveDfsSettings(input: { dailyBudget: number; autoRefresh: boolean }): Promise<Result> {
-  const { client } = await getSession();
-  if (!client || !["owner", "admin"].includes(client.role)) return { ok: false, error: "Only owners and admins can change the spending limit." };
+/**
+ * The organization's DataForSEO spending settings: the daily limit and the automatic weekly refresh switch (they
+ * cover every client of the organization, which share its DataForSEO account). Organization owners and admins.
+ * `orgId` defaults to the organization of the active client.
+ */
+export async function saveDfsSettings(input: { dailyBudget: number; autoRefresh: boolean }, orgId?: string): Promise<Result> {
+  if (orgId !== undefined && !z.uuid().safeParse(orgId).success) return { ok: false, error: "Choose an organization first." };
+  let ctx;
+  try { ctx = await requireOrg(can.manageSettings, orgId, "Only organization owners and admins can change the spending limit."); }
+  catch (e) { if (e instanceof PermissionError) return { ok: false, error: e.message }; throw e; }
   const parsed = z.object({ dailyBudget: z.number().min(0.1, "The limit must be at least $0.10").max(100, "The limit can't be more than $100"), autoRefresh: z.boolean() }).safeParse(input);
   if (!parsed.success) return { ok: false, error: parsed.error.issues[0]?.message ?? "Invalid settings" };
-  const { error } = await createAdminClient().from("dfs_settings").upsert(
-    { id: 1, daily_budget: Math.round(parsed.data.dailyBudget * 100) / 100, auto_refresh: parsed.data.autoRefresh, updated_at: new Date().toISOString() }, { onConflict: "id" });
-  if (error) return { ok: false, error: "Could not save (has migration 20261028000017 been applied?)." };
+  const { error } = await saveSettings(ctx.admin, ctx.orgId, parsed.data, ctx.userId);
+  if (error) return { ok: false, error: "Could not save (has migration 20261129000037 been applied?)." };
+  await audit(ctx.admin, ctx.orgId, ctx.userId, "dataforseo.settings", null, { daily_budget: Math.round(parsed.data.dailyBudget * 100) / 100, auto_refresh: parsed.data.autoRefresh });
   refresh();
   return { ok: true, message: `Saved: daily limit $${parsed.data.dailyBudget.toFixed(2)}${parsed.data.dailyBudget === DEFAULT_DAILY_BUDGET ? " (default)" : ""}.`, cost: 0 };
 }

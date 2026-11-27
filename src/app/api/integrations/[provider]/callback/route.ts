@@ -1,6 +1,7 @@
 import { NextResponse, type NextRequest } from "next/server";
 import { parseProvider, requireAdmin } from "@/lib/integrations/http";
 import { completeConnect } from "@/lib/integrations/service";
+import { ConfigError } from "@/lib/org/config";
 
 export const maxDuration = 60;
 
@@ -20,7 +21,8 @@ export async function GET(request: NextRequest, { params }: Ctx) {
     return result.soft
       ? back(`notice=${encodeURIComponent(result.reason)}&provider=${provider}`)
       : back(`error=${encodeURIComponent(result.reason)}&provider=${provider}`);
-  } catch {
-    return back("error=" + encodeURIComponent("Could not complete the connection"));
+  } catch (e) {
+    // the organization's settings (what to fix, never a value), otherwise a generic message
+    return back("error=" + encodeURIComponent(e instanceof ConfigError ? e.message : "Could not complete the connection"));
   }
 }

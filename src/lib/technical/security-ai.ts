@@ -1,7 +1,7 @@
 import "server-only";
 import type Anthropic from "@anthropic-ai/sdk";
 import type { SupabaseClient } from "@supabase/supabase-js";
-import { AI_MODEL, anthropic, costUsd } from "@/lib/ai/claude";
+import { AI_MODEL, anthropicFor, costUsd } from "@/lib/ai/claude";
 import { recordClaudeUse } from "@/lib/ai/usage";
 import { SEC_ENDPOINT, type SecAi, type SecAudit } from "./security";
 
@@ -34,9 +34,10 @@ export function planText(res: Pick<Anthropic.Message, "content" | "stop_reason">
   return text;
 }
 
-/** Writes (and stores) a site-specific fix plan. The caller checks the Claude budget first. */
+/** Writes (and stores) a site-specific fix plan on the organization's Anthropic key. The caller checks the Claude budget first. */
 export async function explainSecurity(admin: SupabaseClient, clientId: string, clientName: string, audit: SecAudit): Promise<SecAi> {
-  const res = await anthropic().messages.create({
+  const claude = await anthropicFor(clientId);
+  const res = await claude.messages.create({
     model: SEC_AI_MODEL, max_tokens: 4000, output_config: { effort: "low" }, system: SYSTEM,
     messages: [{ role: "user", content: buildSecurityPrompt(audit, clientName) }],
   });

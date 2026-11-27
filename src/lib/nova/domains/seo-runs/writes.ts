@@ -12,12 +12,13 @@ import { claudeBudget } from "@/lib/ai/usage";
 import { auditEstimate, loadAudit, loadAuditRender, RENDER_MODES } from "@/lib/dataforseo/audit";
 import { AUTO_SHARE, DEFAULT_DAILY_BUDGET, getSettings, PER_CLIENT_SHARE } from "@/lib/dataforseo/budget";
 import { dfsConfigured } from "@/lib/dataforseo/client";
+import { clientOrgId } from "@/lib/org/config";
 import { COMP_SPECS, pickTracked, type AutoCompetitor } from "@/lib/dataforseo/competitors";
 import { POSTS_EST, postTargets } from "@/lib/dataforseo/gbp-posts";
 import { LH_EST, lighthouseUrls } from "@/lib/dataforseo/lighthouse";
 import { GRID_POINT_EST, localIdentity, PROFILE_EST, REVIEWS_EST, type Profile } from "@/lib/dataforseo/local";
 import { KW_TTL_DAYS, SPECS, TIER1, TIER2, type Spec } from "@/lib/dataforseo/research";
-import { loadBundle, sxConfigured } from "@/lib/seosignalx/mcp";
+import { loadBundle, SX_NOT_CONFIGURED, sxConfigured } from "@/lib/seosignalx/mcp";
 import { defaultBriefKeyword } from "@/lib/toolkit/brief";
 import { runSiteScanNow } from "@/lib/toolkit/scan-actions";
 import { ownUrl, SERP_EST, storedSerps } from "@/lib/toolkit/store";
@@ -95,7 +96,7 @@ const runSeoResearch = write({
     force: z.boolean().default(false).describe("fetch again even when the stored result is still fresh"),
   }),
   async prepare(ctx, a) {
-    if (!dfsConfigured()) return { error: NOT_CONFIGURED };
+    if (!(await dfsConfigured(ctx.client.id))) return { error: NOT_CONFIGURED };
     const t = await peekTarget(ctx.admin, ctx.client.id);
     if (!t) return { error: NO_SITE };
     let competitor: string | undefined;
@@ -162,11 +163,11 @@ const runKeywordResearch = write({
     force: z.boolean().default(false).describe("search again even if a stored result is less than 30 days old"),
   }),
   async prepare(ctx, a) {
-    if (!dfsConfigured()) return { error: NOT_CONFIGURED };
+    if (!(await dfsConfigured(ctx.client.id))) return { error: NOT_CONFIGURED };
     const t = await peekTarget(ctx.admin, ctx.client.id);
     const m = marketOf(a.market, t?.location_code ?? 2840);
     const seeds = [...new Set(a.seeds.map(normSeed))];
-    const stored = await Promise.all(seeds.map((s) => storedSearch(ctx.admin, a.kind, s, m.code, m.lang, false)));
+    const stored = await Promise.all(seeds.map((s) => storedSearch(ctx.admin, a.kind, s, m.code, m.lang, false, ctx.client.id)));
     const plan = seeds.map((seed, i) => ({ seed, row: stored[i], fresh: !a.force && Boolean(stored[i]) && ageDays(stored[i]!.fetched_at) < KW_TTL_DAYS }));
     const due = plan.filter((p) => !p.fresh);
     const each = KW_EST[a.kind];
@@ -220,7 +221,7 @@ const startSiteAudit = write({
   }),
   async prepare(ctx, a) {
     const id = ctx.client.id;
-    if (!dfsConfigured()) return { error: NOT_CONFIGURED };
+    if (!(await dfsConfigured(ctx.client.id))) return { error: NOT_CONFIGURED };
     const t = await peekTarget(ctx.admin, id);
     if (!t) return { error: NO_SITE };
     const [{ result, task }, saved] = await Promise.all([loadAudit(ctx.admin, id), loadAuditRender(ctx.admin, id)]);
@@ -275,7 +276,7 @@ const runSiteChecks = write({
     const id = ctx.client.id;
     const t = await peekTarget(ctx.admin, id);
     if (a.kind === "lighthouse") {
-      if (!dfsConfigured()) return { error: NOT_CONFIGURED };
+      if (!(await dfsConfigured(ctx.client.id))) return { error: NOT_CONFIGURED };
       if (!t) return { error: NO_SITE };
       const urls = await lighthousePages(ctx, t.domain, a.pages);
       const cost = urls.length * 2 * LH_EST;
@@ -338,7 +339,7 @@ const syncSeoSignalx = write({
   roles: ["owner", "admin", "viewer"],
   schema: z.object({}),
   async prepare(ctx) {
-    if (!sxConfigured()) return { error: "SEOSignalX isn't connected on the server (SEOSIGNALX_MCP_TOKEN isn't set)." };
+    if (!(await sxConfigured(ctx.client.id))) return { error: SX_NOT_CONFIGURED };
     const { bundle, fetchedAt } = await loadBundle(ctx.admin, ctx.client.id);
     return {
       title: "Sync SEOSignalX now (free)",
@@ -377,7 +378,7 @@ const runLocalSeo = write({
   }),
   async prepare(ctx, a) {
     const id = ctx.client.id;
-    if (!dfsConfigured()) return { error: NOT_CONFIGURED };
+    if (!(await dfsConfigured(ctx.client.id))) return { error: NOT_CONFIGURED };
     const me = await localIdentity(ctx.admin, id);
     if (!me) return { error: NO_GBP };
     const biz = me.name || "the business";
@@ -524,14 +525,14 @@ const runToolkitTool = write({
         const kw = (input ?? "").toLowerCase() || (await defaultBriefKeyword(ctx.admin, id));
         if (!kw) return { error: "Give the keyword for the brief." };
         const reuse = (await storedSerps(ctx.admin, id)).has(kw);
-        if (reuse) { dfs = 0; short = "≈$0.03"; } else if (!dfsConfigured()) return { error: NOT_CONFIGURED };
+        if (reuse) { dfs = 0; short = "≈$0.03"; } else if (!(await dfsConfigured(ctx.client.id))) return { error: NOT_CONFIGURED };
         lines.push(`Brief for "${kw}"${input ? "" : " (the best opportunity in the stored keywords)"}: ${reuse ? "reuses the Google results another toolkit run stored (free)" : `one Google search (${money(SERP_EST)})`}, reads the top 5 ranking pages, then Claude Sonnet writes the brief (sections, word counts, keyword placement, questions, internal links).`);
         input = kw;
         break;
       }
       case "seo-cluster":
       case "seo-sxo":
-        if (!dfsConfigured()) return { error: NOT_CONFIGURED };
+        if (!(await dfsConfigured(ctx.client.id))) return { error: NOT_CONFIGURED };
         lines.push(a.tool === "seo-cluster"
           ? "Clusters the client's keywords (stored ranked keywords plus Search Console queries) by shared Google results into hub-and-spoke groups mapped to existing pages, with internal-link suggestions."
           : `Compares the page types Google ranks for the client's top ${MAX_SXO} keywords with the client's ranking page and flags intent mismatches.`);
@@ -579,14 +580,14 @@ const runToolkitTool = write({
 /* ================================================================== DataForSEO settings */
 const updateDfsSettings = write({
   name: "update_dataforseo_settings",
-  description: "Change the DataForSEO daily spending limit ($0.10-$100 a day, shared by all clients) and/or the automatic weekly refresh switch. Owners and admins.",
+  description: "Change the organization's DataForSEO daily spending limit ($0.10-$100 a day, shared by all its clients) and/or the automatic weekly refresh switch. Organization owners and admins.",
   schema: z.object({
-    daily_limit: z.number().min(0.1).max(100).optional().describe("USD per day, across all clients"),
+    daily_limit: z.number().min(0.1).max(100).optional().describe("USD per day, across all clients of the organization"),
     auto_refresh: z.boolean().optional().describe("automatic weekly refresh of the research data"),
   }),
   async prepare(ctx, a) {
     if (a.daily_limit == null && a.auto_refresh == null) return { error: "Give a new daily_limit and/or auto_refresh." };
-    const [cur, b] = await Promise.all([getSettings(ctx.admin), budgetNow(ctx.admin, ctx.client.id)]);
+    const [cur, b] = await Promise.all([getSettings(ctx.admin, { clientId: ctx.client.id }), budgetNow(ctx.admin, ctx.client.id)]);
     const limit = a.daily_limit == null ? cur.dailyBudget : Math.round(a.daily_limit * 100) / 100;
     const auto = a.auto_refresh ?? cur.autoRefresh;
     if (limit === cur.dailyBudget && auto === cur.autoRefresh) return { error: `Nothing would change: the daily limit is already ${usd(limit)} and the automatic weekly refresh is ${auto ? "on" : "off"}.` };
@@ -597,17 +598,18 @@ const updateDfsSettings = write({
     return {
       title: `${changes.join(" and ").replace(/^./, (c) => c.toUpperCase())}`,
       detail: bullets([
-        ...(limit !== cur.dailyBudget ? [`Daily limit: ${usd(cur.dailyBudget)} → ${usd(limit)}${limit === DEFAULT_DAILY_BUDGET ? " (the default)" : ""}. It covers all clients together (one shared DataForSEO account): scheduled refreshes may use up to ${usd(limit * AUTO_SHARE)} of it and one client at most ${usd(limit * PER_CLIENT_SHARE)} a day.`] : []),
-        ...(auto !== cur.autoRefresh ? [`Automatic weekly refresh: ${cur.autoRefresh ? "on" : "off"} → ${auto ? "on" : "off"}, for every client${auto ? "" : "; research data then only updates when someone runs a refresh"}.`] : []),
-        b.all == null ? "Today's spend isn't available." : `Spent today: ${usd(b.all)} across all clients. The limit resets at midnight UTC.`,
+        ...(limit !== cur.dailyBudget ? [`Daily limit: ${usd(cur.dailyBudget)} → ${usd(limit)}${limit === DEFAULT_DAILY_BUDGET ? " (the default)" : ""}. It covers all clients of the organization together (they share its DataForSEO account): scheduled refreshes may use up to ${usd(limit * AUTO_SHARE)} of it and one client at most ${usd(limit * PER_CLIENT_SHARE)} a day.`] : []),
+        ...(auto !== cur.autoRefresh ? [`Automatic weekly refresh: ${cur.autoRefresh ? "on" : "off"} → ${auto ? "on" : "off"}, for every client of the organization${auto ? "" : "; research data then only updates when someone runs a refresh"}.`] : []),
+        b.all == null ? "Today's spend isn't available." : `Spent today: ${usd(b.all)} across the organization's clients. The limit resets at midnight UTC.`,
       ]),
       input: { daily_limit: a.daily_limit == null ? undefined : limit, auto_refresh: a.auto_refresh },
     };
   },
   async execute(x, a) {
-    const cur = await getSettings(x.admin);
+    const orgId = await clientOrgId(x.client.id);
+    const cur = await getSettings(x.admin, { orgId });
     const limit = a.daily_limit ?? cur.dailyBudget, auto = a.auto_refresh ?? cur.autoRefresh;
-    const r = await saveDfsSettings({ dailyBudget: limit, autoRefresh: auto });
+    const r = await saveDfsSettings({ dailyBudget: limit, autoRefresh: auto }, orgId);
     return r.ok ? { ok: true, message: `Saved: DataForSEO daily limit ${usd(limit)}, automatic weekly refresh ${auto ? "on" : "off"}.`, paths: ["/integrations"] } : { ok: false, message: r.error };
   },
 });

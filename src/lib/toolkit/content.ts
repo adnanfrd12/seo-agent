@@ -1,8 +1,9 @@
 import "server-only";
+import type Anthropic from "@anthropic-ai/sdk";
 import type { SupabaseClient } from "@supabase/supabase-js";
 import { betaZodOutputFormat } from "@anthropic-ai/sdk/helpers/beta/zod";
 import { z } from "zod";
-import { anthropic } from "@/lib/ai/claude";
+import { anthropicFor } from "@/lib/ai/claude";
 import { loadBlog, loadBlogPerformance } from "@/lib/blog/load";
 import { pathOf } from "@/lib/blog/parse";
 import { fetchHtml, outline, readability, type Readability } from "./store";
@@ -43,7 +44,7 @@ export interface ContentPage {
 }
 export interface ContentRun { mode: "url" | "blog"; pages: ContentPage[]; cost: number; model: string }
 
-async function reviewPage(url: string, extra: { clicks: number | null }): Promise<{ page: ContentPage; cost: number }> {
+async function reviewPage(claude: Anthropic, url: string, extra: { clicks: number | null }): Promise<{ page: ContentPage; cost: number }> {
   const r = await fetchHtml(url);
   if (!r.html) return { page: { url, title: null, words: 0, read: readability(""), headings: 0, questionHeadings: 0, thin: true, clicks: extra.clicks, ai: null, score: 0, error: "Page didn't load" }, cost: 0 };
   const o = outline(r.html);
@@ -51,7 +52,7 @@ async function reviewPage(url: string, extra: { clicks: number | null }): Promis
   const qh = o.headings.filter((h) => h.level > 1 && /\?$|^(how|what|why|when|where|which|who|can|do|does|is|are|should)\b/i.test(h.text)).length;
   let ai: ContentAi | null = null, cost = 0;
   try {
-    const res = await anthropic().beta.messages.parse({
+    const res = await claude.beta.messages.parse({
       model: CONTENT_MODEL, max_tokens: 1500, thinking: { type: "disabled" },
       output_config: { effort: "low", format: betaZodOutputFormat(schema) },
       system: SYSTEM,
@@ -69,8 +70,10 @@ async function reviewPage(url: string, extra: { clicks: number | null }): Promis
 }
 
 export async function runContent(admin: SupabaseClient, clientId: string, url: string | null): Promise<ContentRun> {
+  // the organization's own Anthropic key: without one, stop with what to set up (before any page is read)
+  const claude = await anthropicFor(clientId);
   if (url) {
-    const { page, cost } = await reviewPage(url, { clicks: null });
+    const { page, cost } = await reviewPage(claude, url, { clicks: null });
     return { mode: "url", pages: [page], cost: Number(cost.toFixed(5)), model: CONTENT_MODEL };
   }
   const { posts } = await loadBlog(admin, clientId);
@@ -78,6 +81,6 @@ export async function runContent(admin: SupabaseClient, clientId: string, url: s
   const end = new Date().toISOString().slice(0, 10), start = new Date(Date.now() - 90 * 86_400_000).toISOString().slice(0, 10);
   const perf = await loadBlogPerformance(admin, clientId, { start, end });
   const ranked = posts.map((p) => ({ p, s: perf.get(pathOf(p.url)) })).sort((a, b) => (b.s?.clicks ?? 0) - (a.s?.clicks ?? 0) || (b.s?.impressions ?? 0) - (a.s?.impressions ?? 0)).slice(0, 10);
-  const out = await Promise.all(ranked.map(({ p, s }) => reviewPage(p.url, { clicks: s?.clicks ?? 0 })));
+  const out = await Promise.all(ranked.map(({ p, s }) => reviewPage(claude, p.url, { clicks: s?.clicks ?? 0 })));
   return { mode: "blog", pages: out.map((o) => o.page), cost: Number(out.reduce((a, o) => a + o.cost, 0).toFixed(5)), model: CONTENT_MODEL };
 }

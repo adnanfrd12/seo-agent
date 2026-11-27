@@ -1,9 +1,10 @@
 import "server-only";
 import { z } from "zod";
 import { addAiPrompts, refreshBrandLookupNow, removeAiPrompt, runAiVisibilityNow, setAiEngines, setAiSearch } from "@/app/(dashboard)/ai-visibility/actions";
+import { aiUnavailable } from "@/lib/ai/claude";
 import { BRAND_EST, BRAND_VIEWS, brandNamesFor, LLM_EST, LLM_LABEL, LLM_PLATFORMS } from "@/lib/ai/llm-mentions";
 import { AI_EVERY_DAYS, brandStats, ENGINE_KEYS, ENGINES, enginesFrom, loadAi, MAX_PROMPTS, promptEstimate, type AiCheck, type EngineKey } from "@/lib/ai/visibility";
-import { dfsConfigured } from "@/lib/dataforseo/client";
+import { DFS_NOT_CONFIGURED, dfsConfigured } from "@/lib/dataforseo/client";
 import { bullets, fromAction, plural, read, ToolError, write, type ExecResult, type NovaTool } from "../../kit";
 import { ACTIVE_NOTE, ageDays, andList, capJson, compact, dfsBudget, money, NO_TARGET, quoted, readTarget, uniq } from "./shared";
 
@@ -200,7 +201,8 @@ export const tools: NovaTool[] = [
     description: "Ask the tracked AI visibility questions to the selected assistants now (paid: DataForSEO plus Claude, the per-question cost get_ai_visibility shows). Only questions not asked in the last week, unless recheck_all.",
     schema: z.object({ recheck_all: z.boolean().default(false).describe("also re-ask questions asked this week") }),
     async prepare(ctx, a) {
-      if (!process.env.ANTHROPIC_API_KEY) return { error: "ANTHROPIC_API_KEY isn't set on the server, so AI visibility can't run." };
+      const aiOff = await aiUnavailable(ctx.client.id);
+      if (aiOff) return { error: aiOff };
       const target = await readTarget(ctx.admin, ctx.client.id);
       if (!target) return { error: NO_TARGET };
       // the same selection runAiChecks() makes
@@ -220,9 +222,9 @@ export const tools: NovaTool[] = [
       const due = (qs ?? []).filter((q) => { const d = lastOn.get(q.id as string); return !d || d <= cutoff; }).length;
       const n = a.recheck_all ? total : due;
       const settings = cl?.settings as { ai_search?: boolean } | null;
-      const engines = enginesFrom(settings), dfsOn = dfsConfigured();
+      const engines = enginesFrom(settings), dfsOn = await dfsConfigured(ctx.client.id);
       const asked = dfsOn ? engines : engines.filter((e) => ENGINES[e].via === "anthropic");
-      if (!asked.length) return { error: "Only DataForSEO assistants are selected and DataForSEO isn't configured on the server. Switch Claude on first." };
+      if (!asked.length) return { error: "Only DataForSEO assistants are selected and DataForSEO isn't set up for this organization. Switch Claude on first." };
       const perQ = promptEstimate(asked);
       if (!n) return { error: `All ${plural(total, "question")} were asked in the last week (latest ${[...lastOn.values()].sort().at(-1)}). Nothing is due; set recheck_all to ask them all again (about ${money(Math.min(total * perQ, RUN_COST_LIMIT))}).` };
       const dfsEngines = asked.filter((e) => ENGINES[e].via === "dataforseo");
@@ -265,7 +267,7 @@ export const tools: NovaTool[] = [
     description: `Fetch the AI brand lookup now (paid DataForSEO, ${money(BRAND_EST)} per lookup, up to ${LOOKUPS.length}): how often real ChatGPT and Google AI Overview answers name the brand and up to 3 competitor brands. Parts under a week old are reused.`,
     schema: z.object({}),
     async prepare(ctx) {
-      if (!dfsConfigured()) return { error: "DataForSEO isn't configured on the server." };
+      if (!(await dfsConfigured(ctx.client.id))) return { error: DFS_NOT_CONFIGURED };
       const target = await readTarget(ctx.admin, ctx.client.id);
       if (!target) return { error: NO_TARGET };
       const [brands, { data: rows }, budget] = await Promise.all([

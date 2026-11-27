@@ -1,11 +1,13 @@
 import "server-only";
 import type { SupabaseClient } from "@supabase/supabase-js";
 import { resolveTarget } from "@/lib/dataforseo/research";
+import { configForClient, type OrgConfig } from "@/lib/org/config";
 
 /**
- * SEOSignalX through its read-only MCP server (https://seosignalx.com/api/mcp, Streamable HTTP, bearer token in
- * SEOSIGNALX_MCP_TOKEN). The server offers: list/get projects, list/get saved audits, list patches and the feature
- * catalog. Only the saved audits it has are shown (E-E-A-T, Semantic, Speed, Robots.txt, Crawl Optimization);
+ * SEOSignalX through its read-only MCP server (https://seosignalx.com/api/mcp, Streamable HTTP, bearer token: the
+ * organization's SEOSIGNALX_MCP_TOKEN in Settings → Integrations). The server offers: list/get projects, list/get
+ * saved audits, list patches and the feature catalog. Only the saved audits it has are shown (E-E-A-T, Semantic,
+ * Speed, Robots.txt, Crawl Optimization);
  * site-audit crawl data, GSC, keywords and the rest of the SEOSignalX app aren't served by the MCP.
  *
  * A client is matched to the SEOSignalX project with the same domain. Results are stored in dfs_cache
@@ -40,12 +42,17 @@ export const auditHref = (key: string) => AUDITS.find((a) => a.key === key)?.hre
 /** At most this many saved audits are read per sync (each is one MCP call). */
 const MAX_AUDITS = 20;
 
-export const sxConfigured = () => Boolean(process.env.SEOSIGNALX_MCP_TOKEN?.trim());
+export const SX_NOT_CONFIGURED = "SEOSignalX isn't set up for this organization: an owner needs to add the SEOSignalX MCP token in Settings → Integrations.";
+export const sxConfiguredIn = (cfg: OrgConfig | null) => Boolean(cfg?.get("SEOSIGNALX_MCP_TOKEN"));
+/** True when the client's organization has an SEOSignalX MCP token. */
+export async function sxConfigured(clientId: string): Promise<boolean> {
+  try { return sxConfiguredIn(await configForClient(clientId)); } catch { return false; }
+}
 
-/** One MCP session: initialize, then call tools. Text results are JSON (truncated ones are repaired). */
-async function session() {
-  const token = process.env.SEOSIGNALX_MCP_TOKEN?.trim();
-  if (!token) throw new Error("SEOSIGNALX_MCP_TOKEN isn't set.");
+/** One MCP session with the organization's token: initialize, then call tools. Text results are JSON (truncated ones are repaired). */
+async function session(cfg: OrgConfig) {
+  const token = cfg.get("SEOSIGNALX_MCP_TOKEN");
+  if (!token) throw new Error(SX_NOT_CONFIGURED);
   let sid: string | null = null, id = 0;
   const rpc = async (method: string, params: unknown, notify = false) => {
     const res = await fetch(ENDPOINT, {
@@ -54,7 +61,7 @@ async function session() {
       body: JSON.stringify(notify ? { jsonrpc: "2.0", method, params } : { jsonrpc: "2.0", id: ++id, method, params }),
     });
     sid = res.headers.get("mcp-session-id") ?? sid;
-    if (res.status === 401 || res.status === 403) throw new Error("SEOSignalX rejected the MCP token. Generate a new one in SEOSignalX → MCP.");
+    if (res.status === 401 || res.status === 403) throw new Error("SEOSignalX rejected this organization's MCP token. Generate a new one in SEOSignalX → MCP and save it in Settings → Integrations.");
     const text = await res.text();
     if (notify) return null;
     if (!res.ok) throw new Error(`SEOSignalX MCP error ${res.status}.`);
@@ -105,9 +112,9 @@ export interface SxBundle {
 
 const host = (d: string | null | undefined) => (d ?? "").toLowerCase().replace(/^https?:\/\//, "").replace(/^www\./, "").replace(/\/.*$/, "");
 
-/** Reads everything the MCP has for the client's project (5-10 calls, all free and read-only). */
-export async function fetchBundle(domain: string | null): Promise<SxBundle> {
-  const call = await session();
+/** Reads everything the MCP has for the client's project (5-10 calls, all free and read-only), with the organization's token. */
+export async function fetchBundle(cfg: OrgConfig, domain: string | null): Promise<SxBundle> {
+  const call = await session(cfg);
   const { data: list } = await call<{ projects?: SxProject[] }>("seosignalx_list_projects");
   const projects = list?.projects ?? [];
   const project = projects.find((p) => host(p.domain) === host(domain) || host(p.fullUrl) === host(domain)) ?? null;
@@ -139,7 +146,7 @@ export async function loadBundle(admin: SupabaseClient, clientId: string): Promi
 
 export async function refreshBundle(admin: SupabaseClient, clientId: string): Promise<SxBundle> {
   let bundle: SxBundle;
-  try { bundle = await fetchBundle(await clientDomain(admin, clientId)); }
+  try { bundle = await fetchBundle(await configForClient(clientId), await clientDomain(admin, clientId)); }
   catch (e) {
     const prev = (await loadBundle(admin, clientId)).bundle;
     bundle = { ...(prev ?? { project: null, projects: [], patches: [], audits: {}, available: [] }), fetchedAt: prev?.fetchedAt ?? new Date().toISOString(), error: e instanceof Error ? e.message : "SEOSignalX couldn't be reached." };

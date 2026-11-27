@@ -4,7 +4,7 @@ import type { SupabaseClient } from "@supabase/supabase-js";
 import type { z } from "zod";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { loadReportData } from "@/lib/report/data";
-import { AI_MODEL, aiErrorMessage, anthropic, costUsd } from "./claude";
+import { AI_MODEL, aiErrorMessage, anthropicFor, costUsd } from "./claude";
 import { buildEvidence, evidenceText } from "./evidence";
 import { budgetMessage, claudeBudget } from "./usage";
 import { insightsSchema, strategySchema, type InsightsOutput, type StrategyOutput } from "./schemas";
@@ -68,6 +68,10 @@ export async function runAnalysis(
     if (before.size > 0 && watched.length > 0 && watched.every((i) => before.get(i.id) === i.value)) return { ok: true, runId: "", kept: 0, dropped: 0, skipped: true };
   }
 
+  // the client's organization's own Anthropic key (a missing one ends here, before a run is recorded)
+  const ai = await anthropicFor(clientId).catch(aiErrorMessage);
+  if (typeof ai === "string") return { ok: false, error: ai };
+
   // insights and strategy count toward the client's monthly Claude budget: don't start when it's used up
   const budget = await claudeBudget(admin, clientId);
   if (budget.left <= 0) return { ok: false, error: budgetMessage(budget.budget) };
@@ -95,7 +99,7 @@ export async function runAnalysis(
 
   try {
     const schema = (kind === "insights" ? insightsSchema : strategySchema) as z.ZodType<InsightsOutput | StrategyOutput>;
-    const response = await anthropic().beta.messages.parse({
+    const response = await ai.beta.messages.parse({
       model: AI_MODEL,
       max_tokens: 16000,
       // on a safety decline the API retries on a fallback model automatically
