@@ -181,6 +181,15 @@ export function DetailPanel({ issue, open, onClose, canEdit }: { issue: PanelIss
     const r = await fn();
     if (r.ok) { setRes({ ok: true, detail: r.detail, fromCache: true }); setMsg({ ok: true, text: r.message }); } else setMsg({ ok: false, text: r.error });
   });
+  // like every other problem popup: an error or warning gets Claude's fixes as soon as an owner or admin opens it
+  // (once; stored with the issue, so opening it again shows them without paying twice)
+  const autoTried = useRef(false);
+  const wantAuto = Boolean(open && canEdit && d && !d.ai && d.kind !== "images" && items > 0 && (issue.severity === "error" || issue.severity === "warning"));
+  useEffect(() => {
+    if (!wantAuto || autoTried.current || aiBusy) return;
+    autoTried.current = true;
+    runAi(() => fixAuditIssue(issue.key));
+  }, [wantAuto]); // eslint-disable-line react-hooks/exhaustive-deps
 
   return (
     <Panel open={open} onClose={onClose} title={issue.label}
