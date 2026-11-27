@@ -191,7 +191,7 @@ export function parsePasted(text: string): { queries: string[]; citations: Citat
     for (const m of t.matchAll(/"(?:search_)?queries"\s*:\s*\[([^\]]*)\]/g)) for (const q of m[1].matchAll(/"((?:[^"\\]|\\.)*)"/g)) queries.push(q[1].replace(/\\"/g, '"'));
     if (!queries.length && !/[{}"]/.test(t)) queries.push(...t.split(/\r?\n/).map((l) => l.replace(/^[-*•\d.)\s]+/, "")));
   }
-  return { queries: clean(queries).filter((q) => q.length <= 300).slice(0, 100), citations: dedupeCites(citations) };
+  return { queries: clean(queries).filter((q) => q.length <= 300 && !/^\[object \w+\]$/.test(q)).slice(0, 100), citations: dedupeCites(citations) };
 }
 
 /** Stores pasted ChatGPT searches for a keyword as one ChatGPT answer (free; no API call). */
