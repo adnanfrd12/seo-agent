@@ -1,4 +1,5 @@
 import Link from "next/link";
+import { ExplainIssue } from "@/components/dashboard/explain-issue";
 import { cn } from "@/lib/utils";
 import { Delta, Spark } from "./charts";
 import { Info } from "./info";
@@ -79,13 +80,15 @@ export function Missing({ title, why, fix }: { title?: string; why: string; fix:
 }
 
 export function Insight({ tone, title, text, when }: { tone: "good" | "bad" | "warn"; title: string; text: string; when: string }) {
-  return (
+  const card = (
     <div className="rounded-lg border border-border bg-surface-sunken p-3">
       <h3 className="flex items-start gap-2 text-sm font-semibold"><span className={cn("mt-1.5 size-2 shrink-0 rounded-full", tone === "good" ? "bg-positive" : tone === "bad" ? "bg-negative" : "bg-warn")} />{title}</h3>
       <p className="mt-1 text-[13px] text-secondary">{text}</p>
       <small className="mt-1.5 block text-xs text-muted">{when}</small>
     </div>
   );
+  // problems and warnings open a popup with Claude's explanation and fix
+  return tone === "good" ? card : <ExplainIssue title={title} detail={`${text}\n${when}`} className="rounded-lg transition hover:opacity-90">{card}</ExplainIssue>;
 }
 
 export function Note({ children }: { children: React.ReactNode }) {

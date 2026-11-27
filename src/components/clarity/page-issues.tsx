@@ -2,6 +2,7 @@
 
 import { useRef, useState, useTransition } from "react";
 import { PlayCircle } from "lucide-react";
+import { ExplainIssue } from "@/components/dashboard/explain-issue";
 import { Legend, Panel, type StackKey } from "@/components/charts/ai-charts";
 import type { Recording } from "@/lib/clarity/recordings";
 import { loadPageRecordings } from "@/app/(dashboard)/clarity/actions";
@@ -137,7 +138,9 @@ export function PageIssues({ keys, pages, recs, jsErrors, clickErrors, messages,
                 <ul className="mt-1 divide-y divide-hairline">
                   {errs.map((e) => (
                     <li key={e.message} className="py-2 text-[13px]">
-                      <div className="flex items-baseline justify-between gap-3"><code className="min-w-0 break-words font-mono text-[12px]">{e.message}</code><span className="shrink-0 tabular-nums text-secondary">{nf.format(e.count)}×</span></div>
+                      <div className="flex items-baseline justify-between gap-3"><ExplainIssue title={`JavaScript error on ${page.path}`} detail={`${e.message}
+Seen ${e.count} times in the last 3 days.${errorHint(e.message) ? `
+${errorHint(e.message)}` : ""}`} className="min-w-0 hover:text-accent"><code className="break-words font-mono text-[12px] underline decoration-border-strong decoration-dotted underline-offset-2">{e.message}</code></ExplainIssue><span className="shrink-0 tabular-nums text-secondary">{nf.format(e.count)}×</span></div>
                       {errorHint(e.message) && <p className="mt-0.5 text-xs text-muted">{errorHint(e.message)}</p>}
                     </li>
                   ))}

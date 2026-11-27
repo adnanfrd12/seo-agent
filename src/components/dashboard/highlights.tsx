@@ -2,6 +2,7 @@ import Link from "next/link";
 import { ArrowRight } from "lucide-react";
 import type { Highlight } from "@/lib/overview/highlights";
 import { cn } from "@/lib/utils";
+import { ExplainIssue } from "./explain-issue";
 
 const TONE = {
   good: { dot: "bg-positive", label: "Improved" },
@@ -35,7 +36,10 @@ export function Highlights({ items, stableNote }: { items: Highlight[]; stableNo
           return (
             // an odd last item takes the whole row, so the strip never ends in an empty cell
             <li key={i} className={cn(list.length > 1 && list.length % 2 === 1 && i === list.length - 1 && "lg:col-span-2")}>
-              {h.href ? <Link href={h.href} className={cn(cls, "transition-colors hover:bg-surface-sunken")}>{body}</Link> : <div className={cls}>{body}</div>}
+              {/* problems open a popup with the details and Claude's explanation and fix (the link moves into it) */}
+              {h.tone === "bad" && items.length > 0
+                ? <ExplainIssue title={h.title} detail={[h.detail, h.action].filter(Boolean).join("\n")} href={h.href} className={cn(cls, "transition-colors hover:bg-surface-sunken")}>{body}</ExplainIssue>
+                : h.href ? <Link href={h.href} className={cn(cls, "transition-colors hover:bg-surface-sunken")}>{body}</Link> : <div className={cls}>{body}</div>}
             </li>
           );
         })}

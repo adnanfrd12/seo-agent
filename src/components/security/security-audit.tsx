@@ -1,5 +1,6 @@
 import { CheckCircle2, CircleAlert, CircleHelp, CircleX } from "lucide-react";
 import { lhColor, ScoreRing } from "@/components/charts/score-ring";
+import { ExplainIssue } from "@/components/dashboard/explain-issue";
 import { Markdown } from "@/components/nova/markdown";
 import type { SecAi, SecAudit } from "@/lib/technical/security";
 import type { SecCheck, SecStatus, Severity } from "@/lib/technical/security-scan";
@@ -51,11 +52,14 @@ function Row({ c, wp, open }: { c: SecCheck; wp: boolean; open: boolean }) {
         <div className="flex items-start gap-2">
           <StatusIcon s={c.status} />
           <div className="min-w-0 flex-1">
-            <p className="flex flex-wrap items-center gap-x-2 gap-y-1 text-sm font-medium">
-              {c.title}
+            <div className="flex flex-wrap items-center gap-x-2 gap-y-1 text-sm font-medium">
+              {c.status === "fail" || c.status === "warn"
+                ? <ExplainIssue title={`Security: ${c.title}`} detail={`${c.evidence}
+${c.why}`} className="w-auto underline decoration-border-strong decoration-dotted underline-offset-2 hover:text-accent">{c.title}</ExplainIssue>
+                : c.title}
               <span className={cn("rounded-md px-1.5 py-0.5 text-[11px] font-medium capitalize", SEV[c.severity])}>{c.severity}</span>
               <span className="text-xs font-normal text-muted">{c.group} · {STATUS_LABEL[c.status]}</span>
-            </p>
+            </div>
             <p className="mt-1 break-words text-sm text-secondary">{c.evidence}</p>
             <p className="mt-1 text-xs text-muted">{c.why}</p>
           </div>
