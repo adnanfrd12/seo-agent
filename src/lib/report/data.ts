@@ -1,4 +1,5 @@
 import "server-only";
+import { pagedRows } from "@/lib/db/paged";
 import type { SupabaseClient } from "@supabase/supabase-js";
 import { toNum } from "@/lib/analytics/format";
 import { loadTechnical } from "@/lib/technical/load";
@@ -332,16 +333,17 @@ type ClarityRow = { metric_date: string; dimension: string; value: string; metri
 async function loadClarity(supabase: SupabaseClient, clientId: string, range: { start: string; end: string }) {
   const cols = "metric_date, dimension, value, metric, count, raw";
   let outsideRange = false;
-  let { data, error } = await supabase.from("clarity_behavior_metrics").select(cols)
-    .eq("client_id", clientId).gte("metric_date", range.start).lte("metric_date", range.end).in("dimension", ["total", "url"]).limit(10000);
+  // all rows (the API returns at most 1,000 per request, whatever .limit() says)
+  const read = (from: string, to: string) => pagedRows((f, t) => supabase.from("clarity_behavior_metrics").select(cols)
+    .eq("client_id", clientId).gte("metric_date", from).lte("metric_date", to).in("dimension", ["total", "url"]).order("metric_date").order("value").order("metric").range(f, t));
+  let { data, error } = await read(range.start, range.end);
   if (!error && (data ?? []).length === 0) {
     const { data: latest } = await supabase.from("clarity_behavior_metrics").select("metric_date").eq("client_id", clientId)
       .order("metric_date", { ascending: false }).limit(1).maybeSingle();
     if (latest) {
       outsideRange = true;
       const from = shift(latest.metric_date, -6);
-      ({ data, error } = await supabase.from("clarity_behavior_metrics").select(cols)
-        .eq("client_id", clientId).gte("metric_date", from).lte("metric_date", latest.metric_date).in("dimension", ["total", "url"]).limit(10000));
+      ({ data, error } = await read(from, latest.metric_date));
     }
   }
   const rows = (data ?? []) as ClarityRow[];

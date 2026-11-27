@@ -101,7 +101,7 @@ export function IndexDiagnoses({ rows, stored, canRun, est, site }: { rows: Diag
                 <Fragment key={r.url}>
                   <tr className="hover:bg-surface-sunken">
                     {canRun && <td className="px-3 py-2 align-top"><input type="checkbox" aria-label={`Select ${r.path}`} checked={sel.has(r.url)} onChange={() => toggle(r.url)} /></td>}
-                    <td className="max-w-[18rem] px-3 py-2 align-top">{site ? <a href={r.url} target="_blank" rel="noreferrer" className="break-all hover:underline">{r.path}</a> : <span className="break-all">{r.path}</span>}<div className="text-[11px] text-faint">Last crawl {r.last} · {r.impr} impr. 28d</div></td>
+                    <td className="min-w-[12rem] max-w-[18rem] px-3 py-2 align-top">{site ? <a href={r.url} target="_blank" rel="noreferrer" className="break-all hover:underline">{r.path}</a> : <span className="break-all">{r.path}</span>}<div className="text-[11px] text-faint">Last crawl {r.last} · {r.impr} impr. 28d</div></td>
                     <td className="min-w-[10rem] px-3 py-2 align-top text-secondary">{r.reason}</td>
                     <td className="px-3 py-2 text-right align-top tabular-nums">{r.linksIn}</td>
                     <td className="min-w-[16rem] px-3 py-2 align-top">{d ? <>{d.issue} <Tag tone={d.confidence === "High" ? "bad" : d.confidence === "Medium" ? "warn" : "mute"}>{d.confidence} confidence</Tag></> : e ? <span className="text-negative">{e}</span> : <span className="text-faint">Not diagnosed yet</span>}</td>

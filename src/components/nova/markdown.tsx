@@ -81,18 +81,35 @@ function blocks(text: string): ReactNode[] {
       out.push(<blockquote key={k} className="border-l-2 border-accent/40 pl-3 text-secondary">{inline(body.join(" "), `q${k}`)}</blockquote>);
       continue;
     }
-    // lists (one level, with indented continuation lines)
+    // lists (one level, with indented continuation lines and fenced code blocks inside an item)
     const bullet = /^\s*[-*+]\s+/, numbered = /^\s*\d+[.)]\s+/;
     if (bullet.test(line) || numbered.test(line)) {
       const ordered = numbered.test(line);
-      const items: string[] = [];
-      while (i < lines.length && (bullet.test(lines[i]) || numbered.test(lines[i]) || (/^\s{2,}\S/.test(lines[i]) && items.length))) {
-        if (bullet.test(lines[i]) || numbered.test(lines[i])) items.push(lines[i].replace(ordered ? numbered : bullet, "").replace(bullet, ""));
-        else items[items.length - 1] += ` ${lines[i].trim()}`;
+      // each item is a sequence of text runs and code blocks, kept in the order written
+      type Part = { kind: "text" | "code"; value: string };
+      const items: Part[][] = [];
+      const addText = (s: string) => { const it = items[items.length - 1]; const last = it[it.length - 1]; if (last?.kind === "text") last.value += ` ${s}`; else it.push({ kind: "text", value: s }); };
+      while (i < lines.length && (bullet.test(lines[i]) || numbered.test(lines[i]) || ((/^\s{2,}\S/.test(lines[i]) || /^```/.test(lines[i].trim())) && items.length))) {
+        if (/^```/.test(lines[i].trim())) {
+          // a code block belonging to the current item: keep it whole (no inline formatting)
+          const body: string[] = []; i++;
+          while (i < lines.length && !/^```/.test(lines[i].trim())) body.push(lines[i++].replace(/^\s{1,4}/, ""));
+          i++;
+          items[items.length - 1].push({ kind: "code", value: body.join("\n") });
+          continue;
+        }
+        if (bullet.test(lines[i]) || numbered.test(lines[i])) items.push([{ kind: "text", value: lines[i].replace(ordered ? numbered : bullet, "").replace(bullet, "") }]);
+        else addText(lines[i].trim());
         i++;
       }
       const Tag = ordered ? "ol" : "ul";
-      out.push(<Tag key={k} className={ordered ? "list-decimal space-y-1 pl-5 marker:text-muted" : "list-disc space-y-1 pl-5 marker:text-muted"}>{items.map((it, j) => <li key={j}>{inline(it, `l${k}${j}`)}</li>)}</Tag>);
+      out.push(<Tag key={k} className={ordered ? "list-decimal space-y-1 pl-5 marker:text-muted" : "list-disc space-y-1 pl-5 marker:text-muted"}>{items.map((parts, j) => (
+        <li key={j}>
+          {parts.map((p, pi) => p.kind === "code"
+            ? <pre key={pi} className="my-1.5 overflow-x-auto rounded-lg bg-surface-muted p-3 font-mono text-[12.5px] leading-relaxed">{p.value}</pre>
+            : <span key={pi}>{inline(p.value, `l${k}${j}${pi}`)}</span>)}
+        </li>
+      ))}</Tag>);
       continue;
     }
     // paragraph: consecutive plain lines

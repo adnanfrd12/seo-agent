@@ -1,4 +1,5 @@
 import "server-only";
+import { pagedRows } from "@/lib/db/paged";
 import type { SupabaseClient } from "@supabase/supabase-js";
 import type { G as GscG } from "@/lib/gscx/g";
 import type { InventoryRow } from "@/lib/gscx/inventory";
@@ -46,7 +47,7 @@ export async function loadPlatformData(admin: SupabaseClient, clientId: string, 
     on("bing") ? admin.from("bing_query_metrics").select("week, query, clicks, impressions, avg_impression_position").eq("client_id", clientId).gte("week", d35).limit(5000) : null,
     on("bing") ? admin.from("bing_page_metrics").select("week, page, clicks, impressions, avg_impression_position").eq("client_id", clientId).gte("week", d35).limit(3000) : null,
     on("bing") ? admin.from("bing_crawl_metrics").select("metric_date, crawled_pages, crawl_errors, in_index, code_4xx, code_5xx, blocked_by_robots, dns_failures, connection_timeout").eq("client_id", clientId).order("metric_date", { ascending: false }).limit(1).maybeSingle() : null,
-    on("clarity") ? admin.from("clarity_behavior_metrics").select("metric_date, value, metric, count, sessions").eq("client_id", clientId).eq("dimension", "url").gte("metric_date", isoDaysAgo(30)).limit(5000) : null,
+    on("clarity") ? pagedRows((f, t) => admin.from("clarity_behavior_metrics").select("metric_date, value, metric, count, sessions").eq("client_id", clientId).eq("dimension", "url").gte("metric_date", isoDaysAgo(30)).order("metric_date").order("value").order("metric").range(f, t)) : null,
     SOCIAL_SOURCES.some(on) ? admin.from("dfs_cache").select("params_hash, data").eq("client_id", clientId).eq("endpoint", "social").limit(20) : null,
     on("seosignalx") ? admin.from("dfs_cache").select("data").eq("client_id", clientId).eq("endpoint", "seosignalx").eq("params_hash", "bundle").maybeSingle() : null,
   ]);

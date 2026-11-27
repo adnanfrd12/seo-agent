@@ -1,4 +1,5 @@
 import "server-only";
+import { pagedRows } from "@/lib/db/paged";
 import type { SupabaseClient } from "@supabase/supabase-js";
 import { toNum } from "@/lib/analytics/format";
 import { monthlyWins, notableDeclines, type Compared, type ReportData } from "@/lib/report/data";
@@ -145,8 +146,9 @@ export async function buildEvidence(
   // Clarity aggregates (latest 7 stored days) and human recording reviews
   const since = new Date(Date.now() - 7 * 86_400_000).toISOString().slice(0, 10);
   const [{ data: clarity }, { data: reviews }, { data: imported }] = await Promise.all([
-    admin.from("clarity_behavior_metrics").select("metric_date, dimension, value, metric, count, sessions_pct")
-      .eq("client_id", clientId).gte("metric_date", since).in("dimension", ["total", "url"]).limit(400),
+    // every row of the last 7 days (the old .limit(400) kept an arbitrary few hundred of several thousand)
+    pagedRows((f, t) => admin.from("clarity_behavior_metrics").select("metric_date, dimension, value, metric, count, sessions_pct")
+      .eq("client_id", clientId).gte("metric_date", since).in("dimension", ["total", "url"]).order("metric_date").order("value").order("metric").range(f, t)),
     admin.from("clarity_recording_reviews").select("id, page_url, device, friction_type, severity, observation, observed_on")
       .eq("client_id", clientId).order("created_at", { ascending: false }).limit(30),
     admin.from("imported_report_metrics").select("id, original_label, value_text, source_name, period_start, period_end, imported_reports!inner(file_name)")
