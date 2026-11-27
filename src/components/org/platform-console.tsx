@@ -2,8 +2,8 @@
 
 import { useMemo, useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
-import { Building2, LayoutGrid, Loader2, Plus, RefreshCw, UserPlus } from "lucide-react";
-import { addOwner, createOrganization, inviteOwner, resendOwnerInvite, saveEnabledPages } from "@/app/(dashboard)/settings/platform/actions";
+import { Building2, LayoutGrid, Loader2, Plus, RefreshCw, Trash2, UserPlus } from "lucide-react";
+import { addOwner, createOrganization, deleteOrganization, inviteOwner, resendOwnerInvite, saveEnabledPages } from "@/app/(dashboard)/settings/platform/actions";
 import { Dialog, DialogBody, DialogFooter, dialogBtn } from "@/components/dashboard/dialog";
 import { cn } from "@/lib/utils";
 import { Section } from "./section";
@@ -31,6 +31,8 @@ export function PlatformConsole({ orgs, options }: { orgs: PlatformOrg[]; option
   const [, start] = useTransition();
   const [pagesFor, setPagesFor] = useState<PlatformOrg | null>(null);
   const [ownerFor, setOwnerFor] = useState<PlatformOrg | null>(null);
+  const [deleteFor, setDeleteFor] = useState<PlatformOrg | null>(null);
+  const [typed, setTyped] = useState("");
   const [link, setLink] = useState<{ link: string; emailed: boolean; email: string } | null>(null);
   const total = useMemo(() => options.reduce((n, g) => n + g.sections.reduce((m, s) => m + s.pages.length, 0), 0), [options]);
 
@@ -112,12 +114,43 @@ export function PlatformConsole({ orgs, options }: { orgs: PlatformOrg[]; option
                 <button type="button" className={btn.secondary} disabled={busy !== null} onClick={() => { setOwnerFor(o); setResult(null); }}>
                   <UserPlus className="size-4" aria-hidden /> {INVITATIONS_ENABLED ? "Invite owner" : "Add owner"}
                 </button>
+                <button type="button" className={cn(btn.secondary, "hover:text-negative")} disabled={busy !== null} onClick={() => { setDeleteFor(o); setResult(null); }}
+                  aria-label={`Delete ${o.name}`} title="Delete organization">
+                  <Trash2 className="size-4" aria-hidden />
+                </button>
               </div>
             </li>
           ))}
         </ul>
       </Section>
 
+      {deleteFor && (
+        <Dialog open onClose={() => { if (busy !== "delete") { setDeleteFor(null); setTyped(""); } }} busy={busy === "delete"}
+          title={`Delete ${deleteFor.name}?`} description="This permanently deletes the organization and everything in it. It can't be undone.">
+          <form onSubmit={(e) => {
+            e.preventDefault();
+            run("delete", () => deleteOrganization(deleteFor.id, typed), (r) => { if (r.ok) { setDeleteFor(null); setTyped(""); } });
+          }}>
+            <DialogBody className="space-y-3 text-sm text-foreground">
+              <ul className="list-disc space-y-1 pl-5 text-secondary">
+                <li>{deleteFor.clients + deleteFor.archived} client{deleteFor.clients + deleteFor.archived === 1 ? "" : "s"} with all their data, connections and stored tokens</li>
+                <li>{deleteFor.members} member{deleteFor.members === 1 ? "" : "s"} lose access (their accounts are kept)</li>
+                <li>Its credentials, settings, branding and activity log</li>
+              </ul>
+              <label className={label}>Type <strong>{deleteFor.name}</strong> to confirm
+                <input value={typed} onChange={(e) => setTyped(e.target.value)} data-autofocus className={input} autoComplete="off" spellCheck={false} />
+              </label>
+              <Status result={result && !result.ok ? result : null} />
+            </DialogBody>
+            <DialogFooter>
+              <button type="button" className={dialogBtn.secondary} onClick={() => { setDeleteFor(null); setTyped(""); }} disabled={busy === "delete"}>Cancel</button>
+              <button className={cn(dialogBtn.primary, "bg-negative")} disabled={busy === "delete" || typed.trim() !== deleteFor.name}>
+                {busy === "delete" && <Loader2 className="size-4 animate-spin" aria-hidden />} Delete organization
+              </button>
+            </DialogFooter>
+          </form>
+        </Dialog>
+      )}
       {pagesFor && (
         <PagesDialog key={pagesFor.id} org={pagesFor} options={options} busy={busy === "pages"} onClose={() => setPagesFor(null)}
           onSave={(v) => run("pages", () => saveEnabledPages(pagesFor.id, v), (r) => { if (r.ok) setPagesFor(null); })} />

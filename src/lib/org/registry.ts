@@ -131,12 +131,6 @@ export const INTEGRATIONS: IntegrationDef[] = [
   },
   { id: "clarity", name: "Microsoft Clarity", category: "analytics", description: "Rage clicks, dead clicks, JavaScript errors and session recordings. Each client connects its own Clarity project token.", features: ["Clarity screen", "Recordings and errors"], fields: [], perClient: "Connect per client under Integrations → Microsoft Clarity (project Settings → Data export → token).", docsUrl: "https://learn.microsoft.com/en-us/clarity/setup-and-installation/clarity-data-export-api" },
   {
-    id: "treg", name: "treg.to (public social numbers)", category: "social",
-    description: "Public follower and post numbers for social accounts that aren't connected.",
-    features: ["Social media (public numbers)"],
-    fields: [f("TREG_API_KEY", "API key")], docsUrl: "https://treg.to", testable: false,
-  },
-  {
     id: "meta", name: "Meta (Facebook / Instagram) app", category: "social",
     description: "Your Meta app secrets, used to verify Meta's data-deletion and deauthorize callbacks.",
     features: ["Meta deauthorize and data deletion callbacks"],

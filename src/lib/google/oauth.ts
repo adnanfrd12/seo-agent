@@ -1,4 +1,5 @@
 import "server-only";
+import { appUrl } from "@/lib/app-url";
 import { createHash, randomBytes } from "node:crypto";
 import { serverEnv } from "@/lib/env";
 import { ConfigError, configForClient, type OrgConfig } from "@/lib/org/config";
@@ -53,7 +54,7 @@ export function gbpRedirectUri(cfg?: OrgConfig): string {
     }
     return override;
   }
-  return `${serverEnv().NEXT_PUBLIC_APP_URL}${GBP_CALLBACK_PATH}`;
+  return `${appUrl() || serverEnv().NEXT_PUBLIC_APP_URL}${GBP_CALLBACK_PATH}`;
 }
 
 /** The organization's OAuth client, or a ConfigError saying what an owner must add in Settings → Integrations. */

@@ -882,56 +882,6 @@ const SOURCES: Record<string, GuideSource> = {
     unverified: ["Whether a token can be viewed again after it's created."],
   },
 
-  treg: {
-    purpose: "Public follower and post numbers for social accounts that aren't connected (and for competitors), with nobody signing in.",
-    cost: "Pay per call from a prepaid balance (fractions of a cent per profile), no subscription. New verified accounts get $1 of free credit.",
-    time: "About 10 minutes.",
-    requirements: [
-      "A treg.to account (sign in with GitHub, Google or an emailed code).",
-      "A positive balance.",
-    ],
-    parts: [
-      {
-        title: "Create the account and add a balance",
-        steps: [
-          { text: "Go to https://treg.to, click **Start free** and sign in." },
-          { text: "Add balance under **Team → Billing**; automatic top-up is available." },
-        ],
-      },
-      {
-        title: "Create a team (agent) token",
-        steps: [
-          { text: "Create an API token for your team in the treg.to dashboard (see https://treg.to/docs). With treg's command-line tool, a developer can run `treg org agent-new seo-insights` instead; the token is shown once." },
-          { text: "Use a team (agent) token: {app} sends only the token, and a personal token may also need a team to be named." },
-        ],
-      },
-    ],
-    fields: { TREG_API_KEY: "A treg.to team (agent) token." },
-    test: [
-      "There's no Test connection for treg.to. Open **Social media** for a client with a profile that isn't connected and refresh it: numbers appear when the token works.",
-    ],
-    problems: [
-      { problem: "No numbers for profiles that aren't connected", fix: "Check the balance and that the token is a team (agent) token." },
-      { problem: "Empty answers for some profiles", fix: "Private or blocked profiles return nothing; failed or empty answers aren't charged." },
-    ],
-    renewal: [
-      "Tokens work until revoked. Keep the balance above zero.",
-    ],
-    checklist: [
-      "treg.to account created with balance",
-      "Team token created and saved in {app}",
-      "A public profile refreshed successfully",
-    ],
-    links: [
-      { label: "treg.to", url: "https://treg.to" },
-      { label: "treg.to documentation", url: "https://treg.to/docs" },
-    ],
-    unverified: [
-      "Where the API token is created in the treg.to web dashboard.",
-      "Whether a personal token works without naming a team.",
-    ],
-  },
-
   meta: {
     purpose: "Only needed when your organization connects Facebook and Instagram through its own Meta app (instead of Composio's shared app). Meta then sends deauthorize and data-deletion notices to {app}, signed with your app secret; {app} uses the secret to check they're genuine.",
     cost: "Free.",

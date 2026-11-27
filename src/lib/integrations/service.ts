@@ -1,4 +1,5 @@
 import "server-only";
+import { appUrl } from "@/lib/app-url";
 import type { Composio } from "@composio/core";
 import { composioConfigProblem, composioFor, entityId } from "@/lib/composio/client";
 import { ga4Adapter } from "@/lib/composio/ga4";
@@ -71,7 +72,7 @@ export async function startConnect(clientId: string, provider: ProviderId): Prom
   const key = authConfigKey(provider);
   const cfg = await configForClient(clientId);
   const request = await (async () => composioFor(cfg).connectedAccounts.link(entityId(clientId), cfg.require(key), {
-    callbackUrl: `${env.NEXT_PUBLIC_APP_URL}/api/integrations/${provider}/callback`,
+    callbackUrl: `${appUrl() || env.NEXT_PUBLIC_APP_URL}/api/integrations/${provider}/callback`,
   }))().catch((e: unknown) => { throw settingsError(e, key) ?? e; });
   if (!request.redirectUrl) throw new Error("Composio did not return a redirect URL");
 

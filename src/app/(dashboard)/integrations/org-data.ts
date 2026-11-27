@@ -1,4 +1,5 @@
 import "server-only";
+import { appUrl as deploymentUrl } from "@/lib/app-url";
 import type { SupabaseClient } from "@supabase/supabase-js";
 import type { CredentialStatus, CustomVarView, FieldView, IntegrationView } from "@/components/integrations/org/types";
 import { gbpRedirectUri } from "@/lib/google/oauth";
@@ -124,7 +125,7 @@ export async function loadOrgIntegrations(admin: SupabaseClient, orgId: string, 
     const day = new Date(at).toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric", timeZone });
     return by ? `${day} by ${by}` : day;
   };
-  const appUrl = (process.env.NEXT_PUBLIC_APP_URL ?? "").trim().replace(/\/+$/, "");
+  const appUrl = deploymentUrl();
   const categoryLabel = Object.fromEntries(CATEGORIES.map((c) => [c.id, c.label]));
 
   const integrations: IntegrationView[] = INTEGRATIONS.filter((d) => d.id !== "custom").map((def) => {

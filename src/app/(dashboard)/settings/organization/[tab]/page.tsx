@@ -4,7 +4,6 @@ import { AuditLog } from "@/components/org/audit-log";
 import { BrandingSettings } from "@/components/org/branding/branding-settings";
 import { ClientsManager } from "@/components/org/clients-manager";
 import { GeneralForm } from "@/components/org/general-form";
-import { IntegrationsSummary } from "@/components/org/integrations-summary";
 import { ORG_TABS, OrgNav } from "@/components/org/org-nav";
 import { OrgSwitcher } from "@/components/org/org-switcher";
 import { OrgCredentialsView } from "../../../integrations/org-credentials-view";
@@ -112,18 +111,9 @@ export default async function OrganizationSettingsPage({ params, searchParams }:
       );
       break;
     }
-    case "integrations": {
-      const clients = (await listOrgClients(admin, org.id)).filter((c) => !c.archivedAt);
-      const connected: Record<string, number> = {};
-      for (const c of clients) for (const i of c.integrations) if (i.status === "connected") connected[i.provider] = (connected[i.provider] ?? 0) + 1;
-      content = (
-        <>
-          <IntegrationsSummary orgId={org.id} canManageCredentials={can.manageCredentials(role)} connected={connected} clientCount={clients.length} />
-          <OrgCredentialsView orgId={org.id} orgName={org.name} role={role} platformAdmin={platformAdmin} sp={{ q: one(sp.q), category: one(sp.category), status: one(sp.status) }} />
-        </>
-      );
+    case "integrations":
+      content = <OrgCredentialsView orgId={org.id} orgName={org.name} role={role} platformAdmin={platformAdmin} />;
       break;
-    }
     case "preferences":
       content = <PreferencesForm orgId={org.id} canEdit={isAdmin} initial={{
         defaultRangeDays: [7, 30, 90].includes(Number(prefs.default_range_days)) ? Number(prefs.default_range_days) : 30,

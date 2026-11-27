@@ -123,3 +123,32 @@ export async function saveEnabledPages(orgId: string, input: { all: boolean; pag
     return { ok: true, message: pages === null ? "Every page is enabled." : `${pages.length} pages enabled.` };
   });
 }
+
+/**
+ * Permanently deletes an organization (platform super-admins; the exact name must be typed to confirm): each of its
+ * clients goes through the full workspace deletion (connections revoked, tokens and data removed), then the
+ * organization with its members, credentials, invitations, settings, audit log and branding files. People's
+ * accounts are kept (they may belong to other organizations).
+ */
+export async function deleteOrganization(orgId: string, confirmName: string): Promise<PlatformResult> {
+  return run(async () => {
+    if (!z.uuid().safeParse(orgId).success) return { ok: false, error: "Unknown organization." };
+    const { admin, userId } = await requirePlatformAdmin();
+    const { data: org } = await admin.from("organizations").select("id, name").eq("id", orgId).maybeSingle();
+    if (!org) return { ok: false, error: "That organization doesn't exist." };
+    if (String(confirmName ?? "").trim() !== org.name) return { ok: false, error: `Type the organization's name (${org.name}) to confirm.` };
+
+    const { deleteWorkspace } = await import("@/lib/compliance/deletion");
+    const { data: clients } = await admin.from("clients").select("id").eq("organization_id", orgId);
+    for (const c of clients ?? []) await deleteWorkspace(admin, c.id as string, "dashboard");
+
+    // branding files (logo, favicon) under org-assets/<orgId>/
+    const { data: files } = await admin.storage.from("org-assets").list(orgId, { limit: 1000 });
+    if (files?.length) await admin.storage.from("org-assets").remove(files.map((f) => `${orgId}/${f.name}`));
+
+    const { error } = await admin.from("organizations").delete().eq("id", orgId);
+    if (error) return { ok: false, error: "Couldn't delete the organization. Try again." };
+    console.info(`organization ${orgId} deleted by platform admin ${userId} (${clients?.length ?? 0} clients)`);
+    return { ok: true, message: `${org.name} and its ${clients?.length ?? 0} client${clients?.length === 1 ? "" : "s"} were deleted.` };
+  });
+}

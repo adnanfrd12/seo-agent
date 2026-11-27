@@ -90,6 +90,39 @@ export async function saveIntegrationCredentials(orgId: string, integrationId: s
   return { ok: true, message: `${def.name} saved (${n} ${n === 1 ? "value" : "values"} updated). Changes apply within 30 seconds.` };
 }
 
+/**
+ * Saves ONE field of an integration (Enter value → Set). Validated, encrypted and stored on its own: other fields of
+ * the integration don't have to be filled in yet (the integration shows as partly configured until they are).
+ * Takes effect within 30 seconds, no redeploy.
+ */
+export async function setIntegrationField(orgId: string, integrationId: string, key: string, value: string): Promise<ActionResult> {
+  const c = await context(orgId, can.manageCredentials, OWNERS_ONLY);
+  if ("error" in c) return { ok: false, error: c.error };
+  const def = typeof integrationId === "string" ? integrationById(integrationId) : undefined;
+  const field = def?.fields.find((f) => f.key === key);
+  if (!def || !field) return { ok: false, error: "That field doesn't belong to this integration." };
+  if (typeof value !== "string") return { ok: false, error: "Enter a value." };
+  const v = normalizeValue(key, value);
+  if (!v) return { ok: false, error: "Enter a value." };
+  const problem = checkValue(key, v);
+  if (problem) return { ok: false, error: problem };
+  const r = await setCredential(c.admin, c.orgId, c.userId, key, v);
+  refresh();
+  return r.ok ? { ok: true, message: `${field.label} saved.` } : { ok: false, error: r.error };
+}
+
+/** Removes ONE saved field of an integration (asks for confirmation in the page first). */
+export async function deleteIntegrationField(orgId: string, integrationId: string, key: string): Promise<ActionResult> {
+  const c = await context(orgId, can.manageCredentials, OWNERS_ONLY);
+  if ("error" in c) return { ok: false, error: c.error };
+  const def = typeof integrationId === "string" ? integrationById(integrationId) : undefined;
+  const field = def?.fields.find((f) => f.key === key);
+  if (!def || !field) return { ok: false, error: "That field doesn't belong to this integration." };
+  const r = await deleteCredential(c.admin, c.orgId, c.userId, key);
+  refresh();
+  return r.ok ? { ok: true, message: `${field.label} removed.` } : { ok: false, error: r.error };
+}
+
 /** Deletes every value this organization stored for an integration (values from the server environment stay). */
 export async function deleteIntegrationCredentials(orgId: string, integrationId: string): Promise<ActionResult> {
   const c = await context(orgId, can.manageCredentials, OWNERS_ONLY);
