@@ -43,14 +43,18 @@ export async function isPlatformAdmin(admin: SupabaseClient, userId: string): Pr
  * Resolves the organization for an action and checks the user's role there. `orgId` defaults to the organization
  * of the active client. Throws PermissionError with a user-facing message.
  */
-export async function requireOrg(check: (r: OrgRole | null) => boolean, orgId?: string, message = "You don't have permission to do that in this organization."): Promise<OrgContext> {
+export async function requireOrg(check: (r: OrgRole | null) => boolean, orgId?: string, message = "You don't have permission to do that in this organization.", opts: { platformAdmins?: boolean } = {}): Promise<OrgContext> {
   const { user, organization } = await getSession();
   const id = orgId ?? organization?.id;
   if (!id) throw new PermissionError("Choose an organization first.");
   const admin = createAdminClient();
   const [role, platform] = await Promise.all([roleIn(admin, id, user.id), isPlatformAdmin(admin, user.id)]);
-  if (!check(role)) throw new PermissionError(message);
-  return { admin, userId: user.id, orgId: id, role: role!, isPlatformAdmin: platform };
+  // platformAdmins: platform super-admins may also do it in any organization (used for integration credentials)
+  const asPlatform = Boolean(opts.platformAdmins && platform && !check(role));
+  if (!check(role) && !asPlatform) throw new PermissionError(message);
+  const { data: exists } = asPlatform ? await admin.from("organizations").select("id").eq("id", id).maybeSingle() : { data: { id } };
+  if (!exists) throw new PermissionError("That organization doesn't exist.");
+  return { admin, userId: user.id, orgId: id, role: asPlatform ? "owner" : role!, isPlatformAdmin: platform };
 }
 
 /**

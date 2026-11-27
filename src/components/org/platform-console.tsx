@@ -72,7 +72,9 @@ export function PlatformConsole({ orgs, options }: { orgs: PlatformOrg[]; option
               <div className="flex min-w-0 flex-1 basis-64 items-start gap-3">
                 <span className="grid size-9 shrink-0 place-items-center rounded-lg bg-surface-muted text-secondary"><Building2 className="size-4" aria-hidden /></span>
                 <div className="min-w-0">
-                  <p className="truncate text-sm font-medium">{o.name}</p>
+                  <p className="truncate text-sm font-medium">{o.name}
+                    <a href={`/settings/organization/integrations?org=${o.id}`} className="ml-2 text-xs font-normal text-secondary underline decoration-border-strong underline-offset-2 hover:text-foreground">Credentials</a>
+                  </p>
                   <p className="text-xs text-muted">
                     {o.members} member{o.members === 1 ? "" : "s"} ({o.owners} owner{o.owners === 1 ? "" : "s"}) · {o.clients} client{o.clients === 1 ? "" : "s"}{o.archived ? ` (+${o.archived} archived)` : ""} · since {date(o.createdAt)}
                   </p>

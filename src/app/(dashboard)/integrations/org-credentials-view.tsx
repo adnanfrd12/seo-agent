@@ -20,11 +20,12 @@ const FILTER_STATUSES: FilterStatus[] = ["configured", "partial", "missing"];
  * it), custom variables and the setup guides. Owners edit; admins see status and can run tests. The client
  * connections stay on the Integrations page in the sidebar.
  */
-export async function OrgCredentialsView({ orgId, orgName, role, sp }: {
-  orgId: string; orgName: string; role: OrgRole; sp: { q?: string; category?: string; status?: string };
+export async function OrgCredentialsView({ orgId, orgName, role, platformAdmin = false, sp }: {
+  orgId: string; orgName: string; role: OrgRole | null; platformAdmin?: boolean; sp: { q?: string; category?: string; status?: string };
 }) {
-  const owner = can.manageCredentials(role);
-  if (!can.manageSettings(role)) return null;
+  // owners, and platform super-admins for any organization, manage the credentials; admins view and test
+  const owner = can.manageCredentials(role) || platformAdmin;
+  if (!can.manageSettings(role) && !platformAdmin) return null;
   const admin = createAdminClient();
   const [orgData, branding] = await Promise.all([loadOrgIntegrations(admin, orgId, { owner }), getBranding(orgId).catch(() => null)]);
   const guideContext: GuideContext = {
@@ -55,7 +56,7 @@ export async function OrgCredentialsView({ orgId, orgName, role, sp }: {
           <h2 id="credentials-title" className="text-lg font-semibold tracking-[-0.01em]">Organization credentials</h2>
           <p className="mt-0.5 max-w-3xl text-sm leading-relaxed text-secondary">
             {owner
-              ? <>API keys and app credentials used for every client of <span className="font-medium text-foreground">{orgName}</span>. Values are encrypted and never shown again; only owners can see or change them.</>
+              ? <>API keys and app credentials used for every client of <span className="font-medium text-foreground">{orgName}</span>. Values are encrypted and never shown again; only owners (and platform administrators) can see or change them.</>
               : <>The integrations <span className="font-medium text-foreground">{orgName}</span> has set up. Only organization owners can see or change the credentials.</>}
             {" "}Each client&apos;s own accounts are connected on the <Link href="/integrations" className="text-foreground underline decoration-border-strong underline-offset-2 hover:decoration-foreground">Integrations</Link> page.
           </p>

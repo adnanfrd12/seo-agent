@@ -20,7 +20,7 @@ import { emailConfigured } from "@/lib/notify";
 import { listOrgClients } from "@/lib/org/clients";
 import { listInvitations } from "@/lib/org/invitations";
 import { listMembers, userDirectory } from "@/lib/org/members";
-import { can, roleIn } from "@/lib/org/permissions";
+import { can, isPlatformAdmin, roleIn } from "@/lib/org/permissions";
 import { createAdminClient } from "@/lib/supabase/admin";
 
 export const metadata: Metadata = { title: "Organization settings" };
@@ -39,15 +39,25 @@ export default async function OrganizationSettingsPage({ params, searchParams }:
   if (!tab) notFound();
 
   const { user, client, organizations, organization } = await getSession();
+  const admin = createAdminClient();
   const wanted = one(sp.org);
-  const current = (wanted && organizations.find((o) => o.id === wanted)) || organization || organizations[0];
+  const platformAdmin = await isPlatformAdmin(admin, user.id);
+  // platform super-admins may open any organization (?org=), for its integration credentials
+  let current: { id: string; name: string } | undefined = (wanted && organizations.find((o) => o.id === wanted)) || undefined;
+  if (!current && wanted && platformAdmin && /^[0-9a-f-]{36}$/i.test(wanted)) {
+    const { data } = await admin.from("organizations").select("id, name").eq("id", wanted).maybeSingle();
+    if (data) current = { id: data.id as string, name: data.name as string };
+  }
+  current ??= organization ?? organizations[0];
   if (!current) {
     return <Note>You aren&apos;t a member of an organization. Ask an organization owner to invite you.</Note>;
   }
-  const admin = createAdminClient();
   // the live role (the session's list is cached for a minute)
   const role = await roleIn(admin, current.id, user.id);
-  if (!role) return <Note tone="warn">You no longer have access to {current.name}.</Note>;
+  if (!role && !platformAdmin) return <Note tone="warn">You no longer have access to {current.name}.</Note>;
+  if (!role && tab.id !== "integrations") {
+    return <Note>You aren&apos;t a member of {current.name}. As a platform administrator you can manage its <a className="underline" href={`/settings/organization/integrations?org=${current.id}`}>integration credentials</a>.</Note>;
+  }
   const isAdmin = can.manageSettings(role);
   const orgParam = current.id !== organization?.id ? current.id : null;
   const href = (t: string) => `/settings/organization/${t}${orgParam ? `?org=${orgParam}` : ""}`;
@@ -78,7 +88,7 @@ export default async function OrganizationSettingsPage({ params, searchParams }:
       const [members, invitations, clients] = await Promise.all([listMembers(admin, org.id), listInvitations(admin, org.id), listOrgClients(admin, org.id)]);
       const inviters = await userDirectory(admin, invitations.map((i) => i.invitedBy));
       content = (
-        <TeamManager orgId={org.id} me={{ userId: user.id, role }} emailEnabled={emailConfigured()}
+        <TeamManager orgId={org.id} me={{ userId: user.id, role: role! }} emailEnabled={emailConfigured()}
           members={members}
           invitations={invitations.map((i) => {
             const by = i.invitedBy ? inviters.get(i.invitedBy) : undefined;
@@ -94,7 +104,7 @@ export default async function OrganizationSettingsPage({ params, searchParams }:
     case "clients": {
       const [clients, members] = await Promise.all([listOrgClients(admin, org.id), listMembers(admin, org.id)]);
       content = (
-        <ClientsManager orgId={org.id} canEdit={can.manageClients(role)} myRole={role} activeClientId={client?.id ?? null} timezones={timezones()}
+        <ClientsManager orgId={org.id} canEdit={can.manageClients(role)} myRole={role!} activeClientId={client?.id ?? null} timezones={timezones()}
           defaults={{ timezone: org.timezone, rangeDays: [7, 30, 90].includes(Number(prefs.default_range_days)) ? Number(prefs.default_range_days) : 30 }}
           clients={clients.map((c) => ({ id: c.id, name: c.name, timezone: c.timezone, defaultRangeDays: c.defaultRangeDays, createdAt: c.createdAt, archivedAt: c.archivedAt,
             integrations: c.integrations.map((i) => ({ provider: i.provider, status: i.status })), access: c.access }))}
@@ -109,7 +119,7 @@ export default async function OrganizationSettingsPage({ params, searchParams }:
       content = (
         <>
           <IntegrationsSummary orgId={org.id} canManageCredentials={can.manageCredentials(role)} connected={connected} clientCount={clients.length} />
-          <OrgCredentialsView orgId={org.id} orgName={org.name} role={role} sp={{ q: one(sp.q), category: one(sp.category), status: one(sp.status) }} />
+          <OrgCredentialsView orgId={org.id} orgName={org.name} role={role} platformAdmin={platformAdmin} sp={{ q: one(sp.q), category: one(sp.category), status: one(sp.status) }} />
         </>
       );
       break;

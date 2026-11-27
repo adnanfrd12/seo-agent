@@ -23,7 +23,8 @@ async function context(orgId: unknown, check: (r: OrgRole | null) => boolean, me
   const id = orgIdSchema.safeParse(orgId);
   if (!id.success) return { error: "Choose an organization first." };
   try {
-    return await requireOrg(check, id.data, message);
+    // platform super-admins manage every organization's credentials too
+    return await requireOrg(check, id.data, message, { platformAdmins: true });
   } catch (e) {
     if (e instanceof PermissionError) return { error: e.message };
     throw e;
