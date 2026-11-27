@@ -7,23 +7,44 @@ import { SEC_ENDPOINT, type SecAi, type SecAudit } from "./security";
 
 export const SEC_AI_MODEL = AI_MODEL;
 
-const SYSTEM = "You are a web security consultant writing for the owner of a small business website and the person who maintains it. " +
-  "You get the results of a passive security check of their site. Write a short, prioritised fix plan in Markdown: " +
-  "a 2-sentence summary, then '## Fix first' / '## Then' / '## When you have time' sections with numbered steps. " +
-  "Each step names the issue, the exact change (menu path, plugin setting, or config line) and how to confirm it worked. " +
-  "Use the evidence given; tailor steps to the detected server/CDN and to WordPress when it is WordPress. " +
-  "Never invent findings that are not in the input and do not suggest attacking or testing the site aggressively. Under 450 words.";
+const SYSTEM = "You are a senior website security auditor writing for the owner of a small business website and the person who maintains it. " +
+  "You get (1) the results of automated passive checks of their site and (2) raw evidence of what a browser sees on the home page: response headers, " +
+  "every script and stylesheet address (WordPress plugin and theme versions appear as ?ver= and in /wp-content/plugins/<name>/ paths), third-party hosts, iframes, forms and the start of each inline script. " +
+  "Do a real security audit from this: confirm or qualify each failing check, and look in the raw evidence for what the automated checks can't judge: " +
+  "plugins, themes or libraries with versions that have known vulnerabilities (say which and why, and only when you are confident), abandoned or risky plugins, " +
+  "third-party scripts from unknown, suspicious or unnecessary domains, forms that post insecurely or to other sites, signs of spam injection, malware or cryptominers, " +
+  "redirect tricks, exposed admin or login paths, and information leaks in headers. " +
+  "Reply in Markdown with exactly these sections: " +
+  "'## Overall risk' (one of Low / Medium / High / Critical, then 2 sentences why), " +
+  "'## Findings' (one '### [High|Medium|Low] <title>' per finding, each with **Evidence:** quoting the exact header, address or check result, and **Fix:** numbered steps naming the menu path, plugin setting or config line, tailored to the detected server/CDN and to WordPress when it is WordPress), " +
+  "'## Fix order' (a short numbered list: what to do first, then, and when there's time), " +
+  "'## What looks good' (2-4 bullets). " +
+  "Base every finding on the evidence given and say how sure you are when it depends on a version you can't confirm. Never invent findings, " +
+  "never suggest attacking, exploiting or aggressively testing the site. Under 900 words.";
 
-/** The user message for the fix plan, built from the failing and warning checks only. */
+/** The user message: every check (failing ones in full) plus the raw home-page evidence. */
 export function buildSecurityPrompt(a: SecAudit, clientName: string): string {
   const bad = a.checks.filter((c) => c.status === "fail" || c.status === "warn");
+  const ok = a.checks.filter((c) => c.status === "pass").map((c) => c.title);
+  const r = a.raw;
+  const block = (title: string, xs: string[] | undefined) => (xs?.length ? [`${title}:`, ...xs.map((x) => `- ${x}`)] : [`${title}: none`]);
   return [
     `Business: ${clientName}`, `Website: ${a.finalUrl ?? a.domain}`,
-    `Platform: ${a.wordpress ? `WordPress${a.wpVersion ? ` ${a.wpVersion}` : ""}` : "not WordPress"}; server headers: ${a.server ?? "not shown"}`,
-    `Score ${a.score}/100; ${a.passed} of ${a.total} checks pass.`, "",
-    "Issues found:",
-    ...bad.map((c) => `- [${c.severity}/${c.status}] ${c.title}: ${c.evidence}`),
-  ].join("\n");
+    `Platform: ${a.wordpress ? `WordPress${a.wpVersion ? ` ${a.wpVersion}` : ""}` : "not WordPress"}; server headers: ${a.server ?? "not shown"}${r?.generator ? `; generator: ${r.generator}` : ""}`,
+    `Automated score ${a.score}/100; ${a.passed} of ${a.total} checks pass.`, "",
+    "FAILING OR WARNING CHECKS:",
+    ...bad.map((c) => `- [${c.severity}/${c.status}] ${c.group} · ${c.title}: ${c.evidence}`),
+    "", `PASSING CHECKS: ${ok.join("; ")}`, "",
+    ...(r ? [
+      "RAW EVIDENCE FROM THE HOME PAGE:",
+      "Response headers:", ...Object.entries(r.headers).map(([k, v]) => `- ${k}: ${v}`),
+      ...block("Scripts and stylesheets", r.assets),
+      ...block("Third-party hosts", r.thirdParty),
+      ...block("Iframes", r.iframes),
+      ...block("Forms (method → action)", r.forms),
+      ...block("Inline scripts (start)", r.inlineScripts),
+    ] : ["(No raw evidence stored for this audit: run the audit again for a full review.)"]),
+  ].join("\n").slice(0, 60_000);
 }
 
 /** The text of a Messages API reply, or an error for a refusal / empty answer. */
@@ -38,7 +59,7 @@ export function planText(res: Pick<Anthropic.Message, "content" | "stop_reason">
 export async function explainSecurity(admin: SupabaseClient, clientId: string, clientName: string, audit: SecAudit): Promise<SecAi> {
   const claude = await anthropicFor(clientId);
   const res = await claude.messages.create({
-    model: SEC_AI_MODEL, max_tokens: 4000, output_config: { effort: "low" }, system: SYSTEM,
+    model: SEC_AI_MODEL, max_tokens: 8000, output_config: { effort: "medium" }, system: SYSTEM,
     messages: [{ role: "user", content: buildSecurityPrompt(audit, clientName) }],
   });
   const cost = Number(costUsd(res.usage).toFixed(5));

@@ -76,7 +76,7 @@ export function SecurityAuditSection({ audit, ai, canEdit }: { audit: SecAudit |
     <div className="mb-3 flex flex-wrap items-start justify-between gap-3">
       <div>
         <h2 className="text-base font-semibold">Security audit</h2>
-        <p className="text-xs text-muted">Passive checks a browser could make: HTTPS, security headers, exposed files, {audit?.wordpress ? "WordPress, " : ""}email DNS. Re-checked monthly.</p>
+        <p className="text-xs text-muted">Passive checks a browser could make: HTTPS, security headers, exposed files, {audit?.wordpress ? "WordPress, " : ""}email DNS, spam injection and cloaking, then Claude&apos;s audit of the results. Re-checked monthly.</p>
       </div>
       <SecurityRun canEdit={canEdit} label={audit ? "Run security audit" : "Run security audit now"} />
     </div>
@@ -105,13 +105,13 @@ export function SecurityAuditSection({ audit, ai, canEdit }: { audit: SecAudit |
           {prev.length > 0 && (
             <p className="text-xs text-muted">Earlier: {prev.map((h) => <span key={h.at} className="mr-2 whitespace-nowrap"><span className="font-semibold tabular-nums" style={{ color: lhColor(h.score) }}>{h.score}</span> {day(h.at)}</span>)}</p>
           )}
-          {issues.length > 0 && <SecurityAiButton canEdit={canEdit} has={Boolean(ai)} />}
+          <SecurityAiButton canEdit={canEdit} has={Boolean(ai)} />
         </div>
       </div>
 
       {ai && (
         <details className="mt-4 rounded-lg border border-hairline p-4" open>
-          <summary className="cursor-pointer text-sm font-semibold">AI fix plan <span className="font-normal text-muted">· {day(ai.at)}{ai.auditAt !== audit.checkedAt ? " · written for an earlier audit" : ""}</span></summary>
+          <summary className="cursor-pointer text-sm font-semibold">Claude security audit <span className="font-normal text-muted">· {day(ai.at)}{ai.auditAt !== audit.checkedAt ? " · written for an earlier audit" : ""}</span></summary>
           <div className="mt-3 min-w-0"><Markdown text={ai.text} /></div>
         </details>
       )}

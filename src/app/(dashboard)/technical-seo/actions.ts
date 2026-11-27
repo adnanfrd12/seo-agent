@@ -9,7 +9,7 @@ import { explainCheck, fixKey, loadCheckFixes, type CheckFix } from "@/lib/techn
 import { loadTechnical } from "@/lib/technical/load";
 import { loadSecurity, runSecurityAudit, siteDomain } from "@/lib/technical/security";
 import { explainSecurity } from "@/lib/technical/security-ai";
-import { aiErrorMessage } from "@/lib/ai/claude";
+import { aiErrorMessage, aiUnavailable } from "@/lib/ai/claude";
 import { budgetMessage, claudeBudget } from "@/lib/ai/usage";
 
 type Result = { ok: true; message: string } | { ok: false; error: string };
@@ -31,21 +31,34 @@ export async function runTechnicalChecksNow(): Promise<Result> {
   }
 }
 
-/** Passive security audit of the client's website (free, about 15 seconds). Owners and admins only. */
+/**
+ * Security audit of the client's website: the passive checks (free, about 20 seconds), then Claude audits the
+ * results and the raw evidence (counts toward the monthly Claude budget; skipped with a note when AI isn't set up
+ * or the budget is used up). Owners and admins only.
+ */
 export async function runSecurityAuditNow(): Promise<Result> {
   const { client } = await getSession();
   if (!client) return { ok: false, error: "No client selected." };
   if (!["owner", "admin"].includes(client.role)) return { ok: false, error: "Only owners and admins can run the security audit." };
+  let base = "";
   try {
     const db = createAdminClient();
     const domain = await siteDomain(db, client.id);
     if (!domain) return { ok: false, error: "Set the client's website first." };
     const a = await runSecurityAudit(db, client.id, domain);
-    revalidatePath("/technical-seo");
+    revalidatePath("/technical-seo"); revalidatePath("/security-audit");
     if (a.error) return { ok: false, error: a.error };
     const issues = a.counts.high + a.counts.medium + a.counts.low + a.counts.info;
-    return { ok: true, message: `Security audit of ${a.domain}: score ${a.score}/100, ${issues} issue${issues === 1 ? "" : "s"} (free).` };
-  } catch {
+    base = `Security audit of ${a.domain}: score ${a.score}/100, ${issues} issue${issues === 1 ? "" : "s"}.`;
+    const noAi = await aiUnavailable(client.id);
+    if (noAi) return { ok: true, message: `${base} Claude's review was skipped: ${noAi}` };
+    const b = await claudeBudget(db, client.id);
+    if (b.left <= 0) return { ok: true, message: `${base} Claude's review was skipped: ${budgetMessage(b.budget)}` };
+    const r = await explainSecurity(db, client.id, client.name, a);
+    revalidatePath("/security-audit");
+    return { ok: true, message: `${base} Claude audited it (AI cost $${r.cost.toFixed(3)}).` };
+  } catch (e) {
+    if (base) return { ok: true, message: `${base} Claude's review failed: ${aiErrorMessage(e)}` };
     return { ok: false, error: "The security audit couldn't run. Try again in a few minutes." };
   }
 }
@@ -59,12 +72,11 @@ export async function explainSecurityAi(): Promise<Result> {
     const db = createAdminClient();
     const { audit } = await loadSecurity(db, client.id);
     if (!audit || audit.error) return { ok: false, error: "Run the security audit first." };
-    if (!audit.checks.some((c) => c.status === "fail" || c.status === "warn")) return { ok: false, error: "Nothing to fix: every check passes." };
     const b = await claudeBudget(db, client.id);
     if (b.left <= 0) return { ok: false, error: budgetMessage(b.budget) };
     const r = await explainSecurity(db, client.id, client.name, audit);
-    revalidatePath("/technical-seo");
-    return { ok: true, message: `Fix plan written (AI cost $${r.cost.toFixed(4)}).` };
+    revalidatePath("/technical-seo"); revalidatePath("/security-audit");
+    return { ok: true, message: `Claude security audit written (AI cost $${r.cost.toFixed(3)}).` };
   } catch (e) {
     return { ok: false, error: aiErrorMessage(e) };
   }

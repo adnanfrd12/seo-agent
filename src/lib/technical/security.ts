@@ -30,8 +30,46 @@ export interface SecAudit {
   checkedAt: string; domain: string; finalUrl: string | null; wordpress: boolean; wpVersion: string | null; server: string | null;
   requests: number; score: number | null; counts: Record<Severity, number>; passed: number; total: number;
   checks: SecCheck[]; error?: string; history: SecHistory[];
+  /** what a browser sees, for Claude's review (trimmed) */
+  raw?: SecRaw;
 }
 export interface SecAi { at: string; auditAt: string; text: string; model: string; cost: number }
+
+/** The home page as a browser sees it, trimmed, so Claude can review what the fixed checks can't judge. */
+export interface SecRaw {
+  headers: Record<string, string>;
+  /** every script and stylesheet address (WordPress plugin / theme versions show in ?ver=) */
+  assets: string[];
+  /** other websites the page loads from or links to */
+  thirdParty: string[];
+  iframes: string[];
+  /** form method and target */
+  forms: string[];
+  /** the start of each inline script */
+  inlineScripts: string[];
+  generator: string | null;
+}
+
+/** Collects SecRaw from the home page (no extra requests). */
+function rawEvidence(html: string, pageUrl: string, h: Headers | null): SecRaw {
+  const own = new URL(pageUrl).hostname.replace(/^www\./, "");
+  const abs = (u: string) => { try { return new URL(u.replace(/&amp;/g, "&"), pageUrl).toString(); } catch { return null; } };
+  const all = (re: RegExp) => [...html.matchAll(re)].map((m) => abs(m[1])).filter((x): x is string => Boolean(x));
+  const assets = [...new Set([...all(/<script\b[^>]*\bsrc\s*=\s*["']([^"']+)["']/gi), ...all(/<link\b[^>]*rel\s*=\s*["']stylesheet["'][^>]*href\s*=\s*["']([^"']+)["']/gi)])];
+  const hosts = (xs: string[]) => [...new Set(xs.map((u) => { try { return new URL(u).hostname.replace(/^www\./, ""); } catch { return ""; } }).filter((x) => x && x !== own && !x.endsWith(`.${own}`)))];
+  const links = all(/<a\b[^>]*href\s*=\s*["'](https?:[^"']+)["']/gi);
+  const headers: Record<string, string> = {};
+  h?.forEach((v, k) => { if (k !== "set-cookie") headers[k] = v.slice(0, 300); });
+  return {
+    headers,
+    assets: assets.slice(0, 80),
+    thirdParty: hosts([...assets, ...links, ...all(/<iframe\b[^>]*\bsrc\s*=\s*["']([^"']+)["']/gi)]).slice(0, 60),
+    iframes: all(/<iframe\b[^>]*\bsrc\s*=\s*["']([^"']+)["']/gi).slice(0, 20),
+    forms: [...html.matchAll(/<form\b([^>]*)>/gi)].map((m) => `${m[1].match(/method\s*=\s*["']?(\w+)/i)?.[1] ?? "get"} → ${m[1].match(/action\s*=\s*["']([^"']*)["']/i)?.[1] || "(same page)"}`).slice(0, 15),
+    inlineScripts: [...html.matchAll(/<script\b(?![^>]*\bsrc=)[^>]*>([\s\S]*?)<\/script>/gi)].map((m) => m[1].replace(/\s+/g, " ").trim()).filter((x) => x.length > 20).map((x) => x.slice(0, 220)).slice(0, 25),
+    generator: html.match(/<meta[^>]+name=["']generator["'][^>]+content=["']([^"']+)/i)?.[1] ?? null,
+  };
+}
 
 interface Got { status: number | null; headers: Headers | null; body: string; url: string; location: string | null; error?: string }
 
@@ -390,6 +428,7 @@ export async function auditSite(domain: string, opts: { previous?: SecHistory[] 
     checkedAt, domain, finalUrl: home.url, wordpress, wpVersion, server, requests: MAX_REQUESTS - budget.left, score, counts,
     passed: sorted.filter((c) => c.status === "pass").length, total: sorted.length, checks: sorted,
     history: [{ at: checkedAt, score, failing: counted.length }, ...(opts.previous ?? [])].slice(0, 12),
+    raw: rawEvidence(html, home.url, h),
   };
 }
 

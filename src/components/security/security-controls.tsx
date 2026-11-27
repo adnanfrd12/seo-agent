@@ -30,9 +30,10 @@ export function SecurityRun({ canEdit, label = "Run security audit" }: { canEdit
   return (
     <div className="space-y-1.5">
       <button className="inline-flex items-center gap-1.5 rounded-lg bg-accent px-3 py-1.5 text-sm font-medium text-accent-foreground hover:opacity-90 disabled:opacity-60" disabled={pending} onClick={run}>
-        {pending ? <Loader2 className="size-4 animate-spin" /> : <ShieldCheck className="size-4" />} {label} <span className="opacity-70">(free)</span>
+        {pending ? <Loader2 className="size-4 animate-spin" /> : <ShieldCheck className="size-4" />} {label}
       </button>
-      {pending && <p className="text-xs text-muted">Checking HTTPS, headers, exposed files and DNS. About 15 seconds.</p>}
+      {pending ? <p className="text-xs text-muted">Running the checks (about 20 seconds), then Claude audits the results (about a minute).</p>
+        : <p className="text-xs text-muted">Checks are free; Claude&apos;s audit counts toward the monthly Claude budget.</p>}
       <Msg m={msg} />
     </div>
   );
@@ -45,9 +46,9 @@ export function SecurityAiButton({ canEdit, has }: { canEdit: boolean; has: bool
   return (
     <div className="space-y-1.5">
       <button className="inline-flex items-center gap-1.5 rounded-lg border border-border bg-surface px-3 py-1.5 text-sm font-medium hover:bg-surface-muted disabled:opacity-60" disabled={pending} onClick={run}>
-        {pending ? <Loader2 className="size-4 animate-spin" /> : <Sparkles className="size-4 text-accent" />} {has ? "Rewrite fix plan with AI" : "Explain & fix with AI"}
+        {pending ? <Loader2 className="size-4 animate-spin" /> : <Sparkles className="size-4 text-accent" />} {has ? "Run Claude's audit again" : "Audit with Claude"}
       </button>
-      {pending && <p className="text-xs text-muted">Writing a fix plan for this site. About 30 seconds.</p>}
+      {pending && <p className="text-xs text-muted">Claude is auditing the checks and the raw evidence. About a minute.</p>}
       <Msg m={msg} />
     </div>
   );
