@@ -6,7 +6,7 @@ import { fixFor, type FixCtx, type HostKind, type SecFix } from "./security-fixe
 
 export type Severity = "high" | "medium" | "low" | "info";
 export type SecStatus = "pass" | "fail" | "warn" | "unknown";
-export type SecGroup = "HTTPS" | "Headers" | "Exposure" | "Code" | "WordPress" | "Email";
+export type SecGroup = "HTTPS" | "Headers" | "Exposure" | "Code" | "WordPress" | "Email" | "Spam & hacks";
 export interface SecCheck { id: string; title: string; group: SecGroup; severity: Severity; status: SecStatus; evidence: string; why: string; fix: SecFix }
 
 export const SEV_ORDER: Severity[] = ["high", "medium", "low", "info"];
@@ -138,6 +138,11 @@ export const CHECKS: Record<string, { title: string; group: SecGroup; severity: 
   wp_readme: { title: "WordPress readme.html", group: "WordPress", severity: "low", why: "Confirms the site runs WordPress to automated scanners." },
   wp_user_enum: { title: "Username discovery", group: "WordPress", severity: "medium", why: "Listed usernames are half of what a password-guessing attack needs." },
   wp_xmlrpc: { title: "XML-RPC enabled", group: "WordPress", severity: "medium", why: "XML-RPC lets attackers try hundreds of passwords in a single request." },
+  spam_content: { title: "Casino, adult or pharma content", group: "Spam & hacks", severity: "high", why: "Hacked sites get stuffed with gambling, porn or pill keywords; Google can flag the site as hacked and drop it from results." },
+  spam_links: { title: "Hidden or spammy outbound links", group: "Spam & hacks", severity: "high", why: "Injected links to casino, porn or pharma sites (often hidden with CSS) are the most common sign of a hacked WordPress site and lead to Google penalties." },
+  cloaking: { title: "Different content shown to Google (cloaking)", group: "Spam & hacks", severity: "high", why: "Many hacks show spam only to Googlebot, so the owner never sees it while Google indexes it." },
+  spam_pages: { title: "Spam pages in the sitemap", group: "Spam & hacks", severity: "high", why: "Hacks create thousands of casino / pharma / Japanese-keyword pages and add them to the sitemap so Google indexes them." },
+  injected_scripts: { title: "Obfuscated or injected scripts", group: "Spam & hacks", severity: "high", why: "Encoded scripts (eval/atob, packed code) and scripts that redirect visitors are how malware and spam redirects are hidden in a site." },
 };
 
 export function makeCheck(id: string, status: SecStatus, evidence: string, ctx: FixCtx, severity?: Severity): SecCheck {
@@ -149,4 +154,92 @@ export function makeCheck(id: string, status: SecStatus, evidence: string, ctx: 
 export function sortChecks(xs: SecCheck[]): SecCheck[] {
   const rank: Record<SecStatus, number> = { fail: 0, warn: 1, unknown: 2, pass: 3 };
   return [...xs].sort((a, b) => rank[a.status] - rank[b.status] || SEV_ORDER.indexOf(a.severity) - SEV_ORDER.indexOf(b.severity));
+}
+
+/* ------------------------------------------------------------------ spam & hack detection (casino, adult, pharma) */
+/** Words that hacked sites are stuffed with. Matched as whole words, case-insensitive. */
+export const SPAM_TERMS: { cat: "gambling" | "adult" | "pharma" | "scam"; re: RegExp }[] = [
+  { cat: "gambling", re: /\b(online casino|casino online|casino bonus|free spins|slot gacor|slot online|online slots?|judi online|togel|sportsbook|betting tips|bet365|1xbet|poker online|online poker|roulette online|baccarat|situs slot|gacor|maxwin)\b/gi },
+  { cat: "adult", re: /\b(porn|porno|pornhub|xvideos|xnxx|xxx videos?|sex videos?|sex cams?|live sex|escort services?|call girls?|hentai|nude (girls|pics|videos?)|onlyfans leaks?)\b/gi },
+  { cat: "pharma", re: /\b(viagra|cialis|levitra|kamagra|tadalafil|sildenafil|buy (tramadol|xanax|oxycodone|adderall)|online pharmacy|cheap pills?)\b/gi },
+  { cat: "scam", re: /\b(payday loans?|replica (watches|handbags)|cheap (ugg|nike|louboutin)|essay writing service|buy (instagram|tiktok) followers)\b/gi },
+];
+/** Japanese / Chinese / Korean characters (the "Japanese keyword hack" on a site that isn't written in them). */
+const CJK = /[\u3040-\u30ff\u3400-\u9fff\uac00-\ud7af]/;
+
+export interface SpamHit { term: string; cat: string; n: number }
+/** Spam words in a text, counted per word (lower-case). */
+export function spamTerms(text: string): SpamHit[] {
+  const m = new Map<string, SpamHit>();
+  for (const t of SPAM_TERMS) for (const x of text.matchAll(t.re)) { const k = x[0].toLowerCase(); const h = m.get(k) ?? { term: k, cat: t.cat, n: 0 }; h.n++; m.set(k, h); }
+  return [...m.values()].sort((a, b) => b.n - a.n);
+}
+
+const strip = (html: string) => html.replace(/<script[\s\S]*?<\/script>/gi, " ").replace(/<style[\s\S]*?<\/style>/gi, " ").replace(/<!--[\s\S]*?-->/g, " ");
+const textOf = (html: string) => strip(html).replace(/<[^>]+>/g, " ").replace(/&[a-z#0-9]+;/gi, " ").replace(/\s+/g, " ");
+const hostOfUrl = (u: string, base: string) => { try { return new URL(u, base).hostname.replace(/^www\./, "").toLowerCase(); } catch { return null; } };
+/** CSS tricks used to hide injected links from visitors (but not from Google). */
+const HIDDEN = /(display\s*:\s*none|visibility\s*:\s*hidden|font-size\s*:\s*0(px)?\s*[;"']|(left|top|text-indent)\s*:\s*-\d{3,}px|height\s*:\s*0(px)?\s*;\s*overflow\s*:\s*hidden|opacity\s*:\s*0\s*[;"'])/i;
+
+export interface SpamScan {
+  /** spam words in the visible text */
+  terms: SpamHit[];
+  /** links to other sites whose address or text is spam */
+  spamLinks: { href: string; text: string }[];
+  /** links to other sites inside a hidden block */
+  hiddenLinks: { href: string; text: string }[];
+  /** obfuscated or redirecting inline scripts (short excerpts) */
+  scripts: string[];
+  /** CJK characters in a page that isn't written in CJK */
+  cjk: boolean;
+}
+
+/** One page's HTML checked for the signs of a casino / adult / pharma hack. `pageUrl` is the page's own address. */
+export function spamScan(html: string, pageUrl: string): SpamScan {
+  const own = hostOfUrl(pageUrl, pageUrl) ?? "";
+  const clean = strip(html);
+  const terms = spamTerms(textOf(html));
+  const spamLinks: SpamScan["spamLinks"] = [], hiddenLinks: SpamScan["hiddenLinks"] = [];
+  for (const a of clean.matchAll(/<a\b([^>]*)>([\s\S]{0,300}?)<\/a>/gi)) {
+    const href = a[1].match(/href\s*=\s*["']([^"']+)["']/i)?.[1];
+    if (!href || /^(#|mailto:|tel:|javascript:)/i.test(href)) continue;
+    const host = hostOfUrl(href, pageUrl);
+    if (!host || host === own || host.endsWith(`.${own}`)) continue;
+    const text = a[2].replace(/<[^>]+>/g, " ").replace(/\s+/g, " ").trim().slice(0, 80);
+    if (spamTerms(`${href} ${text}`.replace(/[-_/.]+/g, " ")).length) spamLinks.push({ href, text });
+  }
+  // links inside elements hidden with CSS (up to the element's closing tag, at most 3,000 characters)
+  for (const h of clean.matchAll(/<(div|span|p|section|ul|li|font)\b[^>]*style\s*=\s*["'][^"']*["'][^>]*>/gi)) {
+    if (!HIDDEN.test(h[0])) continue;
+    const start = h.index! + h[0].length;
+    const end = clean.toLowerCase().indexOf(`</${h[1].toLowerCase()}>`, start);
+    const block = clean.slice(start, end < 0 ? start + 3000 : Math.min(end, start + 3000));
+    for (const a of block.matchAll(/<a\b[^>]*href\s*=\s*["']([^"']+)["'][^>]*>([\s\S]{0,120}?)<\/a>/gi)) {
+      const host = hostOfUrl(a[1], pageUrl);
+      if (host && host !== own && !host.endsWith(`.${own}`)) hiddenLinks.push({ href: a[1], text: a[2].replace(/<[^>]+>/g, " ").trim().slice(0, 80) });
+    }
+  }
+  const scripts: string[] = [];
+  for (const s of html.matchAll(/<script\b(?![^>]*\bsrc=)[^>]*>([\s\S]*?)<\/script>/gi)) {
+    const code = s[1];
+    const bad = /eval\s*\(\s*(atob|unescape|decodeURIComponent|String\.fromCharCode)\s*\(/i.test(code)
+      || /eval\s*\(\s*function\s*\(\s*p\s*,\s*a\s*,\s*c\s*,\s*k\s*,\s*e\s*,\s*[dr]\s*\)/.test(code)
+      || /document\.write\s*\(\s*unescape\s*\(/i.test(code)
+      || (code.match(/String\.fromCharCode\(/g)?.length ?? 0) >= 5
+      || /[A-Za-z0-9+/]{400,}={0,2}/.test(code) && /atob|eval/.test(code)
+      || (/(window|document|top)\.location(\.href)?\s*=|location\.replace\(/.test(code) && spamTerms(code.replace(/[-_/.]+/g, " ")).length > 0);
+    if (bad) scripts.push(code.replace(/\s+/g, " ").trim().slice(0, 120));
+  }
+  const lang = (html.match(/<html[^>]*\blang\s*=\s*["']?([a-z]{2})/i)?.[1] ?? "").toLowerCase();
+  const cjk = !["ja", "zh", "ko"].includes(lang) && CJK.test(textOf(html).slice(0, 200_000));
+  return { terms, spamLinks: dedupe(spamLinks), hiddenLinks: dedupe(hiddenLinks), scripts, cjk };
+}
+const dedupe = <T extends { href: string }>(xs: T[]) => [...new Map(xs.map((x) => [x.href, x])).values()];
+
+/** Sitemap addresses that look like spam pages (spam words in the address, or CJK characters on a non-CJK site). */
+export function spamUrls(urls: string[], siteIsCjk = false): string[] {
+  return urls.filter((u) => {
+    let path = u; try { path = decodeURIComponent(new URL(u).pathname); } catch { /* keep as is */ }
+    return spamTerms(path.replace(/[-_/.+]+/g, " ")).length > 0 || (!siteIsCjk && CJK.test(path));
+  });
 }

@@ -156,6 +156,22 @@ export function fixFor(id: string, c: FixCtx): SecFix {
       wordpress: ["Wordfence → All Options → “Disable XML-RPC authentication”, or the “Disable XML-RPC-API” plugin.", "Or block the file with the rule below (Jetpack users: allow only Jetpack’s IPs instead)."],
       code: [{ label: "Apache / LiteSpeed (.htaccess)", text: "<Files xmlrpc.php>\n  Require all denied\n</Files>" }, { label: "Nginx", text: "location = /xmlrpc.php { deny all; }" }],
     };
+    case "spam_content": case "spam_links": case "cloaking": case "spam_pages": case "injected_scripts": return {
+      steps: [
+        "Treat it as a hack until proven otherwise: change the hosting, FTP/SFTP, database and admin passwords, and remove admin users you don't recognise.",
+        "Open each page named above in a private window AND view its source (Ctrl+U): injected links and text are often hidden from visitors.",
+        "Restore the affected files from a clean backup made before the spam appeared, or have your host or a malware-cleanup service (e.g. Sucuri, Wordfence Care) clean the site.",
+        "Delete spam pages, then return 410 Gone for their addresses so Google drops them fast; remove them from the sitemap.",
+        `In Google Search Console → Security & Manual Actions, check for a "Hacked site" warning; after cleaning, request a review there. Use the URL Inspection tool's "Test live URL" to see the page exactly as Googlebot does.`,
+        "Run this audit again after cleaning to confirm every Spam & hacks check passes.",
+      ],
+      wordpress: [
+        "Install Wordfence (or Sucuri Security) and run a full scan: it compares core, theme and plugin files with the originals and lists injected code.",
+        "Reinstall WordPress core (Dashboard → Updates → Re-install) and replace themes and plugins with fresh copies; delete any you don't use.",
+        "Search the database for injected links: wp_posts (post_content) and wp_options (look for unknown autoloaded options) for words like casino, viagra or porn, and for <script tags.",
+        "Check wp-config.php, .htaccess and the uploads folder for unknown PHP files (uploads should contain no .php files).",
+      ],
+    };
     default: return { steps: [] };
   }
 }

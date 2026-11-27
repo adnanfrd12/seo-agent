@@ -4,7 +4,7 @@ import type { SupabaseClient } from "@supabase/supabase-js";
 import { BOT_UA } from "@/lib/blog/wordpress";
 import type { FixCtx } from "./security-fixes";
 import {
-  cmpVersion, cookieIssues, dmarcStatus, hostKind, libraries, makeCheck, mixedContent, securityScore, sortChecks, spfStatus, vulnerableLib,
+  cmpVersion, cookieIssues, dmarcStatus, hostKind, libraries, makeCheck, mixedContent, securityScore, sortChecks, spamScan, spamUrls, spfStatus, vulnerableLib,
   type SecCheck, type Severity,
 } from "./security-scan";
 
@@ -20,7 +20,9 @@ import {
  */
 export const SEC_ENDPOINT = "security_audit";
 export const SEC_EVERY_DAYS = 30;
-const MAX_REQUESTS = 30;
+const MAX_REQUESTS = 40; // + up to 8 for the spam & hacks checks (Googlebot view, sitemap, 3 sampled pages)
+/** Google's own crawler user agent: hacked sites often show spam only to it (cloaking). */
+const GOOGLEBOT_UA = "Mozilla/5.0 (compatible; Googlebot/2.1; +http://www.google.com/bot.html)";
 const TIMEOUT = 12_000;
 
 export interface SecHistory { at: string; score: number; failing: number }
@@ -290,6 +292,93 @@ export async function auditSite(domain: string, opts: { previous?: SecHistory[] 
     add("wp_user_enum", leaks.length ? "fail" : "pass", leaks.length ? leaks.join("; ") + "." : `REST users endpoint answers HTTP ${users.status ?? "?"}; /?author=1 doesn't reveal a username.`, ctx);
     const rpcOn = xmlrpc.status === 405 && /XML-RPC server accepts POST requests only/i.test(xmlrpc.body) || (xmlrpc.status === 200 && /XML-RPC/i.test(xmlrpc.body));
     add("wp_xmlrpc", rpcOn ? "fail" : xmlrpc.status == null ? "unknown" : "pass", rpcOn ? "/xmlrpc.php is active (answers “XML-RPC server accepts POST requests only”)." : `/xmlrpc.php answers HTTP ${xmlrpc.status ?? "?"}.`, ctx);
+  }
+
+  // spam & hacks: casino / adult / pharma injections, cloaking to Googlebot, spam pages in the sitemap, injected scripts
+  {
+    const short = (u: string) => { try { return new URL(u).pathname || "/"; } catch { return u; } };
+    const lang = (html.match(/<html[^>]*\blang\s*=\s*["']?([a-z]{2})/i)?.[1] ?? "").toLowerCase();
+    const siteCjk = ["ja", "zh", "ko"].includes(lang);
+    // three internal pages linked from the home page (posts and service pages are where injections usually sit)
+    const internal = [...new Set([...html.matchAll(/<a\b[^>]*href\s*=\s*["']([^"'#?]+)["']/gi)].map((m) => {
+      try {
+        const u = new URL(m[1], home.url);
+        return u.hostname.replace(/^www\./, "") === apex && u.pathname.length > 1 && !/\.(jpe?g|png|gif|webp|svg|pdf|zip|xml|css|js)$/i.test(u.pathname) ? u.origin + u.pathname : null;
+      } catch { return null; }
+    }).filter((x): x is string => Boolean(x)))].slice(0, 3);
+    // the sitemap robots.txt names, else the usual addresses
+    const sitemapGet = async (): Promise<Got | null> => {
+      const robots = await get(`${origin}/robots.txt`, { maxBytes: 32_768 });
+      const named = robots.status === 200 ? [...robots.body.matchAll(/^\s*sitemap\s*:\s*(\S+)/gim)].map((m) => m[1]) : [];
+      for (const u of [...named.slice(0, 1), `${origin}/sitemap_index.xml`, `${origin}/sitemap.xml`]) {
+        const r = await get(u, { maxBytes: 400_000 });
+        if (r.status === 200 && /<(urlset|sitemapindex)/i.test(r.body)) return r;
+      }
+      return null;
+    };
+    const [asGoogle, sm, ...samples] = await Promise.all([
+      get(home.url, { maxBytes: 1_500_000, headers: { "user-agent": GOOGLEBOT_UA } }),
+      sitemapGet(),
+      ...internal.map((u) => get(u, { maxBytes: 800_000 })),
+    ]);
+    const pages = [
+      { url: home.url, scan: spamScan(html, home.url) },
+      ...samples.filter((r) => r.status === 200 && r.body).map((r) => ({ url: r.url, scan: spamScan(r.body, r.url) })),
+    ];
+    const where = `the home page${pages.length > 1 ? ` and ${pages.length - 1} sampled page${pages.length > 2 ? "s" : ""}` : ""}`;
+    const list = (xs: string[], n = 4) => xs.slice(0, n).join(", ") + (xs.length > n ? ` and ${xs.length - n} more` : "");
+
+    // links
+    const spamLinks = pages.flatMap((p) => p.scan.spamLinks.map((l) => `${short(p.url)} → ${l.href}${l.text ? ` (“${l.text}”)` : ""}`));
+    const hidden = pages.flatMap((p) => p.scan.hiddenLinks.map((l) => `${short(p.url)} → ${l.href} (hidden with CSS)`));
+    if (spamLinks.length || hidden.length) add("spam_links", "fail", `${spamLinks.length + hidden.length} suspicious outbound link(s): ${list([...spamLinks, ...hidden], 5)}.`, ctx);
+    else add("spam_links", "pass", `No links to casino, adult or pharma sites and no hidden outbound links on ${where}.`, ctx);
+
+    // words (a legitimate business can mention e.g. "casino signs": a warning unless links or hidden blocks back it up)
+    const withTerms = pages.filter((p) => p.scan.terms.length);
+    const cjkPages = pages.filter((p) => p.scan.cjk);
+    if (withTerms.length || cjkPages.length) {
+      const parts = [
+        ...withTerms.map((p) => `${short(p.url)}: ${p.scan.terms.slice(0, 5).map((t) => `“${t.term}”${t.n > 1 ? ` ×${t.n}` : ""}`).join(", ")}`),
+        ...cjkPages.map((p) => `${short(p.url)}: Japanese/Chinese/Korean text on a site that isn't written in it`),
+      ];
+      add("spam_content", spamLinks.length || hidden.length || cjkPages.length ? "fail" : "warn", `${parts.join("; ")}. Check these are really yours.`, ctx);
+    } else add("spam_content", "pass", `No casino, adult or pharma wording on ${where}.`, ctx);
+
+    // cloaking: the home page as Googlebot vs as a visitor
+    if (asGoogle.status == null || asGoogle.status === 403 || asGoogle.status === 429) {
+      add("cloaking", "unknown", `The home page couldn't be read as Googlebot (${asGoogle.status ? `HTTP ${asGoogle.status}: a firewall may block unverified Googlebot requests, which is normal` : asGoogle.error ?? "no response"}). Use Search Console → URL Inspection → Test live URL to see what Google gets.`, ctx);
+    } else {
+      const gotoHost = asGoogle.status >= 300 && asGoogle.status < 400 && asGoogle.location ? (() => { try { return new URL(asGoogle.location!, home.url).hostname.replace(/^www\./, ""); } catch { return null; } })() : null;
+      const g = spamScan(asGoogle.body, home.url), v = pages[0].scan;
+      const seen = new Set(v.terms.map((t) => t.term));
+      const extraTerms = g.terms.filter((t) => !seen.has(t.term)).map((t) => `“${t.term}”`);
+      const extraLinks = g.spamLinks.filter((l) => !v.spamLinks.some((x) => x.href === l.href)).map((l) => l.href);
+      if (gotoHost && gotoHost !== apex) add("cloaking", "fail", `Googlebot is redirected to ${gotoHost}, visitors aren't.`, ctx);
+      else if (extraTerms.length || extraLinks.length) add("cloaking", "fail", `Googlebot gets content visitors don't: ${list([...extraTerms, ...extraLinks], 5)}.`, ctx);
+      else {
+        const links = (s: string) => (s.match(/<a\b/gi) ?? []).length;
+        const a = links(html), b = links(asGoogle.body);
+        const differs = Math.abs(a - b) > Math.max(20, a * 0.5);
+        add("cloaking", differs ? "warn" : "pass", differs ? `Googlebot's home page has ${b} links, a visitor's ${a}: compare both versions (Search Console → URL Inspection → Test live URL).` : `Googlebot and visitors get the same home page (no extra spam words, links or redirects).`, ctx, differs ? "medium" : undefined);
+      }
+    }
+
+    // spam pages in the sitemap (an index: its first two sitemaps)
+    if (!sm) add("spam_pages", "unknown", "No sitemap found (robots.txt, /sitemap_index.xml, /sitemap.xml) to check.", ctx);
+    else {
+      let locs = [...sm.body.matchAll(/<loc>\s*([^<\s]+)\s*<\/loc>/gi)].map((m) => m[1]);
+      if (/<sitemapindex/i.test(sm.body)) {
+        const kids = await Promise.all(locs.slice(0, 2).map((u) => get(u.replace(/&amp;/g, "&"), { maxBytes: 600_000 })));
+        locs = kids.flatMap((k) => [...k.body.matchAll(/<loc>\s*([^<\s]+)\s*<\/loc>/gi)].map((m) => m[1]));
+      }
+      const bad = spamUrls(locs, siteCjk);
+      add("spam_pages", bad.length ? "fail" : "pass", bad.length ? `${bad.length} of ${locs.length} sitemap address(es) look like spam pages: ${list(bad.map(short), 5)}.` : `${locs.length} sitemap address(es) checked: none look like casino, adult, pharma or foreign-keyword spam pages.`, ctx);
+    }
+
+    // injected scripts (visitor and Googlebot versions)
+    const scripts = [...pages.flatMap((p) => p.scan.scripts.map((s) => `${short(p.url)}: ${s}`)), ...(asGoogle.body ? spamScan(asGoogle.body, home.url).scripts.map((s) => `as Googlebot: ${s}`) : [])];
+    add("injected_scripts", scripts.length ? "fail" : "pass", scripts.length ? `${scripts.length} obfuscated or redirecting inline script(s): ${list([...new Set(scripts)], 2)}…` : `No encoded (eval/atob, packed) or redirecting inline scripts on ${where}.`, ctx);
   }
 
   const sorted = sortChecks(checks);
