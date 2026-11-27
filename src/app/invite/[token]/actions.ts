@@ -76,7 +76,7 @@ export async function sendInviteSignInLink(token: string): Promise<InviteActionR
   } else {
     const { error } = await (await createClient()).auth.signInWithOtp({
       email: prep.email,
-      options: { shouldCreateUser: false, emailRedirectTo: `${appOrigin()}/auth/callback?next=${encodeURIComponent(`/invite/${token}`)}` },
+      options: { shouldCreateUser: false, emailRedirectTo: `${await appOrigin()}/auth/callback?next=${encodeURIComponent(`/invite/${token}`)}` },
     });
     if (error) return { ok: false, error: SEND_FAILED };
   }

@@ -1,4 +1,5 @@
 import "server-only";
+import { headers } from "next/headers";
 import { createHash, randomBytes } from "node:crypto";
 import type { SupabaseClient, User } from "@supabase/supabase-js";
 import { CLIENT_ROLE_LABEL, ROLE_LABEL } from "@/components/org/labels";
@@ -29,8 +30,25 @@ const TOKEN = /^[A-Za-z0-9_-]{43}$/;
 export const newInviteToken = () => randomBytes(32).toString("base64url");
 export const hashInviteToken = (token: string) => createHash("sha256").update(token).digest("hex");
 export const isInviteToken = (token: string) => TOKEN.test(token);
-export const appOrigin = () => (process.env.NEXT_PUBLIC_APP_URL?.trim() || SITE.appUrl).replace(/\/+$/, "");
-export const inviteLink = (token: string) => `${appOrigin()}/invite/${token}`;
+/**
+ * This site's address for links in invitations: the address the request came in on (so the link matches the
+ * deployment the inviter is using), else NEXT_PUBLIC_APP_URL, else the public site. A localhost value is only used
+ * when the request itself is local.
+ */
+export async function appOrigin(): Promise<string> {
+  try {
+    const h = await headers();
+    const host = (h.get("x-forwarded-host") ?? h.get("host") ?? "").split(",")[0].trim();
+    if (/^[a-z0-9.-]+(:\d+)?$/i.test(host)) {
+      const local = /^(localhost|127\.0\.0\.1)(:\d+)?$/i.test(host);
+      const proto = (h.get("x-forwarded-proto") ?? "").split(",")[0].trim() || (local ? "http" : "https");
+      return `${proto === "http" && !local ? "https" : proto}://${host}`;
+    }
+  } catch { /* outside a request */ }
+  const env = process.env.NEXT_PUBLIC_APP_URL?.trim();
+  return (env && !/\/\/(localhost|127\.0\.0\.1)/.test(env) ? env : SITE.appUrl).replace(/\/+$/, "");
+}
+export const inviteLink = async (token: string) => `${await appOrigin()}/invite/${token}`;
 export const normalizeEmail = (e: string) => e.trim().toLowerCase();
 
 export interface Inviter { userId: string; role: OrgRole | null; platformAdmin?: boolean }
@@ -116,7 +134,7 @@ function sendInviteEmail(to: string, p: { orgName: string; inviterName: string |
  */
 async function prepareAndDeliver(admin: SupabaseClient, inv: { id: string; email: string; role: OrgRole; orgName: string; inviterName: string | null; token: string; expiresAt: string }): Promise<boolean> {
   await ensureAccount(admin, inv.email, inv.id);
-  return sendInviteEmail(inv.email, { orgName: inv.orgName, inviterName: inv.inviterName, role: inv.role, link: inviteLink(inv.token), expiresAt: inv.expiresAt });
+  return sendInviteEmail(inv.email, { orgName: inv.orgName, inviterName: inv.inviterName, role: inv.role, link: await inviteLink(inv.token), expiresAt: inv.expiresAt });
 }
 
 async function ensureAccount(admin: SupabaseClient, email: string, invitationId: string): Promise<boolean> {
@@ -180,7 +198,7 @@ export async function createInvitation(admin: SupabaseClient, orgId: string, inv
   const ctx = await context(admin, orgId, inviter.userId);
   const emailed = await prepareAndDeliver(admin, { id: saved.id as string, email, role: input.role, token, expiresAt, ...ctx });
   await audit(admin, orgId, inviter.userId, "member.invite", email, { role: input.role, clients: access.length, emailed, ...(inviter.platformAdmin && !inviter.role ? { by: "platform" } : {}) });
-  return { ok: true, link: inviteLink(token), emailed, message: deliveredMessage(email, emailed) };
+  return { ok: true, link: await inviteLink(token), emailed, message: deliveredMessage(email, emailed) };
 }
 
 async function openInvitation(admin: SupabaseClient, orgId: string, id: string): Promise<Row | null> {
@@ -203,7 +221,7 @@ export async function resendInvitation(admin: SupabaseClient, orgId: string, inv
   const ctx = await context(admin, orgId, inviter.userId);
   const emailed = await prepareAndDeliver(admin, { id, email: inv.email, role: inv.role, token, expiresAt, ...ctx });
   await audit(admin, orgId, inviter.userId, "invitation.resend", inv.email, { role: inv.role, emailed });
-  return { ok: true, link: inviteLink(token), emailed, message: deliveredMessage(inv.email, emailed) };
+  return { ok: true, link: await inviteLink(token), emailed, message: deliveredMessage(inv.email, emailed) };
 }
 
 export async function revokeInvitation(admin: SupabaseClient, orgId: string, inviter: Inviter, id: string): Promise<Result> {
@@ -307,7 +325,7 @@ export async function emailInviteSignInLink(admin: SupabaseClient, p: { email: s
   if (error || !hashed) return false;
   const vt = data.properties.verification_type;
   const type = ["magiclink", "email", "signup", "invite"].includes(vt) ? vt : "magiclink";
-  const link = `${appOrigin()}/auth/confirm?token_hash=${encodeURIComponent(hashed)}&type=${type}&next=${encodeURIComponent(`/invite/${p.token}`)}`;
+  const link = `${await appOrigin()}/auth/confirm?token_hash=${encodeURIComponent(hashed)}&type=${type}&next=${encodeURIComponent(`/invite/${p.token}`)}`;
   return sendEmail(p.email, `Your sign-in link for ${p.orgName}`,
     `<div style="font-family:system-ui,sans-serif;max-width:560px;color:#17171a"><h2 style="margin:0 0 12px">Confirm it's you</h2>`
     + `<p>Open this link to sign in to SEO Insights and accept your invitation to <strong>${esc(p.orgName)}</strong>.</p>`
