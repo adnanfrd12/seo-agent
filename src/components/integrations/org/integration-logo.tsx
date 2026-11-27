@@ -6,7 +6,7 @@ import { cn } from "@/lib/utils";
 
 /** Neutral symbols for services without a brand mark in the app; brand marks where the app already has them. */
 const ICONS: Record<string, LucideIcon> = {
-  anthropic: Sparkles, dataforseo: Database, google_api: KeyRound, composio: Blocks, lbm: Store, seosignalx: Radar,
+  anthropic: Sparkles, openai: Sparkles, gemini: Sparkles, xai: Sparkles, perplexity: Sparkles, dataforseo: Database, google_api: KeyRound, composio: Blocks, lbm: Store, seosignalx: Radar,
   treg: Users, social_tokens: AtSign, custom: Braces,
 };
 

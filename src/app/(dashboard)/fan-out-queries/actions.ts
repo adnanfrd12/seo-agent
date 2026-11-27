@@ -8,6 +8,8 @@ import { DfsError } from "@/lib/dataforseo/client";
 import { resolveTarget } from "@/lib/dataforseo/research";
 import { fanoutError, fanoutReady, runFanout } from "@/lib/fanout/run";
 import { estimate, MAX_KEYWORDS, MAX_PAGES, parseKeywords, usd, type FanoutMode } from "@/lib/fanout/shared";
+import { EST_PER_ASK, LIVE_PLATFORMS, MAX_LIVE_ASKS, MAX_LIVE_KEYWORDS, PLATFORM_LABEL, platformReady, runLive, savePasted } from "@/lib/fanout/live";
+import { configForClient } from "@/lib/org/config";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { ownUrl } from "@/lib/toolkit/store";
 
@@ -53,5 +55,62 @@ export async function runFanoutAction(input: { kind: "keywords" | "pages"; items
   } catch (e) {
     if (e instanceof BudgetError || e instanceof DfsError) return { ok: false, error: e.message };
     return { ok: false, error: fanoutError(e) };
+  }
+}
+
+/* ------------------------------------------------------------------ real AI search queries (added; the above is unchanged) */
+type LiveResult = { ok: true; message: string; batchId: string } | { ok: false; error: string };
+
+/** Owner/admin: asks the chosen AI platforms each keyword with web search on and stores the searches they ran. */
+export async function runLiveFanoutAction(input: { keywords: string[]; platforms: string[]; runs: number }): Promise<LiveResult> {
+  const { user, client } = await getSession();
+  if (!client) return { ok: false, error: "No client selected." };
+  if (!["owner", "admin"].includes(client.role)) return { ok: false, error: "Only owners and admins can run fan-out queries." };
+  const admin = createAdminClient();
+  const target = await resolveTarget(admin, client.id);
+  if (!target) return { ok: false, error: "Set the client's website first." };
+  const keywords = parseKeywords((input.keywords ?? []).join("\n"));
+  if (!keywords.length) return { ok: false, error: "Enter at least one keyword." };
+  if (keywords.length > MAX_LIVE_KEYWORDS) return { ok: false, error: `At most ${MAX_LIVE_KEYWORDS} keywords per run.` };
+  const platforms = LIVE_PLATFORMS.filter((p) => (input.platforms ?? []).includes(p));
+  if (!platforms.length) return { ok: false, error: "Pick at least one platform." };
+  const runs = Math.min(3, Math.max(1, Math.round(Number(input.runs) || 1)));
+  if (keywords.length * platforms.length * runs > MAX_LIVE_ASKS) return { ok: false, error: `That's ${keywords.length * platforms.length * runs} questions; at most ${MAX_LIVE_ASKS} per run. Use fewer keywords, platforms or repeats.` };
+  const ready = platformReady(await configForClient(client.id));
+  const missing = platforms.filter((p) => !ready[p]);
+  if (missing.length) return { ok: false, error: `Not set up for this organization: ${missing.map((p) => PLATFORM_LABEL[p]).join(", ")}. Add the API key in Settings → Organization → Integrations.` };
+  if (platforms.includes("claude")) {
+    const b = await claudeBudget(admin, client.id);
+    const need = keywords.length * runs * EST_PER_ASK.claude;
+    if (b.left <= 0) return { ok: false, error: budgetMessage(b.budget) };
+    if (need > b.left) return { ok: false, error: `Claude needs about ${usd(need)} of the monthly budget, but only ${usd(b.left)} is left. Use fewer keywords or untick Claude.` };
+  }
+  try {
+    const r = await runLive(admin, client.id, { keywords, platforms, runs, userId: user?.id ?? null, domain: target.domain });
+    revalidatePath("/fan-out-queries");
+    return { ok: true, batchId: r.batchId, message: `${r.queries} real search queries from ${r.asked - r.failed} of ${r.asked} answers · about ${usd(r.cost)}${r.failed ? ` · ${r.failed} failed (see below)` : ""}.` };
+  } catch (e) {
+    return { ok: false, error: fanoutError(e) };
+  }
+}
+
+/** Owner/admin: stores the searches pasted from ChatGPT's network tab for a keyword (free, no API key). */
+export async function importPastedFanoutAction(input: { keyword: string; text: string }): Promise<LiveResult> {
+  const { user, client } = await getSession();
+  if (!client) return { ok: false, error: "No client selected." };
+  if (!["owner", "admin"].includes(client.role)) return { ok: false, error: "Only owners and admins can import fan-out queries." };
+  const keyword = String(input.keyword ?? "").trim().slice(0, 200);
+  const text = String(input.text ?? "");
+  if (!keyword) return { ok: false, error: "Enter the keyword (the prompt you asked ChatGPT)." };
+  if (!text.trim()) return { ok: false, error: "Paste the Response from ChatGPT's network tab." };
+  if (text.length > 3_000_000) return { ok: false, error: "That's too much text: paste only the conversation request's Response." };
+  const admin = createAdminClient();
+  const target = await resolveTarget(admin, client.id);
+  try {
+    const r = await savePasted(admin, client.id, { keyword, text, userId: user?.id ?? null, domain: target?.domain ?? "" });
+    revalidatePath("/fan-out-queries");
+    return { ok: true, batchId: r.batchId, message: `${r.queries} ChatGPT search ${r.queries === 1 ? "query" : "queries"} imported for “${keyword}”.` };
+  } catch (e) {
+    return { ok: false, error: e instanceof Error ? e.message : "Couldn't import." };
   }
 }

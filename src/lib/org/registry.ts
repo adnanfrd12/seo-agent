@@ -63,6 +63,47 @@ export const INTEGRATIONS: IntegrationDef[] = [
     fields: [f("ANTHROPIC_API_KEY", "API key", { placeholder: "sk-ant-…", help: "Console → API keys → Create key." })],
     consoleUrl: "https://platform.claude.com/settings/keys", docsUrl: "https://docs.anthropic.com/en/api/getting-started", testable: true,
   },
+  // the AI platforms Fan-Out Queries asks for their real web searches (Claude uses the Anthropic key above)
+  {
+    id: "openai", name: "OpenAI (ChatGPT)", category: "ai",
+    description: "ChatGPT's real web searches for a keyword in Fan-Out Queries (OpenAI Responses API with web search).",
+    features: ["Fan-out queries: ChatGPT"],
+    fields: [
+      f("OPENAI_API_KEY", "API key", { placeholder: "sk-…", help: "platform.openai.com → API keys → Create new secret key." }),
+      f("OPENAI_SEARCH_MODEL", "Model", { secret: false, required: false, placeholder: "gpt-6.2-astra", help: "Leave empty for the default; any model that supports the web_search tool." }),
+    ],
+    consoleUrl: "https://platform.openai.com/api-keys", docsUrl: "https://platform.openai.com/docs/guides/tools-web-search",
+  },
+  {
+    id: "gemini", name: "Google Gemini", category: "ai",
+    description: "Gemini's real Google searches for a keyword in Fan-Out Queries (Gemini API grounding with Google Search).",
+    features: ["Fan-out queries: Gemini"],
+    fields: [
+      f("GEMINI_API_KEY", "API key", { placeholder: "AIza…", help: "Google AI Studio → Get API key." }),
+      f("GEMINI_SEARCH_MODEL", "Model", { secret: false, required: false, placeholder: "gemini-4-hydrogen", help: "Leave empty for the default; any model that supports Google Search grounding." }),
+    ],
+    consoleUrl: "https://aistudio.google.com/apikey", docsUrl: "https://ai.google.dev/gemini-api/docs/google-search",
+  },
+  {
+    id: "xai", name: "xAI (Grok)", category: "ai",
+    description: "Grok's answers and sources for a keyword in Fan-Out Queries (xAI API with web search; its searches show when xAI returns them).",
+    features: ["Fan-out queries: Grok"],
+    fields: [
+      f("XAI_API_KEY", "API key", { placeholder: "xai-…", help: "console.x.ai → API keys → Create API key." }),
+      f("XAI_SEARCH_MODEL", "Model", { secret: false, required: false, placeholder: "grok-4.7", help: "Leave empty for the default." }),
+    ],
+    consoleUrl: "https://console.x.ai", docsUrl: "https://docs.x.ai/docs/guides/tools/search-tools",
+  },
+  {
+    id: "perplexity", name: "Perplexity", category: "ai",
+    description: "Perplexity's real web searches and sources for a keyword in Fan-Out Queries (Perplexity Agent API with web search).",
+    features: ["Fan-out queries: Perplexity"],
+    fields: [
+      f("PERPLEXITY_API_KEY", "API key", { placeholder: "pplx-…", help: "perplexity.ai → Settings → API → Generate key." }),
+      f("PERPLEXITY_SEARCH_MODEL", "Model", { secret: false, required: false, placeholder: "openai/gpt-5.6-luna", help: "Leave empty for the default." }),
+    ],
+    consoleUrl: "https://www.perplexity.ai/settings/api", docsUrl: "https://docs.perplexity.ai",
+  },
   {
     id: "dataforseo", name: "DataForSEO", category: "seo",
     description: "Backlinks, rankings, keyword research, competitors, site audits, Lighthouse, local SEO, reviews, AI visibility and search volumes. Paid per request.",

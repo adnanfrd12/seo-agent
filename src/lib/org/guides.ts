@@ -108,6 +108,62 @@ const CONNECTIONS = "Open **Integrations** in the sidebar and go to **Client con
 
 /* ------------------------------------------------------------------------------------------------- guides */
 
+/** OpenAI, Gemini, xAI and Perplexity: one key each, used only by Fan-Out Queries → Real AI search queries. */
+function aiSearchGuides(): Record<string, GuideSource> {
+  const one = (o: { name: string; product: string; signup: string; keys: string; keyStep: string; billing: string; keyField: string; modelField: string; modelDefault: string; prefix: string; docs: string; cost: string; queriesNote: string }): GuideSource => ({
+    purpose: `${o.product} answers a keyword with web search on, and {app} records the searches it ran, its answer and the sources it cited, so you can see what ${o.product} looks for before it answers (Fan-Out Queries → Real AI search queries). ${o.queriesNote}`,
+    cost: o.cost,
+    time: "About 10 minutes.",
+    requirements: [`An ${o.name} account for your organization (use a shared company email).`, "A payment card for API credits."],
+    parts: [
+      { title: `Create the ${o.name} account`, steps: [{ text: `Go to ${o.signup} and sign up, or sign in with your company account.` }] },
+      { title: "Add credits", steps: [{ text: o.billing }] },
+      { title: "Create the API key", steps: [{ text: o.keyStep }, { text: `Copy the key straight away. It starts with \`${o.prefix}\` and is shown only once.` }] },
+    ],
+    fields: { [o.keyField]: o.keys, [o.modelField]: `Optional. Leave empty to use ${o.modelDefault}; set another model name if ${o.name} renames or retires it.` },
+    test: [`Open Fan-Out Queries, enter one keyword, tick **${o.product}** under Real AI search queries and run it. The results show the searches ${o.product} ran and its sources.`],
+    problems: [
+      { problem: `“${o.name} rejected the API key” (401 / 403)`, fix: "The key was mistyped, deleted or belongs to another project. Create a new key and save it." },
+      { problem: "Rate limited or out of credit (429)", fix: "Add credits, or wait a minute and run again." },
+      { problem: "Model not found", fix: "The default model name changed. Enter a current model name in the Model field." },
+    ],
+    renewal: ["Keys keep working until you delete them. To replace one: create a new key, save it in {app}, run a keyword, then delete the old key."],
+    checklist: [`${o.name} account created with a company email`, "Credits added", "API key created and copied", "Key saved in {app} and a test keyword returned results"],
+    links: [{ label: `${o.name} API keys`, url: o.signup }, { label: "Web search documentation", url: o.docs }],
+    unverified: ["Model names change often; the default may need updating.", "Prices per search change; check the provider's pricing page."],
+  });
+  return {
+    openai: one({
+      name: "OpenAI", product: "ChatGPT", signup: "https://platform.openai.com/api-keys", prefix: "sk-", keyField: "OPENAI_API_KEY", modelField: "OPENAI_SEARCH_MODEL", modelDefault: "gpt-6.2-astra",
+      keys: "OpenAI Platform → API keys → Create new secret key (starts with sk-).", keyStep: "Open https://platform.openai.com/api-keys and click **Create new secret key**. Name it, for example `{app}`.",
+      billing: "Open **Settings → Billing** (https://platform.openai.com/settings/organization/billing) and add credits.",
+      docs: "https://platform.openai.com/docs/guides/tools-web-search", cost: "Pay as you go: web search costs about $10 per 1,000 searches plus the model's tokens (roughly $0.02–0.04 per keyword).",
+      queriesNote: "Each web search call in the API answer carries the exact query.",
+    }),
+    gemini: one({
+      name: "Google AI Studio", product: "Gemini", signup: "https://aistudio.google.com/apikey", prefix: "AIza", keyField: "GEMINI_API_KEY", modelField: "GEMINI_SEARCH_MODEL", modelDefault: "gemini-4-hydrogen",
+      keys: "Google AI Studio → Get API key → Create API key (starts with AIza).", keyStep: "Open https://aistudio.google.com/apikey and click **Create API key** (pick or create a Google Cloud project).",
+      billing: "In Google AI Studio, set up billing for the project (a free tier exists; grounding has a monthly free allowance).",
+      docs: "https://ai.google.dev/gemini-api/docs/google-search", cost: "Grounding with Google Search has a monthly free allowance, then about $14 per 1,000 searches, plus tokens.",
+      queriesNote: "Google returns the searches tied to the sources it cited, which can be fewer than all it ran.",
+    }),
+    xai: one({
+      name: "xAI", product: "Grok", signup: "https://console.x.ai", prefix: "xai-", keyField: "XAI_API_KEY", modelField: "XAI_SEARCH_MODEL", modelDefault: "grok-4.7",
+      keys: "xAI Console → API keys → Create API key (starts with xai-).", keyStep: "Open https://console.x.ai, go to **API keys** and click **Create API key**.",
+      billing: "In the xAI Console open **Billing** and add credits.",
+      docs: "https://docs.x.ai/docs/guides/tools/search-tools", cost: "Pay as you go: search plus tokens (roughly $0.02–0.05 per keyword).",
+      queriesNote: "xAI's documentation doesn't show the searches Grok runs; {app} shows them when xAI returns them and always shows the sources.",
+    }),
+    perplexity: one({
+      name: "Perplexity", product: "Perplexity", signup: "https://www.perplexity.ai/settings/api", prefix: "pplx-", keyField: "PERPLEXITY_API_KEY", modelField: "PERPLEXITY_SEARCH_MODEL", modelDefault: "openai/gpt-5.6-luna",
+      keys: "Perplexity → Settings → API → Generate API key (starts with pplx-).", keyStep: "Open https://www.perplexity.ai/settings/api and click **Generate API key**.",
+      billing: "On the same page, add credits under **API billing**.",
+      docs: "https://docs.perplexity.ai", cost: "About $2.50 per 1,000 searches plus tokens.",
+      queriesNote: "The Agent API's search results carry the queries it ran.",
+    }),
+  };
+}
+
 const SOURCES: Record<string, GuideSource> = {
   anthropic: {
     purpose: "Claude is the AI behind Nova, the SEO roadmap, AI quick wins, insights and every other AI feature. {app} calls Anthropic with your organization's own API key, so the usage is billed to your Anthropic account.",
@@ -181,6 +237,8 @@ const SOURCES: Record<string, GuideSource> = {
       "The exact wording of the low-balance error returned by the API.",
     ],
   },
+
+  ...aiSearchGuides(),
 
   dataforseo: {
     purpose: "DataForSEO supplies backlinks, rankings, keyword research, competitors, site audits, Lighthouse, local SEO, reviews and AI visibility. {app} calls it with your API login and API password; every request is paid from your DataForSEO balance.",
